@@ -8,26 +8,77 @@
   <category>AI Assistant</category>
 
   <description><![CDATA[
-    <p>Copilot Bridge transforms GitHub Copilot from a chat assistant into a true coding agent inside your JetBrains IDE.</p>
-
-    <p>Instead of suggesting code in isolation, the agent can plan and execute multi-step tasks using the same IDE
+    <p><b>IDE Agent for Copilot</b> turns GitHub Copilot into a full coding agent inside your JetBrains IDE.
+    Instead of suggesting code in isolation, the agent plans and executes multi-step tasks using the same IDE
     features you use every day &mdash; navigation, refactoring, inspections, testing, build tools, and Git &mdash;
     all within a single conversation.</p>
 
-    <h3>Features</h3>
+    <h3>Why this plugin?</h3>
     <ul>
-        <li>AI-powered multistep planning and execution via GitHub Copilot</li>
-        <li>Direct ACP integration - no sidecar or SDK required</li>
-        <li>Rich context management with code selections and symbols</li>
-        <li>Visual plan tracking with real-time progress</li>
-        <li>Timeline view of agent reasoning and tool invocations</li>
-        <li>Model selection (Claude, GPT, Gemini) with usage indicators</li>
+        <li><b>66 IDE-native tools</b> &mdash; the agent reads, writes, searches, refactors, builds, tests, and
+            commits through IntelliJ&rsquo;s own APIs, not regex hacks</li>
+        <li><b>Direct ACP integration</b> &mdash; no sidecar, SDK, or extra server; talks straight to GitHub Copilot CLI</li>
+        <li><b>Sub-agents</b> &mdash; specialized Explore, Task, Code Review, and UI Review agents that run in parallel</li>
+        <li><b>Full undo support</b> &mdash; every file edit goes through IntelliJ&rsquo;s Document API with native undo/redo</li>
+        <li><b>Model choice</b> &mdash; pick Claude, GPT, or Gemini; see usage multipliers and billing in real time</li>
+    </ul>
+
+    <h3>Code Intelligence</h3>
+    <ul>
+        <li>Symbol search, find references, go-to-declaration, type hierarchy</li>
+        <li>Class and file outlines, Javadoc/KDoc lookup</li>
+        <li>Text and regex search across the project</li>
+    </ul>
+
+    <h3>Code Quality</h3>
+    <ul>
+        <li>Run IntelliJ inspections, Qodana, and SonarLint</li>
+        <li>Auto-apply quickfixes and suppress warnings</li>
+        <li>Check compilation errors, optimize imports, format code</li>
+    </ul>
+
+    <h3>Build, Test &amp; Run</h3>
+    <ul>
+        <li>Incremental build, run tests by class/method/pattern with coverage</li>
+        <li>Create, edit, and run Gradle/JUnit/Application configurations</li>
+        <li>Shell command execution with paginated output</li>
+    </ul>
+
+    <h3>Git</h3>
+    <ul>
+        <li>Status, diff, log, blame, stage, commit, branch, stash, push</li>
+        <li>All operations go through IntelliJ&rsquo;s VFS &mdash; no buffer desync</li>
+    </ul>
+
+    <h3>Refactoring</h3>
+    <ul>
+        <li>Rename, extract method, inline, safe-delete via IntelliJ refactoring engine</li>
+    </ul>
+
+    <h3>Chat &amp; Workflow</h3>
+    <ul>
+        <li>Streaming markdown responses with code blocks and syntax highlighting</li>
+        <li>Context attachments: files, selections, code symbols</li>
+        <li>Plan tree visualization with real-time step progress</li>
+        <li>Timeline view of reasoning, tool calls, and sub-agent activity</li>
+        <li>Quick-reply buttons, conversation export, session history</li>
+        <li>Granular tool permissions (Allow / Ask / Deny per tool)</li>
+        <li>Real-time billing graph with cycle tracking and cost estimates</li>
+    </ul>
+
+    <h3>Developer Tooling</h3>
+    <ul>
+        <li>Hot-reload plugin from build output without IDE restart</li>
+        <li>Scratch file creation and execution</li>
+        <li>IDE log reader, notification viewer, debug panel</li>
     </ul>
 
     <h3>Requirements</h3>
     <ul>
-        <li>GitHub Copilot subscription</li>
-        <li>GitHub Copilot CLI installed (<code>winget install GitHub.Copilot</code>)</li>
+        <li>GitHub Copilot subscription (Free, Pro, Business, or Enterprise)</li>
+        <li>GitHub Copilot CLI installed (<code>npm install -g @githubnext/github-copilot-cli</code>
+            or <code>winget install GitHub.Copilot</code>)</li>
+        <li>IntelliJ IDEA 2025.1 or later</li>
     </ul>
     ]]></description>
 
