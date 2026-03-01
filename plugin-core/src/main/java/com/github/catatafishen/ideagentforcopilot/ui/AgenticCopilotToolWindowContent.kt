@@ -522,7 +522,10 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
 
         // Setup banners: Copilot CLI / auth, GH CLI / auth
-        copilotBanner = createCopilotSetupBanner { loadModels() }
+        copilotBanner = createCopilotSetupBanner {
+            authService.pendingAuthError = null
+            loadModels()
+        }
         northStack.add(copilotBanner)
         northStack.add(createGhSetupBanner { billing.loadBillingData() })
         topPanel.add(northStack, BorderLayout.NORTH)
@@ -1852,6 +1855,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
         // Show the auth banner immediately when an auth error is detected
         if (authService.isAuthenticationError(msg)) {
+            authService.markAuthError(msg)
             copilotBanner?.triggerCheck()
         }
 
@@ -2117,6 +2121,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 loadingSpinner.isVisible = false
                 modelsStatusText = "Unavailable"
                 if (authService.isAuthenticationError(errorMsg)) {
+                    authService.markAuthError(errorMsg)
                     copilotBanner?.triggerCheck()
                 }
             }

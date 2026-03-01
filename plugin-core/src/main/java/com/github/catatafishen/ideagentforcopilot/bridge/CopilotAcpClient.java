@@ -95,6 +95,7 @@ public class CopilotAcpClient implements Closeable {
 
     private final Object writerLock = new Object();
     private final String projectBasePath; // Project path for config-dir
+    private String resolvedCopilotPath; // Resolved path to copilot CLI binary
     private Process process;
     private BufferedWriter writer;
     private Thread readerThread;
@@ -247,6 +248,7 @@ public class CopilotAcpClient implements Closeable {
 
         try {
             String copilotPath = CopilotCliLocator.findCopilotCli();
+            resolvedCopilotPath = copilotPath;
             LOG.info("Starting Copilot ACP: " + copilotPath);
 
             ProcessBuilder pb = CopilotCliLocator.buildAcpCommand(copilotPath, projectBasePath);
@@ -773,6 +775,14 @@ public class CopilotAcpClient implements Closeable {
      */
     public boolean isHealthy() {
         return process != null && process.isAlive() && initialized && !closed;
+    }
+
+    /**
+     * Get the resolved path to the copilot CLI binary (for logout, auth commands).
+     */
+    @Nullable
+    public String getCopilotCliPath() {
+        return resolvedCopilotPath;
     }
 
     /**

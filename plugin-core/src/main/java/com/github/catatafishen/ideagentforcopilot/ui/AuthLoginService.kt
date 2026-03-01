@@ -18,12 +18,30 @@ internal class AuthLoginService(private val project: Project) {
         private const val OS_NAME_PROPERTY = "os.name"
     }
 
+    // ── Auth error tracking ─────────────────────────────────────────────────
+
+    /**
+     * Sticky auth-error message, set when a prompt fails with an authentication error.
+     * Checked by [copilotSetupDiagnostics] so the banner stays visible even when
+     * `session/new` succeeds without auth (auth is only enforced on `session/update`).
+     * Cleared when the user signs in (diagnostics passes with no auth error).
+     */
+    @Volatile
+    var pendingAuthError: String? = null
+
+    /** Record an auth error so the setup banner can pick it up on next poll. */
+    fun markAuthError(message: String) {
+        pendingAuthError = message
+    }
+
     // ── Diagnostics ──────────────────────────────────────────────────────────
 
     /** Returns null if Copilot CLI is installed and authenticated, or an error description. */
     fun copilotSetupDiagnostics(): String? = try {
         CopilotService.getInstance(project).getClient().listModels()
-        null
+        // listModels / session/new may succeed without auth; check sticky flag
+        val pending = pendingAuthError
+        if (pending != null) pending else null
     } catch (e: Exception) {
         e.message ?: "Failed to connect to Copilot CLI"
     }
@@ -38,10 +56,12 @@ internal class AuthLoginService(private val project: Project) {
     }
 
     /** Returns true when [message] indicates a Copilot CLI authentication failure. */
-    fun isAuthenticationError(message: String): Boolean =
-        message.contains("auth") ||
-            message.contains("Copilot CLI") ||
-            message.contains("authenticated")
+    fun isAuthenticationError(message: String): Boolean {
+        val lower = message.lowercase()
+        return lower.contains("auth") ||
+            lower.contains("copilot cli") ||
+            lower.contains("authenticated")
+    }
 
     // ── Logout ─────────────────────────────────────────────────────────────
 
@@ -50,26 +70,42 @@ internal class AuthLoginService(private val project: Project) {
      * Must be called on a background thread. Returns null on success or an error message.
      */
     fun logout(): String? {
+        // Resolve the copilot CLI path before stopping (stop() clears the client)
+        val copilotPath: String? = try {
+            CopilotService.getInstance(project).getClient().copilotCliPath
+        } catch (_: Exception) {
+            null
+        }
+
         try {
             // Stop the running ACP subprocess so its cached token is discarded
             CopilotService.getInstance(project).stop()
-
-            // Run the CLI logout command
-            val pb = ProcessBuilder("copilot", "auth", "logout")
-            pb.redirectErrorStream(true)
-            val proc = pb.start()
-            val output = proc.inputStream.bufferedReader().readText().trim()
-            val exitCode = proc.waitFor()
-            if (exitCode != 0) {
-                LOG.warn("copilot auth logout exited with code $exitCode: $output")
-                return output.ifEmpty { "Logout failed (exit code $exitCode)" }
-            }
-            LOG.info("Copilot auth logout succeeded")
-            return null
         } catch (e: Exception) {
-            LOG.error("Failed to run copilot auth logout", e)
+            LOG.error("Failed to stop ACP process during logout", e)
             return e.message ?: "Logout failed"
         }
+
+        // Best-effort CLI logout using the resolved binary (not just "copilot" from PATH)
+        if (copilotPath != null) {
+            try {
+                val pb = ProcessBuilder(copilotPath, "auth", "logout")
+                pb.redirectErrorStream(true)
+                val proc = pb.start()
+                val output = proc.inputStream.bufferedReader().readText().trim()
+                val exitCode = proc.waitFor()
+                if (exitCode != 0) {
+                    LOG.warn("copilot auth logout exited with code $exitCode: $output")
+                } else {
+                    LOG.info("Copilot auth logout succeeded")
+                }
+            } catch (e: Exception) {
+                LOG.warn("copilot auth logout command failed (non-fatal)", e)
+            }
+        }
+
+        // Mark auth error so the banner shows after logout
+        pendingAuthError = "Signed out of Copilot"
+        return null
     }
 
     // ── Login flows ──────────────────────────────────────────────────────────
