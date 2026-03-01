@@ -13,6 +13,7 @@ import com.intellij.util.ui.JBUI
 import java.awt.*
 import java.awt.geom.Path2D
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import javax.swing.JComponent
@@ -54,6 +55,8 @@ internal class BillingManager {
     private var lastBillingRemaining = 0
     private var lastBillingOveragePermitted = false
     private var lastBillingResetDate = ""
+    private var lastPolledAt: LocalTime? = null
+    private val polledTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss")
 
     private companion object {
         private const val OS_NAME_PROPERTY = "os.name"
@@ -172,6 +175,7 @@ internal class BillingManager {
         lastBillingRemaining = remaining
         lastBillingOveragePermitted = overagePermitted
         lastBillingResetDate = resetDate
+        lastPolledAt = LocalTime.now()
 
         SwingUtilities.invokeLater {
             refreshUsageDisplay()
@@ -182,15 +186,17 @@ internal class BillingManager {
 
     /** Refreshes usage label and cost label based on current display mode. */
     fun refreshUsageDisplay() {
+        val polledSuffix = lastPolledAt?.let { " \u2022 Polled ${it.format(polledTimeFormat)}" } ?: ""
         when (usageDisplayMode) {
             UsageDisplayMode.MONTHLY -> {
                 if (lastBillingUnlimited) {
                     usageLabel.text = "Unlimited"
-                    usageLabel.toolTipText = "Click to show session usage"
+                    usageLabel.toolTipText = "Click to show session usage$polledSuffix"
                     costLabel.text = ""
                 } else {
                     usageLabel.text = "$lastBillingUsed / $lastBillingEntitlement"
-                    usageLabel.toolTipText = "Premium requests this cycle \u2022 Click to show session usage"
+                    usageLabel.toolTipText =
+                        "Premium requests this cycle \u2022 Click to show session usage$polledSuffix"
                     updateCostLabel(lastBillingRemaining, lastBillingOveragePermitted)
                 }
             }
@@ -198,7 +204,7 @@ internal class BillingManager {
             UsageDisplayMode.SESSION -> {
                 val sessionUsed = lastBillingUsed - billingCycleStartUsed.coerceAtLeast(0)
                 usageLabel.text = "$sessionUsed session"
-                usageLabel.toolTipText = "Premium requests this session \u2022 Click to show monthly usage"
+                usageLabel.toolTipText = "Premium requests this session \u2022 Click to show monthly usage$polledSuffix"
                 costLabel.text = ""
             }
         }
