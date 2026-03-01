@@ -545,6 +545,9 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         // Setup banners: Copilot CLI / auth, GH CLI / auth
         copilotBanner = createCopilotSetupBanner {
             authService.pendingAuthError = null
+            // Invalidate the UI session so the next prompt creates a fresh one
+            // with the new auth credentials (avoids "Session not found" errors).
+            currentSessionId = null
             loadModels()
         }
         northStack.add(copilotBanner)
