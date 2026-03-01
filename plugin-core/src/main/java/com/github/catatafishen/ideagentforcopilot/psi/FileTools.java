@@ -93,7 +93,10 @@ class FileTools extends AbstractToolHandler {
             if (startLine > 0 || endLine > 0) {
                 return extractLineRange(content, startLine, endLine);
             }
-            return content;
+
+            // Add directory marking hint for excluded/generated files
+            String hint = getDirectoryMarkingHint(vf);
+            return hint != null ? hint + "\n" + content : content;
         });
 
         followFileIfEnabled(pathStr, startLine > 0 ? startLine : -1);
@@ -110,6 +113,17 @@ class FileTools extends AbstractToolHandler {
         } catch (IOException e) {
             return "Error reading file: " + e.getMessage();
         }
+    }
+
+    private String getDirectoryMarkingHint(VirtualFile vf) {
+        var fileIndex = com.intellij.openapi.roots.ProjectFileIndex.getInstance(project);
+        if (fileIndex.isExcluded(vf)) {
+            return "[excluded – this is a build output/generated file; prefer editing the source instead]";
+        }
+        if (fileIndex.isInGeneratedSources(vf)) {
+            return "[generated – this file is auto-generated; prefer editing the source instead]";
+        }
+        return null;
     }
 
     private String extractLineRange(String content, int startLine, int endLine) {

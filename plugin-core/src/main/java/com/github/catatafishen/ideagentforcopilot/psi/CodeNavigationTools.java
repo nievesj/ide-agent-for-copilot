@@ -68,7 +68,9 @@ class CodeNavigationTools extends AbstractToolHandler {
             if (relPath == null) return true;
             if (!dir.isEmpty() && !relPath.startsWith(dir)) return true;
             if (!pattern.isEmpty() && ToolUtils.doesNotMatchGlob(vf.getName(), pattern)) return true;
-            String tag = fileIndex.isInTestSourceContent(vf) ? "test " : "";
+            String tag = fileIndex.isExcluded(vf) ? "excluded "
+                    : fileIndex.isInGeneratedSources(vf) ? "generated "
+                    : fileIndex.isInTestSourceContent(vf) ? "test " : "";
             files.add(String.format("%s [%s%s]", relPath, tag, ToolUtils.fileType(vf.getName())));
             return files.size() < 500;
         });
