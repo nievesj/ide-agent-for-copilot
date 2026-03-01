@@ -269,6 +269,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 onAuthComplete = {
                     banner.hideDeviceCode()
                     inlineAuthProcess = null
+                    authService.pendingAuthError = null
                     banner.triggerCheck()
                 },
                 onFallback = {

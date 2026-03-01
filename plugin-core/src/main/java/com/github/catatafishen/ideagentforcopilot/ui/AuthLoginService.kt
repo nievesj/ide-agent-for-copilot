@@ -44,10 +44,15 @@ internal class AuthLoginService(private val project: Project) {
 
     /** Returns null if Copilot CLI is installed and authenticated, or an error description. */
     fun copilotSetupDiagnostics(): String? = try {
-        CopilotService.getInstance(project).getClient().listModels()
-        // listModels / session/new may succeed without auth; check sticky flag
-        val pending = pendingAuthError
-        if (pending != null) pending else null
+        val client = CopilotService.getInstance(project).getClient()
+        if (pendingAuthError != null) {
+            // Force a fresh session to pick up new auth tokens after sign-in
+            client.refreshModels()
+            pendingAuthError = null
+        } else {
+            client.listModels()
+        }
+        null
     } catch (e: Exception) {
         e.message ?: "Failed to connect to Copilot CLI"
     }

@@ -399,6 +399,18 @@ public class CopilotAcpClient implements Closeable {
     }
 
     /**
+     * Force-refresh the model list by creating a new session.
+     * Useful after authentication changes to pick up fresh tokens.
+     */
+    @NotNull
+    public List<Model> refreshModels() throws CopilotException {
+        availableModels = null;
+        currentSessionId = null;
+        createSession();
+        return availableModels != null ? availableModels : List.of();
+    }
+
+    /**
      * Send a prompt and collect the full response (blocking).
      * Streaming chunks are delivered via the onChunk callback.
      *
