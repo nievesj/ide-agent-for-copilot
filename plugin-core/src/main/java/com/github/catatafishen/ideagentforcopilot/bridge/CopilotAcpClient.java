@@ -1414,7 +1414,8 @@ public class CopilotAcpClient implements Closeable {
         if (deniedKind.startsWith(RUN_COMMAND_ABUSE_PREFIX)) {
             String abuseType = deniedKind.substring(RUN_COMMAND_ABUSE_PREFIX.length());
             instruction = switch (abuseType) {
-                case "test" -> "⚠ Don't use run_command for tests. Use 'intellij-code-tools-run_tests' instead. " +
+                case "test" -> "⚠ Don't use run_command for tests (including build/check/verify which " +
+                    "implicitly run tests). Use 'intellij-code-tools-run_tests' instead. " +
                     "Provides structured results, coverage, and failure details.";
                 case "sed" -> "⚠ Don't use sed. Use 'intellij-code-tools-intellij_write_file' instead. " +
                     "It provides proper file editing with undo/redo and live editor buffer access.";

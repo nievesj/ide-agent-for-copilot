@@ -222,7 +222,9 @@ public final class ToolUtils {
             cmd.contains("&& git ") || cmd.contains("; git ") || cmd.contains("| git ") ||
             cmd.matches("(\\w+=\\S*\\s+)+git(\\s.*|$)") ||
             cmd.matches("(sudo|env|command|nohup)\\s+git(\\s.*|$)") ||
-            cmd.matches("(\\w+=\\S*\\s+)+(sudo|env|command)\\s+git(\\s.*|$)")) {
+            cmd.matches("(\\w+=\\S*\\s+)+(sudo|env|command)\\s+git(\\s.*|$)") ||
+            // env with VAR=val arguments before git (e.g. env GIT_DIR=/tmp git status)
+            cmd.matches("env\\s+(\\S+=\\S*\\s+)*git(\\s.*|$)")) {
             return "git";
         }
 
@@ -252,10 +254,23 @@ public final class ToolUtils {
         }
 
         // Block test commands — should use run_tests
+        // Explicit test tasks
         if (cmd.matches(".*(gradlew|gradle|mvn|npm|yarn|pnpm|pytest|jest|mocha|go) test.*") ||
             cmd.matches(".*\\./gradlew.*test.*") ||
             cmd.matches(".*python.*-m.*pytest.*") ||
-            cmd.matches(".*cargo test.*")) {
+            cmd.matches(".*cargo test.*") ||
+            cmd.matches(".*dotnet test.*") ||
+            // Bare pytest with args (pytest alone is caught by the first pattern via "pytest test")
+            cmd.matches("pytest\\s+.*") ||
+            // npx/bunx/pnpx wrappers for test runners
+            cmd.matches(".*(npx|bunx|pnpx)\\s+(jest|vitest|mocha|ava|tap|jasmine).*") ||
+            // Gradle build/check tasks (implicitly run tests)
+            cmd.matches(".*(gradlew|gradle)\\s+(build|check)(\\s.*|$)") ||
+            cmd.matches(".*\\./gradlew\\s+(build|check)(\\s.*|$)") ||
+            // Maven lifecycle phases that include tests
+            cmd.matches(".*mvn\\s+(verify|package|install|deploy)(\\s.*|$)") ||
+            // npm/yarn/pnpm run test
+            cmd.matches(".*(npm|yarn|pnpm)\\s+run\\s+test.*")) {
             return "test";
         }
 
@@ -278,8 +293,8 @@ public final class ToolUtils {
                 + "Use search_text or search_symbols to search live editor buffers instead.";
             case "find" -> "Error: find commands are not allowed via run_command. "
                 + "Use list_project_files to find files instead.";
-            case "test" -> "Error: test commands are not allowed via run_command. "
-                + "Use run_tests to run tests with proper IntelliJ integration instead.";
+            case "test" -> "Error: test commands are not allowed via run_command (including build/check/verify " +
+                "which implicitly run tests). Use run_tests to run tests with proper IntelliJ integration instead.";
             default -> "Error: this command is not allowed via run_command. Use dedicated IntelliJ tools instead.";
         };
     }
