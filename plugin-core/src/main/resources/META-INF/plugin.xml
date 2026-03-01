@@ -84,8 +84,4 @@
     <!-- Notification Group for Copilot status messages -->
     <notificationGroup id="Copilot Notifications" displayType="STICKY_BALLOON"/>
   </extensions>
-
-  <actions>
-    <!-- Actions will be added here -->
-  </actions>
 </idea-plugin>
