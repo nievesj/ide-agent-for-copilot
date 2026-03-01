@@ -1642,12 +1642,12 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(item.path)
                     ?: continue
                 var doc: com.intellij.openapi.editor.Document? = null
-                com.intellij.openapi.application.ReadAction.run<Throwable> {
+                com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction {
                     doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file)
                 }
                 val document = doc ?: continue
                 var snippet = ""
-                com.intellij.openapi.application.ReadAction.run<Throwable> {
+                com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction {
                     val s = document.getLineStartOffset((item.startLine - 1).coerceIn(0, document.lineCount - 1))
                     val e = document.getLineEndOffset((item.endLine - 1).coerceIn(0, document.lineCount - 1))
                     snippet = document.getText(com.intellij.openapi.util.TextRange(s, e))
@@ -1665,13 +1665,13 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(item.path)
             ?: return null
         var doc: com.intellij.openapi.editor.Document? = null
-        com.intellij.openapi.application.ReadAction.run<Throwable> {
+        com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction {
             doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file)
         }
         val document = doc ?: return null
 
         var text = ""
-        com.intellij.openapi.application.ReadAction.run<Throwable> {
+        com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction {
             if (item.isSelection && item.startLine > 0) {
                 val startOffset = document.getLineStartOffset((item.startLine - 1).coerceIn(0, document.lineCount - 1))
                 val endOffset = document.getLineEndOffset((item.endLine - 1).coerceIn(0, document.lineCount - 1))

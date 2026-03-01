@@ -6,7 +6,8 @@ import com.intellij.execution.RunManager;
 import com.intellij.execution.configurations.RunConfiguration;
 import com.intellij.execution.executors.DefaultRunExecutor;
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
@@ -54,7 +55,7 @@ public final class RunConfigurationService {
     }
 
     public String listRunConfigurations() {
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             try {
                 var configs = RunManager.getInstance(project).getAllSettings();
                 if (configs.isEmpty()) return "No run configurations found";

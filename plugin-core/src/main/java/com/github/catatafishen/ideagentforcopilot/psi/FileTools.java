@@ -4,6 +4,7 @@ import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.command.undo.UndoManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -83,7 +84,7 @@ class FileTools extends AbstractToolHandler {
         int startLine = args.has(PARAM_START_LINE) ? args.get(PARAM_START_LINE).getAsInt() : -1;
         int endLine = args.has(PARAM_END_LINE) ? args.get(PARAM_END_LINE).getAsInt() : -1;
 
-        String result = ReadAction.compute(() -> {
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 

@@ -4,7 +4,7 @@ import com.google.gson.JsonObject;
 import com.intellij.execution.RunManager;
 import com.intellij.openapi.application.ApplicationInfo;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
@@ -56,7 +56,7 @@ class ProjectTools extends AbstractToolHandler {
 
     @SuppressWarnings("unused") // ToolHandler interface requires JsonObject parameter
     private String getProjectInfo(JsonObject args) {
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             StringBuilder sb = new StringBuilder();
             String basePath = project.getBasePath();
             sb.append("Project: ").append(project.getName()).append("\n");

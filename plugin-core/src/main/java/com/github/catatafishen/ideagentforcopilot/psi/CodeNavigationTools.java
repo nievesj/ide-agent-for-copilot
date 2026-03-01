@@ -1,7 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
@@ -53,7 +54,7 @@ class CodeNavigationTools extends AbstractToolHandler {
     String listProjectFiles(JsonObject args) {
         String dir = args.has("directory") ? args.get("directory").getAsString() : "";
         String pattern = args.has("pattern") ? args.get("pattern").getAsString() : "";
-        return ReadAction.compute(() -> computeProjectFilesList(dir, pattern));
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> computeProjectFilesList(dir, pattern));
     }
 
     String computeProjectFilesList(String dir, String pattern) {
@@ -87,7 +88,7 @@ class CodeNavigationTools extends AbstractToolHandler {
             return ToolUtils.ERROR_PATH_REQUIRED;
         String pathStr = args.get("path").getAsString();
 
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
@@ -315,7 +316,7 @@ class CodeNavigationTools extends AbstractToolHandler {
         String query = args.has(PARAM_QUERY) ? args.get(PARAM_QUERY).getAsString() : "";
         String typeFilter = args.has("type") ? args.get("type").getAsString() : "";
 
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             if (query.isEmpty() || "*".equals(query)) {
                 return searchSymbolsWildcard(typeFilter);
             }
@@ -427,7 +428,7 @@ class CodeNavigationTools extends AbstractToolHandler {
         String symbol = args.get(PARAM_SYMBOL).getAsString();
         String filePattern = args.has(PARAM_FILE_PATTERN) ? args.get(PARAM_FILE_PATTERN).getAsString() : "";
 
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             List<String> results = new ArrayList<>();
             String basePath = project.getBasePath();
             GlobalSearchScope scope = GlobalSearchScope.projectScope(project);
@@ -553,7 +554,7 @@ class CodeNavigationTools extends AbstractToolHandler {
         boolean caseSensitive = !args.has("case_sensitive") || args.get("case_sensitive").getAsBoolean();
         int maxResults = args.has("max_results") ? args.get("max_results").getAsInt() : 100;
 
-        return ReadAction.compute(() -> performSearch(query, filePattern, isRegex, caseSensitive, maxResults));
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> performSearch(query, filePattern, isRegex, caseSensitive, maxResults));
     }
 
     private String performSearch(String query, String filePattern, boolean isRegex, boolean caseSensitive, int maxResults) {

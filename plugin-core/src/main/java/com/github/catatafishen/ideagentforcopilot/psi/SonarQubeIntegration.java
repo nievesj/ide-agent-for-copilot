@@ -530,7 +530,7 @@ final class SonarQubeIntegration {
             if (getRangeMethod != null) {
                 Object rangeObj = getRangeMethod.invoke(finding);
                 if (rangeObj instanceof com.intellij.openapi.editor.RangeMarker rm && rm.isValid()) {
-                    return com.intellij.openapi.application.ReadAction.compute(() ->
+                    return com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction((com.intellij.openapi.util.Computable<Integer>) () ->
                         rm.getDocument().getLineNumber(rm.getStartOffset()) + 1
                     );
                 }

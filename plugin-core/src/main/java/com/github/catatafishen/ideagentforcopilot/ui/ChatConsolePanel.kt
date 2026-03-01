@@ -2,7 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.ui
 
 import com.intellij.ide.ui.LafManagerListener
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ReadAction
+
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
@@ -960,7 +960,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     private fun findProjectFileByName(name: String): String? = try {
         var result: String? = null
-        ReadAction.run<Throwable> {
+        ApplicationManager.getApplication().runReadAction {
             val files = FilenameIndex.getVirtualFilesByName(name, GlobalSearchScope.projectScope(project))
             if (files.size == 1) result = files.first().path
         }

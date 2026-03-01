@@ -2,7 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.psi;
 
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -67,7 +67,7 @@ class RefactoringTools extends AbstractToolHandler {
     // ---- Class Resolution ----
 
     ClassInfo resolveClass(String className) {
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<ClassInfo>) () -> {
             String searchName = className.contains(".") ? className.substring(className.lastIndexOf('.') + 1) : className;
             List<ClassInfo> matches = new ArrayList<>();
             PsiSearchHelper.getInstance(project).processElementsWithWord(
@@ -112,7 +112,7 @@ class RefactoringTools extends AbstractToolHandler {
         if (symbol.isEmpty())
             return "Error: 'symbol' parameter required (e.g. java.util.List, com.google.gson.Gson.fromJson)";
 
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             try {
                 GlobalSearchScope scope = GlobalSearchScope.allScope(project);
                 String[] parts = splitSymbolParts(symbol);
@@ -441,7 +441,7 @@ class RefactoringTools extends AbstractToolHandler {
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
         int targetLine = args.get("line").getAsInt();
 
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
@@ -587,7 +587,7 @@ class RefactoringTools extends AbstractToolHandler {
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
         String direction = args.has("direction") ? args.get("direction").getAsString() : "both";
 
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             com.intellij.psi.PsiClass psiClass = resolveClassByName(symbolName);
             if (psiClass == null) {
                 return "Error: Class/interface '" + symbolName + "' not found. " +

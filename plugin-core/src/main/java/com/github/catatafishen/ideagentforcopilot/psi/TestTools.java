@@ -7,7 +7,8 @@ import com.intellij.execution.configurations.RunConfiguration;
 import com.intellij.execution.executors.DefaultRunExecutor;
 import com.intellij.execution.process.ProcessHandler;
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -111,7 +112,7 @@ class TestTools extends AbstractToolHandler {
     private String listTests(JsonObject args) {
         String filePattern = args.has(PARAM_FILE_PATTERN) ? args.get(PARAM_FILE_PATTERN).getAsString() : "";
 
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             List<String> tests = new ArrayList<>();
             String basePath = project.getBasePath();
             ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
@@ -353,7 +354,7 @@ class TestTools extends AbstractToolHandler {
             if (junitType == null) return null;
 
             // Resolve matching test classes from the project index
-            List<String> matchingClasses = ReadAction.compute(() -> {
+            List<String> matchingClasses = ApplicationManager.getApplication().runReadAction((Computable<List<String>>) () -> {
                 List<String> classes = new ArrayList<>();
                 ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
                 fileIndex.iterateContent(vf -> {
