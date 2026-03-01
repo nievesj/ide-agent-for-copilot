@@ -927,13 +927,11 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             val totalTools = sessionTotalToolCalls + if (isRunning) toolCallCount else 0
             toolsLabel.text = if (totalTools > 0) "\u2022 $totalTools tools" else ""
             toolsLabel.isVisible = totalTools > 0
-            // Session requests: billing API only (no fallback to estimated turn totals)
-            val billingReqs =
-                if (billing.billingCycleStartUsed >= 0 && billing.lastBillingUsed >= billing.billingCycleStartUsed)
-                    billing.lastBillingUsed - billing.billingCycleStartUsed else 0
-            requestsLabel.text = if (billingReqs > 0) "\u2022 $billingReqs req" else "\u2022 0 req"
+            // Session requests: local counter (no API polling needed)
+            val sessionReqs = billing.localSessionRequests
+            requestsLabel.text = if (sessionReqs > 0) "\u2022 $sessionReqs req" else "\u2022 0 req"
             requestsLabel.isVisible = true
-            toolTipText = "Session totals (reqs from GitHub billing API) · Click for turn"
+            toolTipText = "Session totals · Click for turn"
             doneIcon.text = "\u2211"
         }
 
@@ -1512,7 +1510,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         addTimelineEvent(EventType.RESPONSE_RECEIVED, "Response received")
         saveTurnStatistics(prompt, turnToolCallCount, turnModelId)
         saveConversation()
-        billing.loadBillingData(startPolling = true)
+        billing.recordTurnCompleted()
 
         val lastResponse = consolePanel.getLastResponseText()
         val quickReplies = detectQuickReplies(lastResponse)
@@ -2066,6 +2064,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         currentSessionId = null
         conversationSummaryInjected = false
         billing.billingCycleStartUsed = -1
+        billing.resetLocalCounter()
         if (::processingTimerPanel.isInitialized) processingTimerPanel.resetSession()
         consolePanel.clear()
         consolePanel.showPlaceholder("New conversation started.")
@@ -2087,6 +2086,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         currentSessionId = null
         conversationSummaryInjected = false  // allow summary re-injection on next prompt
         billing.billingCycleStartUsed = -1
+        billing.resetLocalCounter()
         if (::processingTimerPanel.isInitialized) processingTimerPanel.resetSession()
         addTimelineEvent(EventType.SESSION_START, "New session started (history kept)")
         updateSessionInfo()

@@ -34,16 +34,18 @@ internal class BillingManager {
     var billingCycleStartUsed = -1
     var lastBillingUsed = 0
 
+    /** Local request counter — incremented on each turn completion. */
+    var localSessionRequests = 0
+        private set
+
+    /** Reset the local session counter (called on session reset). */
+    fun resetLocalCounter() {
+        localSessionRequests = 0
+    }
+
     // Animation state for usage indicator
     private var previousUsedCount = -1
     private var usageAnimationTimer: javax.swing.Timer? = null
-
-    // Post-turn polling: re-fetch billing every 60s until usage changes
-    @Volatile
-    private var billingPollFuture: java.util.concurrent.ScheduledFuture<*>? = null
-    private val pollExecutor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
-        Thread(r, "copilot-billing-poll").apply { isDaemon = true }
-    }
 
     // Usage display toggle and graph
     private enum class UsageDisplayMode { MONTHLY, SESSION }
@@ -72,9 +74,28 @@ internal class BillingManager {
         }
     }
 
-    fun loadBillingData(startPolling: Boolean = false) {
-        LOG.info("loadBillingData called (startPolling=$startPolling)")
-        if (startPolling) startPostTurnPolling()
+    /**
+     * Records a turn completion — increments the local request counter
+     * and updates the UI immediately (no API call needed).
+     */
+    fun recordTurnCompleted() {
+        localSessionRequests++
+        LOG.info("recordTurnCompleted: localSessionRequests=$localSessionRequests")
+        val estimated = estimatedUsed()
+        val shouldAnimate = previousUsedCount >= 0 && estimated > previousUsedCount
+        previousUsedCount = estimated
+        SwingUtilities.invokeLater {
+            refreshUsageDisplay()
+            updateUsageGraph(estimated, lastBillingEntitlement, lastBillingUnlimited, lastBillingResetDate)
+            if (shouldAnimate) animateUsageChange()
+        }
+    }
+
+    /** Estimated total used = initial API value + locally counted requests. */
+    private fun estimatedUsed(): Int = lastBillingUsed + localSessionRequests
+
+    fun loadBillingData() {
+        LOG.info("loadBillingData called")
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 val ghCli = findGhCli() ?: run {
@@ -124,38 +145,6 @@ internal class BillingManager {
         }
     }
 
-    /**
-     * Polls billing API every 60s until the usage value changes from [lastBillingUsed].
-     * Cancels any previous poller first.
-     */
-    private fun startPostTurnPolling() {
-        billingPollFuture?.cancel(false)
-        val usageAtTurnEnd = lastBillingUsed
-        LOG.info("startPostTurnPolling: will poll every 60s until usage changes from $usageAtTurnEnd")
-        billingPollFuture = pollExecutor.scheduleAtFixedRate({
-            try {
-                LOG.info("Billing poll tick (waiting for usage to change from $usageAtTurnEnd)")
-                val ghCli = findGhCli() ?: return@scheduleAtFixedRate
-                if (!isGhAuthenticated(ghCli)) return@scheduleAtFixedRate
-                val obj = fetchCopilotUserData(ghCli) ?: return@scheduleAtFixedRate
-                val snapshots = obj.getAsJsonObject("quota_snapshots") ?: return@scheduleAtFixedRate
-                val premium = snapshots.getAsJsonObject("premium_interactions") ?: return@scheduleAtFixedRate
-
-                displayBillingQuota(premium, obj)
-
-                val entitlement = premium["entitlement"]?.asInt ?: 0
-                val remaining = premium["remaining"]?.asInt ?: 0
-                val currentUsed = entitlement - remaining
-                if (currentUsed != usageAtTurnEnd) {
-                    LOG.info("Billing poll: usage changed ($usageAtTurnEnd -> $currentUsed), stopping poll")
-                    billingPollFuture?.cancel(false)
-                }
-            } catch (e: Exception) {
-                LOG.warn("Billing poll failed", e)
-            }
-        }, 60, 60, java.util.concurrent.TimeUnit.SECONDS)
-    }
-
     private fun updateUsageUi(text: String, tooltip: String, cost: String = "") {
         SwingUtilities.invokeLater {
             usageLabel.text = text
@@ -190,16 +179,11 @@ internal class BillingManager {
         val unlimited = premium["unlimited"]?.asBoolean ?: false
         val overagePermitted = premium["overage_permitted"]?.asBoolean ?: false
         val resetDate = obj["quota_reset_date"]?.asString ?: ""
-        val used = entitlement - remaining
-        LOG.info("displayBillingQuota: used=$used (entitlement=$entitlement - remaining=$remaining), unlimited=$unlimited, resetDate=$resetDate, billingCycleStartUsed=$billingCycleStartUsed, previousUsedCount=$previousUsedCount")
-        val shouldAnimate = previousUsedCount >= 0 && used > previousUsedCount
-        previousUsedCount = used
+        val apiUsed = entitlement - remaining
+        LOG.info("displayBillingQuota: apiUsed=$apiUsed, localSessionRequests=$localSessionRequests, entitlement=$entitlement, unlimited=$unlimited, resetDate=$resetDate")
 
-        // Track session start baseline
-        if (billingCycleStartUsed < 0) billingCycleStartUsed = used
-
-        // Store latest billing data for toggle
-        lastBillingUsed = used
+        // Store the API baseline (before local counting)
+        lastBillingUsed = apiUsed
         lastBillingEntitlement = entitlement
         lastBillingUnlimited = unlimited
         lastBillingRemaining = remaining
@@ -207,16 +191,24 @@ internal class BillingManager {
         lastBillingResetDate = resetDate
         lastPolledAt = LocalTime.now()
 
+        // Track session start baseline
+        if (billingCycleStartUsed < 0) billingCycleStartUsed = apiUsed
+
+        val estimated = estimatedUsed()
+        val shouldAnimate = previousUsedCount >= 0 && estimated > previousUsedCount
+        previousUsedCount = estimated
+
         SwingUtilities.invokeLater {
             refreshUsageDisplay()
-            updateUsageGraph(used, entitlement, unlimited, resetDate)
+            updateUsageGraph(estimated, entitlement, unlimited, resetDate)
             if (shouldAnimate) animateUsageChange()
         }
     }
 
     /** Refreshes usage label and cost label based on current display mode. */
     fun refreshUsageDisplay() {
-        val polledSuffix = lastPolledAt?.let { " \u2022 Polled ${it.format(polledTimeFormat)}" } ?: ""
+        val polledSuffix = lastPolledAt?.let { " \u2022 Initial ${it.format(polledTimeFormat)}" } ?: ""
+        val estimated = estimatedUsed()
         when (usageDisplayMode) {
             UsageDisplayMode.MONTHLY -> {
                 if (lastBillingUnlimited) {
@@ -224,16 +216,16 @@ internal class BillingManager {
                     usageLabel.toolTipText = "Click to show session usage$polledSuffix"
                     costLabel.text = ""
                 } else {
-                    usageLabel.text = "$lastBillingUsed / $lastBillingEntitlement"
+                    usageLabel.text = "$estimated / $lastBillingEntitlement"
                     usageLabel.toolTipText =
-                        "Premium requests this cycle \u2022 Click to show session usage$polledSuffix"
-                    updateCostLabel(lastBillingRemaining, lastBillingOveragePermitted)
+                        "Premium requests this cycle ($localSessionRequests this session) \u2022 Click to show session usage$polledSuffix"
+                    val estimatedRemaining = lastBillingRemaining - localSessionRequests
+                    updateCostLabel(estimatedRemaining, lastBillingOveragePermitted)
                 }
             }
 
             UsageDisplayMode.SESSION -> {
-                val sessionUsed = lastBillingUsed - billingCycleStartUsed.coerceAtLeast(0)
-                usageLabel.text = "$sessionUsed session"
+                usageLabel.text = "$localSessionRequests session"
                 usageLabel.toolTipText = "Premium requests this session \u2022 Click to show monthly usage$polledSuffix"
                 costLabel.text = ""
             }
