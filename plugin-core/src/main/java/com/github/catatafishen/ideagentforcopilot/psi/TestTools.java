@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.psi;
 import com.google.gson.JsonObject;
 import com.intellij.execution.ExecutionManager;
 import com.intellij.execution.RunManager;
-import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.execution.configurations.RunConfiguration;
 import com.intellij.execution.executors.DefaultRunExecutor;
 import com.intellij.execution.process.ProcessHandler;
@@ -14,9 +13,7 @@ import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.roots.ProjectFileIndex;
-import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -46,8 +43,7 @@ class TestTools extends AbstractToolHandler {
     private static final String PARAM_MESSAGE = "message";
     private static final String TEST_TYPE_METHOD = "method";
     private static final String TEST_TYPE_CLASS = "class";
-    private static final String OS_NAME_PROPERTY = "os.name";
-    private static final String JAVA_HOME_ENV = "JAVA_HOME";
+    private static final String TEST_TYPE_PATTERN = "pattern";
     private static final String ERROR_NO_PROJECT_PATH = "No project base path";
     private static final String JUNIT_TYPE_ID = "junit";
 
@@ -176,42 +172,19 @@ class TestTools extends AbstractToolHandler {
         String configResult = tryRunTestConfig(target);
         if (configResult != null) return configResult;
 
+        // Wildcard patterns → try JUnit pattern config first, then Gradle run config
+        if (target.contains("*")) {
+            String patternResult = tryRunJUnitPattern(target);
+            if (patternResult != null) return patternResult;
+
+            return runTestsViaGradleConfig(target, module);
+        }
+
+        // Specific class/method → native JUnit runner, then Gradle run config fallback
         String junitResult = tryRunJUnitNatively(target);
         if (junitResult != null) return junitResult;
 
-        return runTestsViaGradle(target, module, basePath);
-    }
-
-    private String runTestsViaGradle(String target, String module, String basePath) throws Exception {
-        String gradlew = basePath + (System.getProperty(OS_NAME_PROPERTY).contains("Win")
-            ? "\\gradlew.bat" : "/gradlew");
-        String taskPrefix = module.isEmpty() ? "" : ":" + module + ":";
-        String javaHome = getProjectJavaHome();
-
-        GeneralCommandLine cmd = new GeneralCommandLine();
-        cmd.setExePath(gradlew);
-        cmd.addParameters(taskPrefix + "test", "--tests", target);
-        cmd.setWorkDirectory(basePath);
-        if (javaHome != null) {
-            cmd.withEnvironment(JAVA_HOME_ENV, javaHome);
-        }
-
-        ProcessResult result = executeInRunPanel(cmd, "Test: " + target, 120);
-
-        if (result.timedOut()) {
-            return "Tests timed out after 120 seconds. Partial output:\n"
-                + ToolUtils.truncateOutput(result.output());
-        }
-
-        if (result.exitCode() == 0) {
-            String xmlResults = parseJunitXmlResults(basePath, module);
-            if (!xmlResults.isEmpty()) {
-                return xmlResults;
-            }
-        }
-
-        return (result.exitCode() == 0 ? "\u2705 Tests PASSED" : "\u274C Tests FAILED (exit code " + result.exitCode() + ")")
-            + "\n\n" + ToolUtils.truncateOutput(result.output());
+        return runTestsViaGradleConfig(target, module);
     }
 
     private String getTestResults(JsonObject args) {
@@ -287,8 +260,6 @@ class TestTools extends AbstractToolHandler {
             var junitType = findJUnitConfigurationType();
             if (junitType == null) return null;
 
-            if (target.contains("*")) return null;
-
             String[] parsed = parseTestTarget(target);
             String testClass = parsed[0];
             String testMethod = parsed[1];
@@ -309,8 +280,8 @@ class TestTools extends AbstractToolHandler {
             connection.subscribe(ExecutionManager.EXECUTION_TOPIC, new com.intellij.execution.ExecutionListener() {
                 @Override
                 public void processStarted(@NotNull String executorId,
-                                            @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
-                                            @NotNull ProcessHandler handler) {
+                                           @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
+                                           @NotNull ProcessHandler handler) {
                     if (env.getRunnerAndConfigurationSettings() != null
                         && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
                         handlerFuture.complete(handler);
@@ -320,7 +291,7 @@ class TestTools extends AbstractToolHandler {
 
                 @Override
                 public void processNotStarted(@NotNull String executorId,
-                                               @NotNull com.intellij.execution.runners.ExecutionEnvironment env) {
+                                              @NotNull com.intellij.execution.runners.ExecutionEnvironment env) {
                     if (env.getRunnerAndConfigurationSettings() != null
                         && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
                         handlerFuture.complete(null);
@@ -390,6 +361,306 @@ class TestTools extends AbstractToolHandler {
         }
     }
 
+    /**
+     * Resolve wildcard target to matching test class FQNs and create a JUnit "pattern" config.
+     */
+    private String tryRunJUnitPattern(String target) {
+        try {
+            var junitType = findJUnitConfigurationType();
+            if (junitType == null) return null;
+
+            // Resolve matching test classes from the project index
+            List<String> matchingClasses = ReadAction.compute(() -> {
+                List<String> classes = new ArrayList<>();
+                ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
+                fileIndex.iterateContent(vf -> {
+                    if (!fileIndex.isInTestSourceContent(vf)) return true;
+                    if (vf.isDirectory()) return true;
+                    String name = vf.getName();
+                    if (!name.endsWith(ToolUtils.JAVA_EXTENSION) && !name.endsWith(".kt")) return true;
+                    String simpleName = name.substring(0, name.lastIndexOf('.'));
+                    if (ToolUtils.doesNotMatchGlob(simpleName, target)) return true;
+
+                    PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+                    if (psiFile == null) return true;
+                    // Extract FQN from the PSI file
+                    String fqn = extractClassFqn(psiFile, simpleName);
+                    if (fqn != null) classes.add(fqn);
+                    return classes.size() < 200;
+                });
+                return classes;
+            });
+
+            if (matchingClasses.isEmpty()) return null;
+
+            String configName = "Test: " + target + " (" + matchingClasses.size() + " classes)";
+
+            CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
+            var connection = project.getMessageBus().connect();
+            connection.subscribe(ExecutionManager.EXECUTION_TOPIC, new com.intellij.execution.ExecutionListener() {
+                @Override
+                public void processStarted(@NotNull String executorId,
+                                            @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
+                                            @NotNull ProcessHandler handler) {
+                    if (env.getRunnerAndConfigurationSettings() != null
+                        && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
+                        handlerFuture.complete(handler);
+                        connection.disconnect();
+                    }
+                }
+
+                @Override
+                public void processNotStarted(@NotNull String executorId,
+                                              @NotNull com.intellij.execution.runners.ExecutionEnvironment env) {
+                    if (env.getRunnerAndConfigurationSettings() != null
+                        && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
+                        handlerFuture.complete(null);
+                        connection.disconnect();
+                    }
+                }
+            });
+
+            CompletableFuture<String> launchFuture = new CompletableFuture<>();
+            EdtUtil.invokeLater(() -> {
+                try {
+                    RunManager runManager = RunManager.getInstance(project);
+                    var factory = junitType.getConfigurationFactories()[0];
+                    var settings = runManager.createConfiguration(configName, factory);
+                    RunConfiguration config = settings.getConfiguration();
+
+                    // Configure as pattern-based test
+                    var getData = config.getClass().getMethod("getPersistentData");
+                    Object data = getData.invoke(config);
+                    data.getClass().getField("TEST_OBJECT").set(data, TEST_TYPE_PATTERN);
+                    data.getClass().getField("PATTERNS").set(data,
+                        new java.util.LinkedHashSet<>(matchingClasses));
+
+                    settings.setTemporary(true);
+                    runManager.addConfiguration(settings);
+                    runManager.setSelectedConfiguration(settings);
+
+                    var executor = DefaultRunExecutor.getRunExecutorInstance();
+                    var envBuilder = ExecutionEnvironmentBuilder.createOrNull(executor, settings);
+                    if (envBuilder == null) {
+                        launchFuture.complete("Error: Cannot create execution environment");
+                        return;
+                    }
+                    ExecutionManager.getInstance(project).restartRunProfile(envBuilder.build());
+                    launchFuture.complete(null);
+                } catch (Exception e) {
+                    LOG.warn("Failed to run JUnit pattern config", e);
+                    launchFuture.complete("launch_failed");
+                }
+            });
+
+            String launchError = launchFuture.get(10, TimeUnit.SECONDS);
+            if (launchError != null) {
+                connection.disconnect();
+                return "launch_failed".equals(launchError) ? null : launchError;
+            }
+
+            ProcessHandler handler;
+            try {
+                handler = handlerFuture.get(15, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                connection.disconnect();
+                return "Started tests via IntelliJ JUnit runner: " + configName
+                    + "\nCould not capture process handle. Use get_test_results to check results.";
+            }
+
+            if (handler == null) {
+                return "Error: Test process failed to start for " + configName;
+            }
+
+            if (!handler.waitFor(120_000)) {
+                return "Tests timed out after 120 seconds: " + configName;
+            }
+
+            int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
+            String basePath = project.getBasePath();
+            if (basePath != null) {
+                String xmlResults = parseJunitXmlResults(basePath, "");
+                if (!xmlResults.isEmpty()) return xmlResults;
+            }
+
+            return (exitCode == 0 ? "\u2705 Tests PASSED" : "\u274C Tests FAILED (exit code " + exitCode + ")")
+                + " \u2014 " + configName;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("tryRunJUnitPattern failed", e);
+            return null;
+        } catch (Exception e) {
+            LOG.warn("tryRunJUnitPattern failed", e);
+            return null;
+        }
+    }
+
+    private String extractClassFqn(PsiFile psiFile, String simpleName) {
+        try {
+            // Try to get the package from the file
+            var getPackageName = psiFile.getClass().getMethod("getPackageName");
+            String pkg = (String) getPackageName.invoke(psiFile);
+            return pkg != null && !pkg.isEmpty() ? pkg + "." + simpleName : simpleName;
+        } catch (NoSuchMethodException e) {
+            // Kotlin files or files without getPackageName — try text-based extraction
+            String text = psiFile.getText();
+            var matcher = java.util.regex.Pattern.compile("^package\\s+([\\w.]+)").matcher(text);
+            if (matcher.find()) {
+                return matcher.group(1) + "." + simpleName;
+            }
+            return simpleName;
+        } catch (Exception e) {
+            return simpleName;
+        }
+    }
+
+    /**
+     * Create and run a Gradle run configuration for tests (instead of shelling out).
+     * This gives proper IntelliJ Run panel integration with test tree UI.
+     */
+    private String runTestsViaGradleConfig(String target, String module) {
+        try {
+            String taskPrefix = module.isEmpty() ? "" : ":" + module + ":";
+            String configName = "Gradle Test: " + target;
+
+            CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
+            var connection = project.getMessageBus().connect();
+            connection.subscribe(ExecutionManager.EXECUTION_TOPIC, new com.intellij.execution.ExecutionListener() {
+                @Override
+                public void processStarted(@NotNull String executorId,
+                                            @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
+                                            @NotNull ProcessHandler handler) {
+                    if (env.getRunnerAndConfigurationSettings() != null
+                        && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
+                        handlerFuture.complete(handler);
+                        connection.disconnect();
+                    }
+                }
+
+                @Override
+                public void processNotStarted(@NotNull String executorId,
+                                              @NotNull com.intellij.execution.runners.ExecutionEnvironment env) {
+                    if (env.getRunnerAndConfigurationSettings() != null
+                        && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
+                        handlerFuture.complete(null);
+                        connection.disconnect();
+                    }
+                }
+            });
+
+            CompletableFuture<String> launchFuture = new CompletableFuture<>();
+            EdtUtil.invokeLater(() -> {
+                try {
+                    String error = createAndRunGradleTestConfig(configName, taskPrefix, target);
+                    launchFuture.complete(error);
+                } catch (Exception e) {
+                    LOG.warn("Failed to create Gradle test config", e);
+                    launchFuture.complete("launch_failed");
+                }
+            });
+
+            String launchError = launchFuture.get(10, TimeUnit.SECONDS);
+            if (launchError != null) {
+                connection.disconnect();
+                if ("launch_failed".equals(launchError)) {
+                    return "Error: Failed to create Gradle test run configuration for: " + target;
+                }
+                return launchError;
+            }
+
+            ProcessHandler handler;
+            try {
+                handler = handlerFuture.get(15, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                connection.disconnect();
+                return "Started tests via Gradle run configuration: " + configName
+                    + "\nCould not capture process handle. Use get_test_results to check results.";
+            }
+
+            if (handler == null) {
+                return "Error: Test process failed to start for " + configName;
+            }
+
+            if (!handler.waitFor(120_000)) {
+                return "Tests timed out after 120 seconds: " + configName;
+            }
+
+            int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
+            String basePath = project.getBasePath();
+            if (basePath != null) {
+                String xmlResults = parseJunitXmlResults(basePath, module);
+                if (!xmlResults.isEmpty()) return xmlResults;
+            }
+
+            return (exitCode == 0 ? "\u2705 Tests PASSED" : "\u274C Tests FAILED (exit code " + exitCode + ")")
+                + " \u2014 " + configName;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Error: Test execution interrupted";
+        } catch (Exception e) {
+            LOG.warn("runTestsViaGradleConfig failed", e);
+            return "Error: Failed to run tests via Gradle config: " + e.getMessage();
+        }
+    }
+
+    private String createAndRunGradleTestConfig(String configName, String taskPrefix, String target) {
+        try {
+            RunManager runManager = RunManager.getInstance(project);
+
+            // Find Gradle configuration type
+            com.intellij.execution.configurations.ConfigurationType gradleType = null;
+            for (var ct : com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()) {
+                if ("GradleRunConfiguration".equals(ct.getId()) || ct.getDisplayName().contains("Gradle")) {
+                    gradleType = ct;
+                    break;
+                }
+            }
+
+            if (gradleType == null) {
+                return "Error: Gradle run configuration type not available";
+            }
+
+            var factory = gradleType.getConfigurationFactories()[0];
+            var settings = runManager.createConfiguration(configName, factory);
+            RunConfiguration config = settings.getConfiguration();
+
+            // Configure Gradle settings via reflection
+            var getSettings = config.getClass().getMethod("getSettings");
+            Object gradleSettings = getSettings.invoke(config);
+
+            // Set task names
+            var setTaskNames = gradleSettings.getClass().getMethod("setTaskNames", List.class);
+            setTaskNames.invoke(gradleSettings, List.of(taskPrefix + "test"));
+
+            // Set script parameters (--tests pattern)
+            var setScriptParameters = gradleSettings.getClass().getMethod("setScriptParameters", String.class);
+            setScriptParameters.invoke(gradleSettings, "--tests " + target);
+
+            // Set external project path
+            String basePath = project.getBasePath();
+            if (basePath != null) {
+                var setExternalProjectPath = gradleSettings.getClass().getMethod("setExternalProjectPath", String.class);
+                setExternalProjectPath.invoke(gradleSettings, basePath);
+            }
+
+            settings.setTemporary(true);
+            runManager.addConfiguration(settings);
+            runManager.setSelectedConfiguration(settings);
+
+            var executor = DefaultRunExecutor.getRunExecutorInstance();
+            var envBuilder = ExecutionEnvironmentBuilder.createOrNull(executor, settings);
+            if (envBuilder == null) {
+                return "Error: Cannot create execution environment for Gradle test";
+            }
+
+            ExecutionManager.getInstance(project).restartRunProfile(envBuilder.build());
+            return null;
+        } catch (Exception e) {
+            LOG.warn("createAndRunGradleTestConfig failed", e);
+            return "launch_failed";
+        }
+    }
+
     private String[] parseTestTarget(String target) {
         String testClass = target;
         String testMethod = null;
@@ -456,19 +727,6 @@ class TestTools extends AbstractToolHandler {
                 // Method not available in this version
             }
         }
-    }
-
-    private String getProjectJavaHome() {
-        try {
-            Sdk sdk = ProjectRootManager.getInstance(project).getProjectSdk();
-            if (sdk != null && sdk.getHomePath() != null) {
-                return sdk.getHomePath();
-            }
-        } catch (Exception ignored) {
-            // SDK access errors are non-fatal
-        }
-        // Don't fall back to IDE's JBR — let the system JAVA_HOME take effect
-        return System.getenv(JAVA_HOME_ENV);
     }
 
     private static JsonObject createJsonWithName(String name) {
