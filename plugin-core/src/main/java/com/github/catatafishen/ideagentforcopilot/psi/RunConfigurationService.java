@@ -113,6 +113,14 @@ public final class RunConfigurationService {
         String name = args.get("name").getAsString();
         String type = args.get("type").getAsString().toLowerCase();
 
+        // Block creating Gradle configs with test arguments — use run_tests instead
+        if ("gradle".equals(type) && args.has("program_args")) {
+            String progArgs = args.get("program_args").getAsString().toLowerCase();
+            if (progArgs.contains("test")) {
+                return "Error: Use the run_tests tool to run tests, not create_run_configuration with Gradle test tasks.";
+            }
+        }
+
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
 
         EdtUtil.invokeLater(() -> {

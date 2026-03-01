@@ -6,6 +6,7 @@ import com.intellij.execution.RunManager;
 import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.execution.configurations.RunConfiguration;
 import com.intellij.execution.executors.DefaultRunExecutor;
+import com.intellij.execution.process.ProcessHandler;
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
@@ -295,23 +296,90 @@ class TestTools extends AbstractToolHandler {
             RefactoringTools.ClassInfo classInfo = refactoringTools.resolveClass(testClass);
             if (classInfo.fqn() == null) return null;
 
-            CompletableFuture<String> resultFuture = new CompletableFuture<>();
             final String resolvedClass = classInfo.fqn();
             final String resolvedMethod = testMethod;
             final Module resolvedModule = classInfo.module();
+            String simpleName = resolvedClass.substring(resolvedClass.lastIndexOf('.') + 1);
+            String configName = "Test: " + (resolvedMethod != null
+                ? simpleName + "." + resolvedMethod : simpleName);
 
-            EdtUtil.invokeLater(() -> {
-                try {
-                    String result = createAndRunJUnitConfig(
-                        junitType, resolvedClass, resolvedMethod, resolvedModule);
-                    resultFuture.complete(result);
-                } catch (Exception e) {
-                    LOG.warn("Failed to run JUnit natively, will fall back to Gradle", e);
-                    resultFuture.complete(null);
+            // Subscribe to execution events before launching (on any thread)
+            CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
+            var connection = project.getMessageBus().connect();
+            connection.subscribe(ExecutionManager.EXECUTION_TOPIC, new com.intellij.execution.ExecutionListener() {
+                @Override
+                public void processStarted(@NotNull String executorId,
+                                            @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
+                                            @NotNull ProcessHandler handler) {
+                    if (env.getRunnerAndConfigurationSettings() != null
+                        && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
+                        handlerFuture.complete(handler);
+                        connection.disconnect();
+                    }
+                }
+
+                @Override
+                public void processNotStarted(@NotNull String executorId,
+                                               @NotNull com.intellij.execution.runners.ExecutionEnvironment env) {
+                    if (env.getRunnerAndConfigurationSettings() != null
+                        && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
+                        handlerFuture.complete(null);
+                        connection.disconnect();
+                    }
                 }
             });
 
-            return resultFuture.get(10, TimeUnit.SECONDS);
+            // Launch on EDT (non-blocking)
+            CompletableFuture<String> launchFuture = new CompletableFuture<>();
+            EdtUtil.invokeLater(() -> {
+                try {
+                    String error = launchJUnitConfig(
+                        junitType, resolvedClass, resolvedMethod, resolvedModule, configName);
+                    launchFuture.complete(error);
+                } catch (Exception e) {
+                    LOG.warn("Failed to run JUnit natively, will fall back to Gradle", e);
+                    launchFuture.complete("launch_failed");
+                }
+            });
+
+            String launchError = launchFuture.get(10, TimeUnit.SECONDS);
+            if (launchError != null) {
+                connection.disconnect();
+                return "launch_failed".equals(launchError) ? null : launchError;
+            }
+
+            // Wait for the process to start (up to 15s) — off EDT
+            ProcessHandler handler;
+            try {
+                handler = handlerFuture.get(15, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                connection.disconnect();
+                return "Started tests via IntelliJ JUnit runner: " + configName
+                    + "\nCould not capture process handle. Use get_test_results to check results.";
+            }
+
+            if (handler == null) {
+                return "Error: Test process failed to start for " + configName;
+            }
+
+            // Wait for the process to finish (up to 120s) — off EDT
+            if (!handler.waitFor(120_000)) {
+                return "Tests timed out after 120 seconds: " + configName;
+            }
+
+            int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
+
+            // Try to read XML results
+            String basePath = project.getBasePath();
+            if (basePath != null) {
+                String xmlResults = parseJunitXmlResults(basePath, "");
+                if (!xmlResults.isEmpty()) {
+                    return xmlResults;
+                }
+            }
+
+            return (exitCode == 0 ? "\u2705 Tests PASSED" : "\u274C Tests FAILED (exit code " + exitCode + ")")
+                + " — " + configName;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.warn("tryRunJUnitNatively failed", e);
@@ -337,14 +405,15 @@ class TestTools extends AbstractToolHandler {
         return new String[]{testClass, testMethod};
     }
 
-    private String createAndRunJUnitConfig(
+    /**
+     * EDT-only: create the JUnit config and launch it. Returns null on success, error string on failure.
+     */
+    private String launchJUnitConfig(
         com.intellij.execution.configurations.ConfigurationType junitType,
-        String resolvedClass, String resolvedMethod, Module resolvedModule) throws Exception {
+        String resolvedClass, String resolvedMethod, Module resolvedModule,
+        String configName) throws Exception {
         RunManager runManager = RunManager.getInstance(project);
         var factory = junitType.getConfigurationFactories()[0];
-        String simpleName = resolvedClass.substring(resolvedClass.lastIndexOf('.') + 1);
-        String configName = "Test: " + (resolvedMethod != null
-            ? simpleName + "." + resolvedMethod : simpleName);
         var settings = runManager.createConfiguration(configName, factory);
         RunConfiguration config = settings.getConfiguration();
 
@@ -362,9 +431,7 @@ class TestTools extends AbstractToolHandler {
 
         var env = envBuilder.build();
         ExecutionManager.getInstance(project).restartRunProfile(env);
-        return "Started tests via IntelliJ JUnit runner: " + configName
-            + "\nResults will appear in the IntelliJ Test Runner panel."
-            + "\nUse get_test_results to check results after completion.";
+        return null;
     }
 
     @SuppressWarnings("java:S3011")
