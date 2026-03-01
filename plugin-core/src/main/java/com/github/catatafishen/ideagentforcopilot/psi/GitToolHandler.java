@@ -331,6 +331,21 @@ final class GitToolHandler {
         };
     }
 
+    String gitRevert(JsonObject args) throws Exception {
+        if (!args.has(PARAM_COMMIT)) {
+            return "Error: 'commit' parameter is required";
+        }
+        List<String> gitArgs = new ArrayList<>(List.of("revert"));
+        if (args.has("no_commit") && args.get("no_commit").getAsBoolean()) {
+            gitArgs.add("--no-commit");
+        }
+        if (args.has("no_edit") && args.get("no_edit").getAsBoolean()) {
+            gitArgs.add("--no-edit");
+        }
+        gitArgs.add(args.get(PARAM_COMMIT).getAsString());
+        return runGit(gitArgs.toArray(new String[0]));
+    }
+
     String gitShow(JsonObject args) throws Exception {
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("show");

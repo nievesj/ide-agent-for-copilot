@@ -487,6 +487,14 @@ public class McpServer {
             ),
             List.of()));
 
+        addIfEnabled.accept(buildTool("git_revert", "Git Revert",
+            Map.of(
+                "commit", Map.of("type", "string", "description", "Commit SHA to revert"),
+                "no_commit", Map.of("type", "boolean", "description", "If true, revert changes to working tree without creating a commit"),
+                "no_edit", Map.of("type", "boolean", "description", "If true, use the default commit message without editing")
+            ),
+            List.of("commit")));
+
         addIfEnabled.accept(buildTool("git_show", "Git Show",
             Map.of(
                 "ref", Map.of("type", "string", "description", "Commit SHA, branch, tag, or ref (default: HEAD)"),
