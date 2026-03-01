@@ -168,7 +168,7 @@ intellijPlatform {
         """.trimIndent()
 
         ideaVersion {
-            sinceBuild = "253"
+            sinceBuild = "251"
             untilBuild = "253.*"
         }
     }
