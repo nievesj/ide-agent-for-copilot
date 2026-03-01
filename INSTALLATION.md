@@ -12,10 +12,10 @@
 The plugin has been built and is located at:
 
 ```
-plugin-core\build\distributions\plugin-core-0.1.0-SNAPSHOT.zip
+plugin-core\build\distributions\plugin-core-0.2.0-<hash>.zip
 ```
 
-**Size:** ~1.9 MB  
+**Size:** ~2.7 MB  
 **Contents:** Plugin JAR, metadata, icon
 
 ---
@@ -29,7 +29,7 @@ plugin-core\build\distributions\plugin-core-0.1.0-SNAPSHOT.zip
 3. Navigate to **Plugins**
 4. Click the **⚙️ (gear icon)** → **Install Plugin from Disk...**
 5. Browse to `plugin-core\build\distributions\`
-6. Select `plugin-core-0.1.0-SNAPSHOT.zip`
+6. Select `plugin-core-0.2.0-<hash>.zip`
 7. Click **OK**
 8. Click **Restart IDE** when prompted
 
@@ -52,13 +52,13 @@ After restart:
     - Status should be **✓ Enabled**
 
 2. Check for tool window:
-    - Look for **"AgenticCopilot"** in the right sidebar
-    - Or go to **View → Tool Windows → AgenticCopilot**
+    - Look for **"IDE Agent for Copilot"** in the right sidebar
+    - Or go to **View → Tool Windows → IDE Agent for Copilot**
 
 3. Check IDE logs for errors:
     - **Help → Show Log in Explorer**
     - Open `idea.log`
-    - Search for "AgenticCopilot" or "Copilot"
+    - Search for "IDE Agent for Copilot" or "Copilot"
     - Look for any ERROR or WARN messages
 
 ---
@@ -67,7 +67,7 @@ After restart:
 
 #### 4.1 Open Tool Window
 
-1. Click **AgenticCopilot** in the right sidebar
+1. Click **IDE Agent for Copilot** in the right sidebar
 2. Tool window should open with a single-panel chat interface:
     - **Chat console** (conversation area)
     - **Toolbar** (model selector, mode toggle, settings)
@@ -101,7 +101,7 @@ Open **Find Action** (Ctrl+Shift+A or Cmd+Shift+A) and search for "copilot" to s
 
 ### Plugin Not Appearing in Tool Windows
 
-**Symptom:** No "AgenticCopilot" tool window visible
+**Symptom:** No "IDE Agent for Copilot" tool window visible
 
 **Solutions:**
 
@@ -122,7 +122,7 @@ Open **Find Action** (Ctrl+Shift+A or Cmd+Shift+A) and search for "copilot" to s
    ```
 
 2. **Check ZIP is not corrupted:**
-    - File size should be ~1.9 MB
+    - File size should be ~2.7 MB
     - Can extract with 7-Zip to verify contents
 
 3. **Check IDE version:**
@@ -186,33 +186,6 @@ For faster development cycles:
 
 Once installation is successful:
 
-### Phase 2 Tasks
-
-1. **Implement Prompt Tab:**
-    - Multi-line text editor with syntax highlighting
-    - Token counter
-    - Model selector dropdown
-    - "Run" button to send prompt
-
-2. **Implement Context Tab:**
-    - List view of context items
-    - "Add Selection" action in editor right-click menu
-    - Display file path + line range
-
-3. **Implement Plans Tab:**
-    - Tree view for hierarchical plans
-    - Status indicators (pending/running/complete/failed)
-
-4. **Implement Timeline Tab:**
-    - Chronological event list
-    - Expandable event details
-    - Auto-scroll to bottom
-
-5. **Implement Settings Tab:**
-    - Model dropdown (populated from ACP)
-    - Tool permission matrix
-    - Formatting options
-
 ### Testing Checklist
 
 - [ ] Tool window opens without errors
@@ -220,6 +193,7 @@ Once installation is successful:
 - [ ] Chat console and toolbar are visible
 - [ ] No errors in IDE logs
 - [ ] Prompt input works
+- [ ] Model selection works
 - [ ] IDE remains responsive
 
 ---
@@ -232,21 +206,9 @@ If you encounter issues not covered here:
 2. **Verify versions:**
     - IntelliJ IDEA: 2025.1+
     - Java: 21
+    - Copilot CLI installed and authenticated
 3. **Rebuild from scratch:**
-   ```powershell
-   .\gradlew.bat clean
-   .\gradlew.bat :plugin-core:buildPlugin --no-daemon -x buildSearchableOptions
+   ```bash
+   ./gradlew clean
+   ./gradlew :plugin-core:buildPlugin --no-daemon -x buildSearchableOptions
    ```
-
----
-
-## Known Limitations (v0.1.0-SNAPSHOT)
-
-- **No real Copilot SDK integration yet:** Uses mock responses in development mode
-- **No editor actions yet:** Right-click "Add to Context" not implemented
-- **No settings persistence:** Settings don't save between sessions
-- **No Git integration yet:** Commit/branch operations not implemented
-- **No code formatting hooks yet:** Format-on-save not implemented
-- **Sandbox IDE doesn't work:** `gradlew runIde` has known bug, use manual installation
-
-These will be addressed in Phase 2 development.

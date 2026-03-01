@@ -19,7 +19,7 @@
 .\gradlew.bat :plugin-core:clean :plugin-core:buildPlugin
 ```
 
-Output: `plugin-core/build/distributions/plugin-core-0.1.0-SNAPSHOT.zip`
+Output: `plugin-core/build/distributions/plugin-core-0.2.0-<hash>.zip`
 
 > **Note**: If `clean` fails due to locked sandbox files (Windows), omit `:plugin-core:clean`.
 
@@ -52,7 +52,7 @@ $ij = Get-Process -Name "idea64" -ErrorAction SilentlyContinue
 if ($ij) { Stop-Process -Id $ij.Id -Force; Start-Sleep -Seconds 5 }
 
 Remove-Item "$env:APPDATA\JetBrains\IntelliJIdea2025.3\plugins\plugin-core" -Recurse -Force -ErrorAction SilentlyContinue
-Expand-Archive "plugin-core\build\distributions\plugin-core-0.1.0-SNAPSHOT.zip" `
+Expand-Archive "plugin-core\build\distributions\plugin-core-*.zip" `
     "$env:APPDATA\JetBrains\IntelliJIdea2025.3\plugins" -Force
 
 Start-Process "$env:LOCALAPPDATA\JetBrains\IntelliJIdea2025.3\bin\idea64.exe"
@@ -188,7 +188,7 @@ This runs inside a single undoable command group on the EDT.
 | File                                                    | Purpose                                     |
 |---------------------------------------------------------|---------------------------------------------|
 | `plugin-core/.../bridge/CopilotAcpClient.java`          | ACP client, permission handler, retry logic |
-| `plugin-core/.../psi/PsiBridgeService.java`             | 55 MCP tools via IntelliJ APIs              |
+| `plugin-core/.../psi/PsiBridgeService.java`             | 66 MCP tools via IntelliJ APIs              |
 | `plugin-core/.../services/CopilotService.java`          | Service entry point, starts ACP client      |
 | `plugin-core/.../ui/AgenticCopilotToolWindowContent.kt` | Main UI (Kotlin Swing)                      |
 | `mcp-server/.../mcp/McpServer.java`                     | MCP stdio server, tool registrations        |
@@ -222,6 +222,8 @@ Add to `Help > Diagnostic Tools > Debug Log Settings`:
 ## Test Coverage
 
 - **AcpProtocolRegressionTest**: 16 tests — protocol format, permission handling, deny logic
-- **CopilotAcpClientTest**: 6 unit + 9 integration tests — DTOs, lifecycle, real Copilot
+- **AcpEndToEndTest**: 33 tests — end-to-end protocol flows, streaming, tool calls
+- **CopilotAcpClientTest**: 15 tests — DTOs, lifecycle, real Copilot integration
+- **CopilotFreeModelIntegrationTest**: 3 tests — free model integration
 - **WrapLayoutTest**: 6 tests — UI layout
-- **McpServerTest**: 16 tests — all MCP tools, security (path traversal), protocol
+- **McpServerTest**: 24 tests — all MCP tools, security (path traversal), protocol

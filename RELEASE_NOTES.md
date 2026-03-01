@@ -70,8 +70,8 @@
 
 ### Test Coverage
 
-- 48 unit tests across 4 test files
-- All tests passing (verified Feb 26)
+- 97 unit tests across 6 test files
+- All tests passing
 - Coverage includes:
     - ACP client communication
     - Permission handling
@@ -82,7 +82,7 @@
 
 ```bash
 ./gradlew test
-# Output: 48 tests passed
+# Output: 97 tests passed
 ```
 
 ## 📚 Documentation Updates
@@ -126,7 +126,7 @@ The following checkpoint/phase documents are now archived and not needed for use
 # Linux/macOS
 ./gradlew :plugin-core:clean :plugin-core:buildPlugin
 
-# Output: plugin-core/build/distributions/plugin-core-0.1.0-SNAPSHOT.zip
+# Output: plugin-core/build/distributions/plugin-core-0.2.0-<hash>.zip
 ```
 
 ### Installation Instructions
@@ -215,7 +215,7 @@ After user testing phase:
 ## 📦 Version Info
 
 - **Plugin Version:** 0.2.0-BETA
-- **IntelliJ Platform:** 2024.3+
+- **IntelliJ Platform:** 2025.1+
 - **Java:** 21
 - **Gradle:** 8.x
 - **GitHub Copilot CLI:** Latest (0.0.418+)

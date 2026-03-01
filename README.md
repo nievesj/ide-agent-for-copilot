@@ -13,7 +13,7 @@ formatting, test execution, git operations, and file operations.
 ### What Works
 
 - Multi-turn conversation with GitHub Copilot agent
-- 60 IntelliJ-native MCP tools (symbol search, file outline, references, test runner, code formatting, git,
+- 66 IntelliJ-native MCP tools (symbol search, file outline, references, test runner, code formatting, git,
   infrastructure, terminal, etc.)
 - Built-in file operations redirected through IntelliJ Document API (undo support, no external file conflicts)
 - Auto-format (optimize imports + reformat code) after every write
@@ -40,7 +40,7 @@ formatting, test execution, git operations, and file operations.
 │  ┌──────────────────┐    ┌───────────────────────┐            │
 │  │ PsiBridgeService │◄───│  Copilot CLI (--acp)  │            │
 │  │  (HTTP server)   │    │                       │            │
-│  │  60 MCP tools    │    │  - Agent reasoning    │            │
+│  │  66 MCP tools    │    │  - Agent reasoning    │            │
 │  │  - read/write    │    │  - Tool selection     │            │
 │  │  - format        │    │  - Permission reqs    │            │
 │  │  - search        │    └───────────┬───────────┘            │
@@ -69,31 +69,31 @@ Built-in Copilot file edits are **denied** at the permission level. The agent au
 ```
 intellij-copilot-plugin/
 ├── plugin-core/          # Main plugin (Java 21)
-│   └── src/main/java/com/github/copilot/intellij/
+│   └── src/main/java/com/github/catatafishen/ideagentforcopilot/
 │       ├── ui/           # Tool Window (Swing)
 │       ├── services/     # CopilotService, CopilotSettings
 │       ├── bridge/       # CopilotAcpClient (ACP protocol)
-│       └── psi/          # PsiBridgeService (60 MCP tools)
+│       └── psi/          # PsiBridgeService (66 MCP tools)
 ├── mcp-server/           # MCP stdio server (bundled JAR)
 │   └── src/main/java/com/github/copilot/mcp/
 │       └── McpServer.java
 └── integration-tests/    # (placeholder)
 ```
 
-## MCP Tools (60 tools)
+## MCP Tools (66 tools)
 
 | Category            | Tools                                                                                                                                                                                                                   |
 |---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Code Navigation** | `search_symbols`, `get_file_outline`, `get_class_outline`, `find_references`, `list_project_files`, `search_text`                                                                                                       |
-| **File I/O**        | `intellij_read_file` / `read_file`, `intellij_write_file` / `write_file`, `create_file`, `delete_file`, `undo`                                                                                                          |
+| **File I/O**        | `intellij_read_file`, `intellij_write_file`, `create_file`, `delete_file`, `undo`, `reload_from_disk`                                                                                                                   |
 | **Code Quality**    | `get_problems`, `get_highlights`, `run_inspections`, `apply_quickfix`, `suppress_inspection`, `optimize_imports`, `format_code`, `add_to_dictionary`, `get_compilation_errors`, `run_qodana`, `run_sonarqube_analysis`* |
 | **Refactoring**     | `refactor`, `go_to_declaration`, `get_type_hierarchy`, `get_documentation`                                                                                                                                              |
 | **Testing**         | `list_tests`, `run_tests`, `get_test_results`, `get_coverage`                                                                                                                                                           |
-| **Project**         | `get_project_info`, `build_project`, `get_indexing_status`, `download_sources`, `list_run_configurations`, `run_configuration`, `create_run_configuration`, `edit_run_configuration`                                    |
-| **Git**             | `git_status`, `git_diff`, `git_log`, `git_blame`, `git_commit`, `git_stage`, `git_unstage`, `git_branch`, `git_stash`, `git_show`                                                                                       |
+| **Project**         | `get_project_info`, `build_project`, `get_indexing_status`, `download_sources`, `mark_directory`, `list_run_configurations`, `run_configuration`, `create_run_configuration`, `edit_run_configuration`                  |
+| **Git**             | `git_status`, `git_diff`, `git_log`, `git_blame`, `git_commit`, `git_stage`, `git_unstage`, `git_branch`, `git_stash`, `git_show`, `git_push`, `git_remote`                                                             |
 | **Infrastructure**  | `http_request`, `run_command`, `read_ide_log`, `get_notifications`, `read_run_output`                                                                                                                                   |
-| **Terminal**        | `run_in_terminal`, `read_terminal_output`, `list_terminals`                                                                                                                                                             |
-| **Editor**          | `open_in_editor`, `show_diff`, `create_scratch_file`, `list_scratch_files`                                                                                                                                              |
+| **Terminal**        | `run_in_terminal`, `read_terminal_output`                                                                                                                                                                               |
+| **Editor**          | `open_in_editor`, `show_diff`, `create_scratch_file`, `list_scratch_files`, `get_active_file`, `get_open_editors`, `get_chat_html`                                                                                      |
 
 *\* `run_sonarqube_analysis` only available when SonarLint plugin is installed.*
 
@@ -101,7 +101,7 @@ intellij-copilot-plugin/
 
 - **JDK 21** (for plugin development)
 - **IntelliJ IDEA 2025.1+** (any JetBrains IDE, through 2025.3)
-- **GitHub Copilot CLI** (`winget install GitHub.Copilot`)
+- **GitHub Copilot CLI** (`npm install -g @anthropic-ai/copilot-cli` or `winget install GitHub.Copilot`)
 - **GitHub Copilot Subscription** (active)
 
 ## Quick Start
@@ -115,12 +115,16 @@ $env:JAVA_HOME = "path\to\jdk-21"
 
 ### Installing
 
+Install via **Settings → Plugins → ⚙ → Install Plugin from Disk**, selecting the built ZIP.
+
+**Or manually:**
+
 **Windows (PowerShell):**
 
 ```powershell
 # Close IntelliJ first, then:
 Remove-Item "$env:APPDATA\JetBrains\IntelliJIdea2025.3\plugins\plugin-core" -Recurse -Force
-Expand-Archive "plugin-core\build\distributions\plugin-core-0.1.0-SNAPSHOT.zip" `
+Expand-Archive "plugin-core\build\distributions\plugin-core-*.zip" `
     "$env:APPDATA\JetBrains\IntelliJIdea2025.3\plugins" -Force
 ```
 
@@ -151,8 +155,11 @@ unzip -q plugin-core/build/distributions/plugin-core-*.zip -d "$PLUGIN_DIR"
 
 - [Development Guide](DEVELOPMENT.md) — Build, deploy, architecture details
 - [Quick Start](QUICK-START.md) — Fast setup instructions
-- [Architecture](docs/ARCHITECTURE.md) — Detailed component descriptions
+- [Testing](TESTING.md) — Test running and coverage
+- [Project Spec](PROJECT-SPEC.md) — Original specification
+- [Roadmap](ROADMAP.md) — Project phases and future work
+- [Release Notes](RELEASE_NOTES.md) — Current release details
 
 ## License
 
-*(License TBD)*
+MIT License — see [LICENSE](LICENSE)
