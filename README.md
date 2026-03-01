@@ -1,7 +1,7 @@
-# Agentic GitHub Copilot for JetBrains
+# IDE Agent for Copilot
 
-A lightweight IntelliJ Platform plugin that embeds GitHub Copilot's agent capabilities directly into your IDE via the *
-*Agent Client Protocol (ACP)**.
+A lightweight IntelliJ Platform plugin that embeds GitHub Copilot's agent capabilities directly into your IDE via the
+**Agent Client Protocol (ACP)**.
 
 It provides **MCP-based code intelligence tools** that leverage IntelliJ's native APIs for symbol search, code
 formatting, test execution, git operations, and file operations.
@@ -160,6 +160,28 @@ unzip -q plugin-core/build/distributions/plugin-core-*.zip -d "$PLUGIN_DIR"
 - [Roadmap](ROADMAP.md) — Project phases and future work
 - [Release Notes](RELEASE_NOTES.md) — Current release details
 
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Security
+
+To report security vulnerabilities, please see [SECURITY.md](SECURITY.md).
+
 ## License
 
-MIT License — see [LICENSE](LICENSE)
+Copyright 2026 Henrik Westergård
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+See [LICENSE](LICENSE) for the full text.
