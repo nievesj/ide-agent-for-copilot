@@ -219,6 +219,55 @@ Add to `Help > Diagnostic Tools > Debug Log Settings`:
 | Agent uses built-in edit tool     | Deny+retry not working        | Check permission handler logs        |
 | "file changed externally" dialog  | Write bypassed Document API   | Verify `intellij_write_file` is used |
 
+## Dynamic Plugin Loading
+
+The plugin declares `require-restart="false"` in `plugin.xml` and uses only dynamic-compatible
+extension points (including `ProjectActivity` instead of the legacy `StartupActivity`).
+
+### Platform limitation: "Install from Disk" always requires restart for updates
+
+IntelliJ's `PluginInstaller.installFromDisk` (2025.3) contains this logic:
+
+```java
+Path oldFile = installedPlugin != null && !installedPlugin.isBundled()
+    ? installedPlugin.getPluginPath() : null;
+boolean isRestartRequired = oldFile != null
+    || !DynamicPlugins.allowLoadUnloadWithoutRestart(pluginDescriptor)
+    || operation.isRestartRequired();
+```
+
+The `oldFile != null` check **short-circuits** — when the plugin is already installed (i.e. an
+update), `oldFile` is always non-null, so the platform never even calls
+`allowLoadUnloadWithoutRestart`. Restart is unconditionally required for all disk-based updates.
+
+This means:
+- **Fresh install from disk** → can load dynamically (no restart) ✅
+- **Update existing plugin from disk** → always requires restart ❌
+- **Marketplace updates** → use a different code path that supports dynamic updates ✅
+- **Sandbox `autoReload`** → uses `prepareSandbox` + `DynamicPlugins` API directly ✅
+
+### What we did to support dynamic loading
+
+1. **`require-restart="false"`** in `plugin.xml`
+2. **Migrated `PsiBridgeStartup`** from Java `StartupActivity.DumbAware` (legacy, non-dynamic) to
+   Kotlin `ProjectActivity` (modern, dynamic-compatible)
+3. **All extension points are dynamic-compatible**: `toolWindow`, `applicationService`,
+   `projectService`, `postStartupActivity` (with `ProjectActivity`), `notificationGroup`, `iconMapper`
+4. **No legacy components**: no `<application-components>` or `<project-components>`
+5. **No `<listeners>` section** that could block unload
+
+### Verifying dynamic compatibility at runtime
+
+`PsiBridgeStartup` previously included a diagnostic that called
+`DynamicPlugins.allowLoadUnloadWithoutRestart()` via reflection. At runtime this returns `true`,
+confirming the plugin is dynamic-compatible from the platform's perspective.
+
+### Workarounds for development
+
+- **Sandbox IDE**: Use `./gradlew :plugin-core:prepareSandbox` — auto-reload works without restart
+- **Main IDE (CLI deploy)**: Use the `rm -rf` + `unzip` approach from the [Deploy](#deploy-to-main-ide-after-code-changes) section, then restart
+- **Main IDE (UI install)**: Accept the restart — it's a platform limitation for disk-based updates
+
 ## Test Coverage
 
 - **AcpProtocolRegressionTest**: 16 tests — protocol format, permission handling, deny logic
