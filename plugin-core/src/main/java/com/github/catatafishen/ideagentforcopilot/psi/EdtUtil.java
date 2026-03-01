@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
+import com.intellij.openapi.application.AccessToken;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.util.SlowOperations;
 
@@ -8,7 +9,6 @@ import com.intellij.util.SlowOperations;
  * Wraps all EDT dispatches so that tool handlers can resolve files and perform
  * write actions without triggering "Slow operations are prohibited on EDT" assertions.
  */
-@SuppressWarnings({"deprecation", "UnstableApiUsage"})
 public final class EdtUtil {
 
     private EdtUtil() {
@@ -18,12 +18,11 @@ public final class EdtUtil {
      * Dispatch a runnable to the EDT, allowing slow operations (VFS, PSI, etc.).
      */
     public static void invokeLater(Runnable runnable) {
-        ApplicationManager.getApplication().invokeLater(() ->
-            SlowOperations.allowSlowOperations(() -> {
+        ApplicationManager.getApplication().invokeLater(() -> {
+            try (AccessToken ignore = SlowOperations.startSection("IdeAgentForCopilot")) {
                 runnable.run();
-                return null;
-            })
-        );
+            }
+        });
     }
 
     /**
@@ -31,11 +30,10 @@ public final class EdtUtil {
      * allowing slow operations inside the EDT block.
      */
     public static void invokeAndWait(Runnable runnable) {
-        ApplicationManager.getApplication().invokeAndWait(() ->
-            SlowOperations.allowSlowOperations(() -> {
+        ApplicationManager.getApplication().invokeAndWait(() -> {
+            try (AccessToken ignore = SlowOperations.startSection("IdeAgentForCopilot")) {
                 runnable.run();
-                return null;
-            })
-        );
+            }
+        });
     }
 }
