@@ -193,7 +193,19 @@ class TestTools extends AbstractToolHandler {
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
         String results = parseJunitXmlResults(basePath, module);
-        return results.isEmpty() ? "No test results found. Run tests first." : results;
+        if (results.isEmpty()) {
+            return "No test results found."
+                + "\nIf tests were run via IntelliJ's native runner, results are in the Run panel test tree."
+                + "\nXML results are only available when tests are run via Gradle.";
+        }
+
+        // Warn if results are stale (older than 5 minutes)
+        long maxAgeMs = getNewestXmlResultAge(basePath, module);
+        if (maxAgeMs > 5 * 60 * 1000) {
+            long mins = maxAgeMs / 60_000;
+            results += "\n\n⚠️ These results are from ~" + mins + " minutes ago and may be stale.";
+        }
+        return results;
     }
 
     private String getCoverage(JsonObject args) {
@@ -340,17 +352,10 @@ class TestTools extends AbstractToolHandler {
 
             int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
 
-            // Try to read XML results
-            String basePath = project.getBasePath();
-            if (basePath != null) {
-                String xmlResults = parseJunitXmlResults(basePath, "");
-                if (!xmlResults.isEmpty()) {
-                    return xmlResults;
-                }
-            }
-
             return (exitCode == 0 ? "\u2705 Tests PASSED" : "\u274C Tests FAILED (exit code " + exitCode + ")")
-                + " — " + configName;
+                + " — " + configName
+                + "\nResults are visible in the IntelliJ test runner panel."
+                + "\nUse get_test_results to retrieve detailed results.";
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.warn("tryRunJUnitNatively failed", e);
@@ -400,8 +405,8 @@ class TestTools extends AbstractToolHandler {
             connection.subscribe(ExecutionManager.EXECUTION_TOPIC, new com.intellij.execution.ExecutionListener() {
                 @Override
                 public void processStarted(@NotNull String executorId,
-                                            @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
-                                            @NotNull ProcessHandler handler) {
+                                           @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
+                                           @NotNull ProcessHandler handler) {
                     if (env.getRunnerAndConfigurationSettings() != null
                         && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
                         handlerFuture.complete(handler);
@@ -435,9 +440,16 @@ class TestTools extends AbstractToolHandler {
                     data.getClass().getField("PATTERNS").set(data,
                         new java.util.LinkedHashSet<>(matchingClasses));
 
+                    // Validate before running — prevents edit-config dialog on errors
+                    try {
+                        config.checkConfiguration();
+                    } catch (com.intellij.execution.configurations.RuntimeConfigurationException e) {
+                        launchFuture.complete("Error: Invalid pattern config: " + e.getLocalizedMessage());
+                        return;
+                    }
+
                     settings.setTemporary(true);
                     runManager.addConfiguration(settings);
-                    runManager.setSelectedConfiguration(settings);
 
                     var executor = DefaultRunExecutor.getRunExecutorInstance();
                     var envBuilder = ExecutionEnvironmentBuilder.createOrNull(executor, settings);
@@ -477,14 +489,11 @@ class TestTools extends AbstractToolHandler {
             }
 
             int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
-            String basePath = project.getBasePath();
-            if (basePath != null) {
-                String xmlResults = parseJunitXmlResults(basePath, "");
-                if (!xmlResults.isEmpty()) return xmlResults;
-            }
 
             return (exitCode == 0 ? "\u2705 Tests PASSED" : "\u274C Tests FAILED (exit code " + exitCode + ")")
-                + " \u2014 " + configName;
+                + " \u2014 " + configName
+                + "\nResults are visible in the IntelliJ test runner panel."
+                + "\nUse get_test_results to retrieve detailed results.";
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.warn("tryRunJUnitPattern failed", e);
@@ -528,8 +537,8 @@ class TestTools extends AbstractToolHandler {
             connection.subscribe(ExecutionManager.EXECUTION_TOPIC, new com.intellij.execution.ExecutionListener() {
                 @Override
                 public void processStarted(@NotNull String executorId,
-                                            @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
-                                            @NotNull ProcessHandler handler) {
+                                           @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
+                                           @NotNull ProcessHandler handler) {
                     if (env.getRunnerAndConfigurationSettings() != null
                         && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
                         handlerFuture.complete(handler);
@@ -645,7 +654,6 @@ class TestTools extends AbstractToolHandler {
 
             settings.setTemporary(true);
             runManager.addConfiguration(settings);
-            runManager.setSelectedConfiguration(settings);
 
             var executor = DefaultRunExecutor.getRunExecutorInstance();
             var envBuilder = ExecutionEnvironmentBuilder.createOrNull(executor, settings);
@@ -690,9 +698,15 @@ class TestTools extends AbstractToolHandler {
 
         configureJUnitTestData(config, resolvedClass, resolvedMethod, resolvedModule);
 
+        // Validate config before running — prevents edit-config dialog on errors
+        try {
+            config.checkConfiguration();
+        } catch (com.intellij.execution.configurations.RuntimeConfigurationException e) {
+            return "Error: Invalid test configuration: " + e.getLocalizedMessage();
+        }
+
         settings.setTemporary(true);
         runManager.addConfiguration(settings);
-        runManager.setSelectedConfiguration(settings);
 
         var executor = DefaultRunExecutor.getRunExecutorInstance();
         var envBuilder = ExecutionEnvironmentBuilder.createOrNull(executor, settings);
@@ -839,6 +853,25 @@ class TestTools extends AbstractToolHandler {
             if (Files.isDirectory(dir)) reportDirs.add(dir);
         }
         return reportDirs;
+    }
+
+    /**
+     * Returns the age in milliseconds of the newest XML result file, or Long.MAX_VALUE if none found.
+     */
+    private long getNewestXmlResultAge(String basePath, String module) {
+        List<Path> reportDirs = findTestReportDirs(basePath, module);
+        long newestModified = 0;
+        for (Path dir : reportDirs) {
+            try (var xmlFiles = Files.list(dir)) {
+                for (Path f : xmlFiles.filter(p -> p.toString().endsWith(".xml")).toList()) {
+                    long mod = Files.getLastModifiedTime(f).toMillis();
+                    if (mod > newestModified) newestModified = mod;
+                }
+            } catch (IOException ignored) {
+                // IO errors are non-fatal
+            }
+        }
+        return newestModified == 0 ? Long.MAX_VALUE : System.currentTimeMillis() - newestModified;
     }
 
     private record TestSuiteResult(int tests, int failed, int errors, int skipped,
