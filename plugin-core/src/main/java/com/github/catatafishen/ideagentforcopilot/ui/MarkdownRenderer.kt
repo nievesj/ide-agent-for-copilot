@@ -12,6 +12,7 @@ internal object MarkdownRenderer {
         """(?<![:\w])(?:/[\w.\-]+(?:/[\w.\-]+)*\.\w+|(?:\.\.?/)?[\w.\-]+(?:/[\w.\-]+)+\.\w+)(?::\d+(?::\d+)?)?"""
     )
     private val GIT_SHA_REGEX = Regex("""^[0-9a-f]{7,40}$""")
+    private val BARE_GIT_SHA_REGEX = Regex("""\b([0-9a-f]{7,12})\b""")
 
     data class MarkdownState(
         var inCode: Boolean = false,
@@ -199,6 +200,12 @@ internal object MarkdownRenderer {
             val resolved = resolveFilePath(pathPart)
             if (resolved != null) "<a href='openfile://$resolved${if (line != null) ":$line" else ""}'>${m.value}</a>"
             else m.value
+        }
+        html = BARE_GIT_SHA_REGEX.replace(html) { m ->
+            val sha = m.groupValues[1]
+            // Avoid false positives: must not be part of a longer word or look like a common hex color
+            if (sha.all { it in '0'..'9' }) m.value  // pure digits — not a SHA
+            else "<a href='gitshow://$sha' class='git-commit-link' title='Show commit $sha'>$sha</a>"
         }
         return html
     }
