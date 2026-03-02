@@ -878,36 +878,19 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     private fun handleGitShowLink(hash: String) {
-        SwingUtilities.invokeLater {
+        val log = com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
+        ApplicationManager.getApplication().invokeLater {
             try {
-                val twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
-                val gitTw = twm.getToolWindow("Git") ?: twm.getToolWindow("Version Control")
-                if (gitTw != null) {
-                    gitTw.activate {
-                        try {
-                            // runInMainLog(Project, Consumer<MainVcsLogUi>) opens the log tab and provides the UI
-                            val contentUtilClass = Class.forName("com.intellij.vcs.log.impl.VcsLogContentUtil")
-                            val runInMainLog = contentUtilClass.getMethod(
-                                "runInMainLog", Project::class.java, java.util.function.Consumer::class.java
-                            )
-                            runInMainLog.invoke(null, project, java.util.function.Consumer { ui: Any ->
-                                try {
-                                    // VcsLogNavigationUtil.jumpToHash(VcsLogUiEx, String, boolean, boolean)
-                                    val navClass = Class.forName("com.intellij.vcs.log.impl.VcsLogNavigationUtil")
-                                    val uiExClass = Class.forName("com.intellij.vcs.log.ui.VcsLogUiEx")
-                                    val jumpToHash = navClass.getMethod(
-                                        "jumpToHash", uiExClass, String::class.java,
-                                        Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType
-                                    )
-                                    jumpToHash.invoke(null, ui, hash, false, true)
-                                } catch (_: Exception) { /* best effort */ }
-                            })
-                        } catch (_: Exception) { /* Git4Idea not available — tool window is already open */ }
-                    }
+                val repos = git4idea.repo.GitRepositoryManager.getInstance(project).repositories
+                val root = repos.firstOrNull()?.root
+                if (root == null) {
+                    log.warn("No VCS root found for git commit link $hash")
+                    return@invokeLater
                 }
+                val hashObj = com.intellij.vcs.log.impl.HashImpl.build(hash)
+                com.intellij.vcs.log.impl.VcsLogNavigationUtil.jumpToRevisionAsync(project, root, hashObj, null)
             } catch (e: Exception) {
-                com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
-                    .warn("Failed to open git commit $hash", e)
+                log.warn("Failed to open git commit $hash", e)
             }
         }
     }
