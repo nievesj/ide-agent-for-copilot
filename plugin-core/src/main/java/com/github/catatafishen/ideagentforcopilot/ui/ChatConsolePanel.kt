@@ -936,7 +936,21 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     private fun markdownToHtml(text: String): String =
-        MarkdownRenderer.markdownToHtml(text, ::resolveFileReference, ::resolveFilePath)
+        MarkdownRenderer.markdownToHtml(text, ::resolveFileReference, ::resolveFilePath, ::isGitCommit)
+
+    private fun isGitCommit(sha: String): Boolean {
+        val basePath = project.basePath ?: return false
+        return try {
+            val process = ProcessBuilder("git", "cat-file", "-t", sha)
+                .directory(java.io.File(basePath))
+                .redirectErrorStream(true)
+                .start()
+            val exited = process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
+            exited && process.exitValue() == 0
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     private fun resolveFileReference(ref: String): Pair<String, Int?>? {
         val colonIdx = ref.indexOf(':')
