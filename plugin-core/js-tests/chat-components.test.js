@@ -165,6 +165,29 @@ describe('tool-section', () => {
         expect(section.innerHTML).toContain('Output here');
     });
 
+    it('renders title in header', () => {
+        const header = section.querySelector('.tool-section-header');
+        expect(header).not.toBeNull();
+        expect(header.textContent).toBe('Read File');
+    });
+
+    it('clicking header collapses section', () => {
+        // Set up chip linked to section
+        section.id = 'ts-1';
+        section.classList.remove('turn-hidden');
+        section.classList.add('chip-expanded');
+        const chip = document.createElement('tool-chip');
+        chip.setAttribute('label', 'Read File');
+        chip.setAttribute('status', 'complete');
+        chip.dataset.chipFor = 'ts-1';
+        document.body.appendChild(chip);
+        chip.style.opacity = '0.5';
+
+        section.querySelector('.tool-section-header').click();
+        expect(chip.style.opacity).toBe('1');
+        expect(chip.getAttribute('aria-expanded')).toBe('false');
+    });
+
     it('updateStatus is a no-op (status tracked on chip)', () => {
         section.updateStatus('completed');
         section.updateStatus('failed');

@@ -245,6 +245,20 @@ body {
     border-radius: var(--r-md);
 }
 
+.tool-section-header {
+    font-weight: 600;
+    padding-bottom: var(--sp-2);
+    margin-bottom: var(--sp-2);
+    border-bottom: 1px solid var(--think-a16);
+    cursor: pointer;
+    color: var(--fg);
+    opacity: 0.85;
+}
+
+.tool-section-header:hover {
+    opacity: 1;
+}
+
 /* ── Turn chips (meta pills) ─────────────────────────── */
 .meta {
     display: none;
