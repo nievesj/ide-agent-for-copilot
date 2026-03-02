@@ -72,11 +72,14 @@ final class GitToolHandler {
 
     /**
      * Flush all IntelliJ editor buffers to disk so git sees current content.
+     * Commits any pending PSI changes first to catch async reformats from external tools.
      */
     private void saveAllDocuments() {
         EdtUtil.invokeAndWait(() ->
-            ApplicationManager.getApplication().runWriteAction(() ->
-                FileDocumentManager.getInstance().saveAllDocuments()));
+            ApplicationManager.getApplication().runWriteAction(() -> {
+                com.intellij.psi.PsiDocumentManager.getInstance(project).commitAllDocuments();
+                FileDocumentManager.getInstance().saveAllDocuments();
+            }));
     }
 
     String gitStatus(JsonObject args) throws Exception {
