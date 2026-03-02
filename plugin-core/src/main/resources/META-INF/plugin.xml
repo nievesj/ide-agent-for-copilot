@@ -8,7 +8,7 @@
   <category>AI Assistant</category>
 
   <description><![CDATA[
-    <p><b>IDE Agent for Copilot</b> transforms GitHub Copilot from a chat assistant into a true coding agent
+    <p><b>IDE Agent for Copilot</b> transforms GitHub Copilot from a chat assistant into a coding agent
     inside your JetBrains IDE.</p>
 
     <p>Instead of suggesting code in isolation, the agent can plan and execute multi-step tasks using the same
@@ -31,7 +31,7 @@
     <h3>Works for Tasks of Any Size</h3>
     <p>Use it as:</p>
     <ul>
-        <li>A smarter everyday coding assistant</li>
+        <li>An everyday coding assistant</li>
         <li>A tool for repetitive multi-file changes</li>
         <li>A helper for fixing failing tests or build issues</li>
         <li>A refactoring assistant</li>
