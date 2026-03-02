@@ -267,7 +267,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         finalizeCurrentText()
         entries.add(EntryData.ToolCall(title, arguments))
         val did = domId(id)
-        val baseName = title.substringAfterLast("-").substringAfterLast("_")
+        val baseName = title.substringAfterLast("-")
         toolCallNames[did] = baseName
         val info = TOOL_DISPLAY_INFO[baseName]
         val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
@@ -291,7 +291,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun addSubAgentToolCall(subAgentId: String, toolId: String, title: String, arguments: String?) {
         val saDid = domId(subAgentId)
         val toolDid = domId(toolId)
-        val baseName = title.substringAfterLast("-").substringAfterLast("_")
+        val baseName = title.substringAfterLast("-")
         val info = TOOL_DISPLAY_INFO[baseName]
         val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
         val short = formatToolSubtitle(baseName, arguments)
@@ -594,7 +594,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 if (currentTurnId.isEmpty()) currentTurnId = "t${turnCounter++}"
                 val title = obj["title"]?.asString ?: ""
                 val args = obj["args"]?.asString
-                val baseName = title.substringAfterLast("-").substringAfterLast("_")
+                val baseName = title.substringAfterLast("-")
                 val info = TOOL_DISPLAY_INFO[baseName]
                 val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
                 val short = formatToolSubtitle(baseName, args)
@@ -735,7 +735,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                             "tool" -> {
                                 val title = e["title"]?.asString ?: ""
                                 val args = e["args"]?.asString
-                                val baseName = title.substringAfterLast("-").substringAfterLast("_")
+                                val baseName = title.substringAfterLast("-")
                                 val info = TOOL_DISPLAY_INFO[baseName]
                                 val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
                                 val short = formatToolSubtitle(baseName, args)
