@@ -133,6 +133,13 @@ public final class ToolRegistry {
         new ToolEntry("git_blame", "Git Blame", "Show per-line authorship for a file, optionally restricted to a line range", Category.GIT, false, false, false),
         new ToolEntry("git_push", "Git Push", "Push commits to a remote repository", Category.GIT, false, false, false),
         new ToolEntry("git_remote", "Git Remote", "List, add, remove, or update remote repositories", Category.GIT, false, false, false),
+        new ToolEntry("git_fetch", "Git Fetch", "Download objects and refs from a remote without merging", Category.GIT, false, false, false),
+        new ToolEntry("git_pull", "Git Pull", "Fetch from remote and integrate changes into the current branch", Category.GIT, false, false, false),
+        new ToolEntry("git_merge", "Git Merge", "Merge a branch into the current branch; supports squash, no-ff, ff-only, and abort", Category.GIT, false, false, false),
+        new ToolEntry("git_rebase", "Git Rebase", "Rebase current branch onto another; supports abort, continue, skip, onto, and interactive", Category.GIT, false, false, false),
+        new ToolEntry("git_cherry_pick", "Git Cherry Pick", "Apply specific commits from another branch onto the current branch", Category.GIT, false, false, false),
+        new ToolEntry("git_tag", "Git Tag", "List, create, or delete tags", Category.GIT, false, false, false),
+        new ToolEntry("git_reset", "Git Reset", "Reset HEAD to a specific commit (soft, mixed, or hard)", Category.GIT, false, false, false),
 
         // ── Refactoring ───────────────────────────────────────────────────────────
         new ToolEntry("refactor", "Refactor", "Rename, extract method, inline, or safe-delete a symbol using IntelliJ's refactoring engine", Category.REFACTOR, false, false, false),

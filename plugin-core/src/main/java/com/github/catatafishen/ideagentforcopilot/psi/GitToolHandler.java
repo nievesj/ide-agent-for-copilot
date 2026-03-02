@@ -346,6 +346,218 @@ final class GitToolHandler {
         return runGit(gitArgs.toArray(new String[0]));
     }
 
+    String gitFetch(JsonObject args) throws Exception {
+        List<String> gitArgs = new ArrayList<>();
+        gitArgs.add("fetch");
+
+        if (args.has("prune") && args.get("prune").getAsBoolean()) {
+            gitArgs.add("--prune");
+        }
+        if (args.has("tags") && args.get("tags").getAsBoolean()) {
+            gitArgs.add("--tags");
+        }
+        if (args.has("remote")) {
+            gitArgs.add(args.get("remote").getAsString());
+        }
+        if (args.has(PARAM_BRANCH)) {
+            gitArgs.add(args.get(PARAM_BRANCH).getAsString());
+        }
+
+        String result = runGit(gitArgs.toArray(new String[0]));
+        return result.isEmpty() ? "Fetch completed successfully." : result;
+    }
+
+    String gitPull(JsonObject args) throws Exception {
+        saveAllDocuments();
+        List<String> gitArgs = new ArrayList<>();
+        gitArgs.add("pull");
+
+        if (args.has("rebase") && args.get("rebase").getAsBoolean()) {
+            gitArgs.add("--rebase");
+        }
+        if (args.has("ff_only") && args.get("ff_only").getAsBoolean()) {
+            gitArgs.add("--ff-only");
+        }
+        if (args.has("remote")) {
+            gitArgs.add(args.get("remote").getAsString());
+        }
+        if (args.has(PARAM_BRANCH)) {
+            gitArgs.add(args.get(PARAM_BRANCH).getAsString());
+        }
+
+        return runGit(gitArgs.toArray(new String[0]));
+    }
+
+    String gitMerge(JsonObject args) throws Exception {
+        if (!args.has(PARAM_BRANCH) && !args.has("abort")) {
+            return "Error: 'branch' parameter is required (or 'abort' to abort a merge)";
+        }
+
+        saveAllDocuments();
+        List<String> gitArgs = new ArrayList<>();
+        gitArgs.add("merge");
+
+        if (args.has("abort") && args.get("abort").getAsBoolean()) {
+            gitArgs.add("--abort");
+            return runGit(gitArgs.toArray(new String[0]));
+        }
+
+        if (args.has("no_ff") && args.get("no_ff").getAsBoolean()) {
+            gitArgs.add("--no-ff");
+        }
+        if (args.has("ff_only") && args.get("ff_only").getAsBoolean()) {
+            gitArgs.add("--ff-only");
+        }
+        if (args.has("squash") && args.get("squash").getAsBoolean()) {
+            gitArgs.add("--squash");
+        }
+        if (args.has(PARAM_MESSAGE)) {
+            gitArgs.add("-m");
+            gitArgs.add(args.get(PARAM_MESSAGE).getAsString());
+        }
+        gitArgs.add(args.get(PARAM_BRANCH).getAsString());
+
+        return runGit(gitArgs.toArray(new String[0]));
+    }
+
+    String gitRebase(JsonObject args) throws Exception {
+        saveAllDocuments();
+        List<String> gitArgs = new ArrayList<>();
+        gitArgs.add("rebase");
+
+        // Handle abort/continue/skip first
+        if (args.has("abort") && args.get("abort").getAsBoolean()) {
+            gitArgs.add("--abort");
+            return runGit(gitArgs.toArray(new String[0]));
+        }
+        if (args.has("continue_rebase") && args.get("continue_rebase").getAsBoolean()) {
+            gitArgs.add("--continue");
+            return runGit(gitArgs.toArray(new String[0]));
+        }
+        if (args.has("skip") && args.get("skip").getAsBoolean()) {
+            gitArgs.add("--skip");
+            return runGit(gitArgs.toArray(new String[0]));
+        }
+
+        if (args.has("interactive") && args.get("interactive").getAsBoolean()) {
+            gitArgs.add("--interactive");
+            // Set GIT_SEQUENCE_EDITOR to 'true' (no-op) for autosquash
+            if (args.has("autosquash") && args.get("autosquash").getAsBoolean()) {
+                gitArgs.add("--autosquash");
+            }
+        }
+
+        if (args.has("onto")) {
+            gitArgs.add("--onto");
+            gitArgs.add(args.get("onto").getAsString());
+        }
+
+        if (args.has(PARAM_BRANCH)) {
+            gitArgs.add(args.get(PARAM_BRANCH).getAsString());
+        }
+
+        return runGit(gitArgs.toArray(new String[0]));
+    }
+
+    String gitCherryPick(JsonObject args) throws Exception {
+        saveAllDocuments();
+        List<String> gitArgs = new ArrayList<>();
+        gitArgs.add("cherry-pick");
+
+        if (args.has("abort") && args.get("abort").getAsBoolean()) {
+            gitArgs.add("--abort");
+            return runGit(gitArgs.toArray(new String[0]));
+        }
+        if (args.has("continue_pick") && args.get("continue_pick").getAsBoolean()) {
+            gitArgs.add("--continue");
+            return runGit(gitArgs.toArray(new String[0]));
+        }
+
+        if (args.has("no_commit") && args.get("no_commit").getAsBoolean()) {
+            gitArgs.add("--no-commit");
+        }
+
+        if (!args.has("commits")) {
+            return "Error: 'commits' parameter is required (one or more commit SHAs)";
+        }
+
+        var commits = args.getAsJsonArray("commits");
+        for (var c : commits) {
+            gitArgs.add(c.getAsString());
+        }
+
+        return runGit(gitArgs.toArray(new String[0]));
+    }
+
+    String gitTag(JsonObject args) throws Exception {
+        String action = args.has(JSON_ACTION) ? args.get(JSON_ACTION).getAsString() : "list";
+
+        return switch (action) {
+            case "list" -> {
+                List<String> gitArgs = new ArrayList<>(List.of("tag", "-l"));
+                if (args.has("pattern")) {
+                    gitArgs.add(args.get("pattern").getAsString());
+                }
+                if (args.has("sort")) {
+                    gitArgs.add("--sort=" + args.get("sort").getAsString());
+                }
+                yield runGit(gitArgs.toArray(new String[0]));
+            }
+            case "create" -> {
+                if (!args.has("name")) yield "Error: 'name' required for create";
+                List<String> gitArgs = new ArrayList<>(List.of("tag"));
+                if (args.has("annotate") && args.get("annotate").getAsBoolean()) {
+                    gitArgs.add("-a");
+                }
+                gitArgs.add(args.get("name").getAsString());
+                if (args.has(PARAM_COMMIT)) {
+                    gitArgs.add(args.get(PARAM_COMMIT).getAsString());
+                }
+                if (args.has(PARAM_MESSAGE)) {
+                    gitArgs.add("-m");
+                    gitArgs.add(args.get(PARAM_MESSAGE).getAsString());
+                }
+                yield runGit(gitArgs.toArray(new String[0]));
+            }
+            case "delete" -> {
+                if (!args.has("name")) yield "Error: 'name' required for delete";
+                yield runGit("tag", "-d", args.get("name").getAsString());
+            }
+            default -> "Error: unknown action '" + action + "'. Use: list, create, delete";
+        };
+    }
+
+    String gitReset(JsonObject args) throws Exception {
+        saveAllDocuments();
+        List<String> gitArgs = new ArrayList<>();
+        gitArgs.add("reset");
+
+        String mode = args.has("mode") ? args.get("mode").getAsString() : "mixed";
+        switch (mode) {
+            case "soft" -> gitArgs.add("--soft");
+            case "hard" -> gitArgs.add("--hard");
+            case "mixed" -> gitArgs.add("--mixed");
+            default -> {
+                return "Error: unknown mode '" + mode + "'. Use: soft, mixed, hard";
+            }
+        }
+
+        if (args.has(PARAM_COMMIT)) {
+            gitArgs.add(args.get(PARAM_COMMIT).getAsString());
+        }
+
+        // If specific paths given, reset those files only (removes from staging)
+        if (args.has("path")) {
+            gitArgs.clear();
+            gitArgs.add("reset");
+            gitArgs.add("--");
+            gitArgs.add(args.get("path").getAsString());
+        }
+
+        String result = runGit(gitArgs.toArray(new String[0]));
+        return result.isEmpty() ? "Reset completed successfully." : result;
+    }
+
     String gitShow(JsonObject args) throws Exception {
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("show");

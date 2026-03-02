@@ -539,6 +539,78 @@ public class McpServer {
             ),
             List.of()));
 
+        addIfEnabled.accept(buildTool("git_fetch", "Git Fetch",
+            Map.of(
+                "remote", Map.of("type", "string", "description", "Remote name (default: origin)"),
+                "branch", Map.of("type", "string", "description", "Specific branch to fetch"),
+                "prune", Map.of("type", "boolean", "description", "Remove remote-tracking refs that no longer exist on the remote"),
+                "tags", Map.of("type", "boolean", "description", "Fetch all tags from the remote")
+            ),
+            List.of()));
+
+        addIfEnabled.accept(buildTool("git_pull", "Git Pull",
+            Map.of(
+                "remote", Map.of("type", "string", "description", "Remote name (default: origin)"),
+                "branch", Map.of("type", "string", "description", "Branch to pull (default: current tracking branch)"),
+                "rebase", Map.of("type", "boolean", "description", "If true, rebase instead of merge when pulling"),
+                "ff_only", Map.of("type", "boolean", "description", "If true, only fast-forward (abort if not possible)")
+            ),
+            List.of()));
+
+        addIfEnabled.accept(buildTool("git_merge", "Git Merge",
+            Map.of(
+                "branch", Map.of("type", "string", "description", "Branch to merge into current branch"),
+                "message", Map.of("type", "string", "description", "Custom merge commit message"),
+                "no_ff", Map.of("type", "boolean", "description", "Create a merge commit even for fast-forward merges"),
+                "ff_only", Map.of("type", "boolean", "description", "Only merge if fast-forward is possible"),
+                "squash", Map.of("type", "boolean", "description", "Squash all commits into a single commit (requires manual commit after)"),
+                "abort", Map.of("type", "boolean", "description", "Abort an in-progress merge")
+            ),
+            List.of()));
+
+        addIfEnabled.accept(buildTool("git_rebase", "Git Rebase",
+            Map.of(
+                "branch", Map.of("type", "string", "description", "Branch to rebase onto"),
+                "onto", Map.of("type", "string", "description", "Rebase onto a specific commit (used with --onto)"),
+                "interactive", Map.of("type", "boolean", "description", "Start an interactive rebase"),
+                "autosquash", Map.of("type", "boolean", "description", "Automatically squash fixup! and squash! commits (requires interactive)"),
+                "abort", Map.of("type", "boolean", "description", "Abort an in-progress rebase"),
+                "continue_rebase", Map.of("type", "boolean", "description", "Continue a paused rebase after resolving conflicts"),
+                "skip", Map.of("type", "boolean", "description", "Skip the current patch and continue rebase")
+            ),
+            List.of()));
+
+        var gitCherryPick = buildTool("git_cherry_pick", "Git Cherry Pick",
+            Map.of(
+                "commits", Map.of("type", "array", "description", "One or more commit SHAs to cherry-pick"),
+                "no_commit", Map.of("type", "boolean", "description", "Apply changes without creating commits"),
+                "abort", Map.of("type", "boolean", "description", "Abort an in-progress cherry-pick"),
+                "continue_pick", Map.of("type", "boolean", "description", "Continue cherry-pick after resolving conflicts")
+            ),
+            List.of());
+        addArrayItems(gitCherryPick, "commits");
+        tools.add(gitCherryPick);
+
+        addIfEnabled.accept(buildTool("git_tag", "Git Tag",
+            Map.of(
+                "action", Map.of("type", "string", "description", "Action: 'list' (default), 'create', 'delete'"),
+                "name", Map.of("type", "string", "description", "Tag name (required for create/delete)"),
+                "commit", Map.of("type", "string", "description", "Commit to tag (default: HEAD, for create)"),
+                "message", Map.of("type", "string", "description", "Tag message (for annotated tags)"),
+                "annotate", Map.of("type", "boolean", "description", "Create an annotated tag (requires message)"),
+                "pattern", Map.of("type", "string", "description", "Glob pattern to filter tags (for list)"),
+                "sort", Map.of("type", "string", "description", "Sort field for list (e.g., '-creatordate' for newest first)")
+            ),
+            List.of()));
+
+        addIfEnabled.accept(buildTool("git_reset", "Git Reset",
+            Map.of(
+                "commit", Map.of("type", "string", "description", "Target commit (default: HEAD)"),
+                "mode", Map.of("type", "string", "description", "Reset mode: 'soft' (keep staged), 'mixed' (default, unstage), 'hard' (discard all changes)"),
+                "path", Map.of("type", "string", "description", "Reset a specific file path (unstages it)")
+            ),
+            List.of()));
+
         // ---- Infrastructure tools ----
 
         addIfEnabled.accept(buildTool("http_request", "Http Request",
