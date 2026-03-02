@@ -100,7 +100,7 @@ class FileTools extends AbstractToolHandler {
             return hint != null ? hint + "\n" + content : content;
         });
 
-        followFileIfEnabled(pathStr, startLine > 0 ? startLine : -1);
+        followFileIfEnabled(pathStr, startLine > 0 ? startLine : -1, -1);
         return result;
     }
 
@@ -140,8 +140,9 @@ class FileTools extends AbstractToolHandler {
 
     /**
      * Opens the file in the editor if "Follow Agent Files" is enabled.
+     * Scrolls to the middle of [startLine, endLine] and briefly highlights the edited region.
      */
-    private void followFileIfEnabled(String pathStr, int line) {
+    private void followFileIfEnabled(String pathStr, int startLine, int endLine) {
         if (!CopilotSettings.getFollowAgentFiles()) return;
 
         EdtUtil.invokeLater(() -> {
@@ -150,10 +151,13 @@ class FileTools extends AbstractToolHandler {
                 if (vf == null) return;
 
                 FileEditorManager fem = FileEditorManager.getInstance(project);
-                if (line > 0) {
-                    new com.intellij.openapi.fileEditor.OpenFileDescriptor(project, vf, line - 1, 0)
+                int midLine = (startLine > 0 && endLine > 0)
+                    ? (startLine + endLine) / 2
+                    : Math.max(startLine, 1);
+                if (midLine > 0) {
+                    new com.intellij.openapi.fileEditor.OpenFileDescriptor(project, vf, midLine - 1, 0)
                         .navigate(false);
-                    scrollEditorToLine(fem, vf, line);
+                    scrollAndHighlight(fem, vf, startLine, endLine, midLine);
                 } else {
                     fem.openFile(vf, false);
                 }
@@ -163,16 +167,42 @@ class FileTools extends AbstractToolHandler {
         });
     }
 
-    private void scrollEditorToLine(FileEditorManager fem, VirtualFile vf, int line) {
+    private void scrollAndHighlight(FileEditorManager fem, VirtualFile vf,
+                                    int startLine, int endLine, int midLine) {
         for (com.intellij.openapi.fileEditor.FileEditor fe : fem.getEditors(vf)) {
             if (fe instanceof TextEditor textEditor) {
                 com.intellij.openapi.editor.Editor editor = textEditor.getEditor();
-                int lineCount = editor.getDocument().getLineCount();
-                if (line - 1 < lineCount) {
-                    int offset = editor.getDocument().getLineStartOffset(line - 1);
-                    editor.getCaretModel().moveToOffset(offset);
-                    editor.getScrollingModel().scrollToCaret(
-                        com.intellij.openapi.editor.ScrollType.CENTER);
+                Document doc = editor.getDocument();
+                int lineCount = doc.getLineCount();
+                if (midLine - 1 >= lineCount) break;
+
+                // Scroll to center of edit
+                int offset = doc.getLineStartOffset(midLine - 1);
+                editor.getCaretModel().moveToOffset(offset);
+                editor.getScrollingModel().scrollToCaret(
+                    com.intellij.openapi.editor.ScrollType.CENTER);
+
+                // Highlight the edited region briefly
+                if (startLine > 0 && endLine > 0 && startLine <= lineCount) {
+                    int hlStart = doc.getLineStartOffset(startLine - 1);
+                    int hlEndLine = Math.min(endLine, lineCount);
+                    int hlEnd = doc.getLineEndOffset(hlEndLine - 1);
+                    if (hlEnd > hlStart) {
+                        var attrs = new com.intellij.openapi.editor.markup.TextAttributes();
+                        attrs.setBackgroundColor(new java.awt.Color(80, 160, 80, 40));
+                        var markup = editor.getMarkupModel();
+                        var hl = markup.addRangeHighlighter(
+                            hlStart, hlEnd,
+                            com.intellij.openapi.editor.markup.HighlighterLayer.SELECTION - 1,
+                            attrs,
+                            com.intellij.openapi.editor.markup.HighlighterTargetArea.LINES_IN_RANGE);
+                        // Remove after a short delay
+                        com.intellij.util.Alarm alarm = new com.intellij.util.Alarm(
+                            com.intellij.util.Alarm.ThreadToUse.SWING_THREAD, textEditor);
+                        alarm.addRequest(() -> {
+                            try { markup.removeHighlighter(hl); } catch (Exception ignored) {}
+                        }, 2500);
+                    }
                 }
                 break;
             }
@@ -186,9 +216,8 @@ class FileTools extends AbstractToolHandler {
         boolean autoFormat = !args.has("auto_format") || args.get("auto_format").getAsBoolean();
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
-        // [0] = 1-based line to scroll to after the write; -1 = don't scroll.
-        // Set on EDT before completing resultFuture, read after get() (happens-before).
-        int[] followLine = {-1};
+        // [0] = start line, [1] = end line (1-based) to scroll/highlight after write; -1 = don't.
+        int[] followRange = {-1, -1};
 
         EdtUtil.invokeLater(() -> {
             try {
@@ -197,13 +226,13 @@ class FileTools extends AbstractToolHandler {
                 if (args.has(PARAM_CONTENT)) {
                     writeFileFullContent(vf, pathStr, args.get(PARAM_CONTENT).getAsString(),
                         autoFormat, resultFuture);
-                    followLine[0] = 1;
+                    followRange[0] = 1;
                 } else if (args.has("old_str") && args.has(PARAM_NEW_STR)) {
                     writeFilePartialEdit(vf, pathStr, args.get("old_str").getAsString(),
-                        args.get(PARAM_NEW_STR).getAsString(), autoFormat, resultFuture, followLine);
+                        args.get(PARAM_NEW_STR).getAsString(), autoFormat, resultFuture, followRange);
                 } else if (args.has(PARAM_START_LINE) && args.has(PARAM_NEW_STR)) {
-                    followLine[0] = args.get(PARAM_START_LINE).getAsInt();
-                    writeFileLineRange(vf, pathStr, args, autoFormat, resultFuture);
+                    followRange[0] = args.get(PARAM_START_LINE).getAsInt();
+                    writeFileLineRange(vf, pathStr, args, autoFormat, resultFuture, followRange);
                 } else {
                     resultFuture.complete("write_file requires either 'content' (full write), " +
                         "'old_str'+'new_str' (partial edit), or 'start_line'+'new_str' (line-range replace)");
@@ -214,7 +243,7 @@ class FileTools extends AbstractToolHandler {
         });
 
         String result = resultFuture.get(15, TimeUnit.SECONDS);
-        followFileIfEnabled(pathStr, followLine[0]);
+        followFileIfEnabled(pathStr, followRange[0], followRange[1]);
         return result;
     }
 
@@ -272,7 +301,7 @@ class FileTools extends AbstractToolHandler {
 
     private void writeFilePartialEdit(VirtualFile vf, String pathStr, String oldStr, String newStr,
                                       boolean autoFormat, CompletableFuture<String> resultFuture,
-                                      int[] followLine) {
+                                      int[] followRange) {
         if (vf == null) {
             resultFuture.complete(ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
             return;
@@ -314,8 +343,9 @@ class FileTools extends AbstractToolHandler {
         FileDocumentManager.getInstance().saveDocument(doc);
         String syntaxWarning = checkSyntaxErrors(pathStr);
         if (autoFormat && syntaxWarning.isEmpty()) pendingAutoFormat.add(pathStr);
-        followLine[0] = doc.getLineNumber(finalIdx) + 1;
+        followRange[0] = doc.getLineNumber(finalIdx) + 1;
         int ctxEnd = Math.min(finalIdx + normalizedNew.length(), doc.getTextLength());
+        followRange[1] = doc.getLineNumber(Math.max(ctxEnd - 1, finalIdx)) + 1;
         resultFuture.complete("Edited: " + pathStr + " (replaced " + finalLen + " chars with " + normalizedNew.length() + FORMAT_CHARS_SUFFIX
             + contextLines(doc, finalIdx, ctxEnd) + syntaxWarning);
     }
@@ -325,7 +355,8 @@ class FileTools extends AbstractToolHandler {
      * If end_line is omitted, only start_line is replaced.
      */
     private void writeFileLineRange(VirtualFile vf, String pathStr, JsonObject args,
-                                    boolean autoFormat, CompletableFuture<String> resultFuture) {
+                                    boolean autoFormat, CompletableFuture<String> resultFuture,
+                                    int[] followRange) {
         if (vf == null) {
             resultFuture.complete(ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
             return;
@@ -373,6 +404,7 @@ class FileTools extends AbstractToolHandler {
         String syntaxWarning = checkSyntaxErrors(pathStr);
         if (autoFormat && syntaxWarning.isEmpty()) pendingAutoFormat.add(pathStr);
         int ctxEnd = Math.min(fStart + fNew.length(), doc.getTextLength());
+        followRange[1] = doc.getLineNumber(Math.max(ctxEnd - 1, fStart)) + 1;
         resultFuture.complete("Edited: " + pathStr + " (replaced lines " + startLine + "-" + endLine
             + " (" + replacedLines + " lines) with " + fNew.length() + FORMAT_CHARS_SUFFIX
             + contextLines(doc, fStart, ctxEnd) + syntaxWarning);
