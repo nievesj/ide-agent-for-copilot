@@ -880,52 +880,29 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private fun handleGitShowLink(hash: String) {
         SwingUtilities.invokeLater {
             try {
-                // Open the Git log tool window and select the commit
                 val twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
                 val gitTw = twm.getToolWindow("Git") ?: twm.getToolWindow("Version Control")
                 if (gitTw != null) {
                     gitTw.activate {
-                        // Try to jump to the commit via VcsProjectLog (reflection — Git4Idea is optional)
                         try {
-                            val vcsProjectLogClass = Class.forName("com.intellij.vcs.log.impl.VcsProjectLog")
-                            val getInstance = vcsProjectLogClass.getMethod("getInstance", Project::class.java)
-                            val vcsProjectLog = getInstance.invoke(null, project) ?: return@activate
-                            val getLogManager = vcsProjectLogClass.getMethod("getLogManager")
-                            val logManager = getLogManager.invoke(vcsProjectLog) ?: return@activate
-
+                            // runInMainLog(Project, Consumer<MainVcsLogUi>) opens the log tab and provides the UI
                             val contentUtilClass = Class.forName("com.intellij.vcs.log.impl.VcsLogContentUtil")
-                            val selectMethod = contentUtilClass.methods.find {
-                                it.name == "openMainLogAndExecute" && it.parameterCount == 2
-                            }
-                            if (selectMethod != null) {
-                                val hashClass = Class.forName("com.intellij.vcs.log.Hash")
-                                val hashImplClass = Class.forName("com.intellij.vcs.log.HashImpl")
-                                val buildHash = hashImplClass.getMethod("build", String::class.java)
-                                val commitHash = buildHash.invoke(null, hash)
-
-                                selectMethod.invoke(null, project, java.util.function.Consumer { ui: Any ->
-                                    try {
-                                        val getVcsLog = ui.javaClass.getMethod("getVcsLog")
-                                        val vcsLog = getVcsLog.invoke(ui)
-                                        val getDataPack = ui.javaClass.getMethod("getDataPack")
-                                        val dataPack = getDataPack.invoke(ui)
-                                        val getLogProviders = dataPack.javaClass.getMethod("getLogProviders")
-
-                                        @Suppress("UNCHECKED_CAST")
-                                        val providers = getLogProviders.invoke(dataPack) as? Map<Any, Any>
-                                        val root = providers?.keys?.firstOrNull() ?: return@Consumer
-                                        val jumpMethod = vcsLog.javaClass.getMethod(
-                                            "jumpToCommit",
-                                            hashClass,
-                                            Class.forName("com.intellij.openapi.vfs.VirtualFile")
-                                        )
-                                        jumpMethod.invoke(vcsLog, commitHash, root)
-                                    } catch (_: Exception) { /* best effort */
-                                    }
-                                })
-                            }
-                        } catch (_: Exception) { /* Git4Idea not available — tool window is already open */
-                        }
+                            val runInMainLog = contentUtilClass.getMethod(
+                                "runInMainLog", Project::class.java, java.util.function.Consumer::class.java
+                            )
+                            runInMainLog.invoke(null, project, java.util.function.Consumer { ui: Any ->
+                                try {
+                                    // VcsLogNavigationUtil.jumpToHash(VcsLogUiEx, String, boolean, boolean)
+                                    val navClass = Class.forName("com.intellij.vcs.log.impl.VcsLogNavigationUtil")
+                                    val uiExClass = Class.forName("com.intellij.vcs.log.ui.VcsLogUiEx")
+                                    val jumpToHash = navClass.getMethod(
+                                        "jumpToHash", uiExClass, String::class.java,
+                                        Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType
+                                    )
+                                    jumpToHash.invoke(null, ui, hash, false, true)
+                                } catch (_: Exception) { /* best effort */ }
+                            })
+                        } catch (_: Exception) { /* Git4Idea not available — tool window is already open */ }
                     }
                 }
             } catch (e: Exception) {
