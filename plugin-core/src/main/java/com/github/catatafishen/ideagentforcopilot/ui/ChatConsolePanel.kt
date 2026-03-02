@@ -282,7 +282,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun addToolCallEntry(id: String, title: String, arguments: String?, kind: String?) {
         finalizeCurrentText()
-        entries.add(EntryData.ToolCall(title, arguments))
+        val resolvedKind = kind ?: "other"
+        entries.add(EntryData.ToolCall(title, arguments, resolvedKind))
         val did = domId(id)
         val baseName = title.substringAfterLast("-")
         toolCallNames[did] = baseName
@@ -291,7 +292,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val short = formatToolSubtitle(baseName, arguments)
         val label = if (short != null) "$displayName — $short" else displayName
         val paramsJson = if (!arguments.isNullOrBlank()) escJs(arguments) else ""
-        val safeKind = escJs(kind ?: "other")
+        val safeKind = escJs(resolvedKind)
         executeJs("ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','$safeKind')")
     }
 
@@ -463,6 +464,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                         "args",
                         e.arguments ?: ""
                     )
+                    obj.addProperty("kind", e.kind)
                 }
 
                 is EntryData.SubAgent -> {
@@ -542,7 +544,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             "tool" -> entries.add(
                 EntryData.ToolCall(
                     obj["title"]?.asString ?: "",
-                    obj["args"]?.asString
+                    obj["args"]?.asString,
+                    obj["kind"]?.asString ?: "other"
                 )
             )
 
@@ -620,7 +623,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 val short = formatToolSubtitle(baseName, args)
                 val label = if (short != null) "$displayName — $short" else displayName
                 val did = "restored-tool-${entries.size}"
-                executeJs("ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','${escJs(args ?: "")}','other');ChatController.updateToolCall('$did','completed','Completed')")
+                val kind = obj["kind"]?.asString ?: "other"
+                executeJs("ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','${escJs(args ?: "")}','${escJs(kind)}');ChatController.updateToolCall('$did','completed','Completed')")
             }
 
             "subagent" -> {
@@ -755,13 +759,14 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                             "tool" -> {
                                 val title = e["title"]?.asString ?: ""
                                 val args = e["args"]?.asString
+                                val kind = e["kind"]?.asString ?: "other"
                                 val baseName = title.substringAfterLast("-")
                                 val info = TOOL_DISPLAY_INFO[baseName]
                                 val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
                                 val short = formatToolSubtitle(baseName, args)
                                 val label = if (short != null) "$displayName — $short" else displayName
                                 val id = "batch-tool-${batchIdCounter++}"
-                                metaChips.append("<tool-chip label='${esc(label)}' status='complete' data-chip-for='$id'></tool-chip>")
+                                metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(kind)}' data-chip-for='$id'></tool-chip>")
                                 detailsContent.append("<tool-section id='$id' title='${esc(label)}'")
                                 if (args != null) detailsContent.append(" params='${esc(args)}'")
                                 detailsContent.append("><div class='tool-params'></div><div class='tool-result'>Completed</div></tool-section>")
