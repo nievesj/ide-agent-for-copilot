@@ -1,3 +1,5 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+
 plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "2.3.10"
@@ -231,6 +233,10 @@ intellijPlatform {
     pluginVerification {
         ides {
             recommended()
+            // TODO: re-enable after multi-IDE compatibility refactor (see multi-ide-architecture.md)
+            // create(IntelliJPlatformType.PyCharmProfessional, "2025.3")
+            // create(IntelliJPlatformType.WebStorm, "2025.3")
+            // create(IntelliJPlatformType.GoLand, "2025.3")
         }
     }
 }
