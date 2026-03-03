@@ -979,7 +979,12 @@ class CodeQualityTools extends AbstractToolHandler {
                 resultFuture.complete("Error suppressing inspection: " + e.getMessage());
             }
         });
-        return resultFuture.get(10, TimeUnit.SECONDS);
+        String result = resultFuture.get(10, TimeUnit.SECONDS);
+        if (result.startsWith("Added") || result.startsWith("Suppressed")) {
+            FileTools.followFileIfEnabled(project, pathStr, line, line,
+                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel() + " suppressed");
+        }
+        return result;
     }
 
     private void processSuppressInspection(String pathStr, int line, String inspectionId,
@@ -1554,7 +1559,12 @@ class CodeQualityTools extends AbstractToolHandler {
             }
         });
 
-        return resultFuture.get(30, TimeUnit.SECONDS);
+        String result = resultFuture.get(30, TimeUnit.SECONDS);
+        if (result.startsWith("Code formatted")) {
+            FileTools.followFileIfEnabled(project, pathStr, 1, 1,
+                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel() + " formatted");
+        }
+        return result;
     }
 
     // ---- apply_quickfix ----
@@ -1592,7 +1602,12 @@ class CodeQualityTools extends AbstractToolHandler {
             }
         });
 
-        return resultFuture.get(30, TimeUnit.SECONDS);
+        String result = resultFuture.get(30, TimeUnit.SECONDS);
+        if (!result.startsWith("Error") && !result.startsWith("No ")) {
+            FileTools.followFileIfEnabled(project, pathStr, targetLine, targetLine,
+                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel() + " applied fix");
+        }
+        return result;
     }
 
     private String executeQuickfix(VirtualFile vf, String pathStr, int targetLine,

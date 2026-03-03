@@ -290,7 +290,12 @@ class RefactoringTools extends AbstractToolHandler {
             }
         });
 
-        return resultFuture.get(30, TimeUnit.SECONDS);
+        String result = resultFuture.get(30, TimeUnit.SECONDS);
+        if (!result.startsWith("Error")) {
+            FileTools.followFileIfEnabled(project, pathStr, Math.max(targetLine, 1), Math.max(targetLine, 1),
+                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel() + " refactored");
+        }
+        return result;
     }
 
     private String resolveAndRefactor(String operation, String pathStr, String symbolName,
@@ -441,7 +446,10 @@ class RefactoringTools extends AbstractToolHandler {
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
         int targetLine = args.get("line").getAsInt();
 
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+        // [0] = declPath, [1] = declLine (as string)
+        String[] declInfo = new String[2];
+
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
@@ -471,8 +479,29 @@ class RefactoringTools extends AbstractToolHandler {
                     " in " + pathStr + ". The symbol may be unresolved or from an unindexed library.";
             }
 
+            // Capture first declaration location for follow mode
+            PsiElement firstDecl = declarations.getFirst();
+            PsiFile declFile = firstDecl.getContainingFile();
+            if (declFile != null && declFile.getVirtualFile() != null) {
+                String basePath = project.getBasePath();
+                VirtualFile declVf = declFile.getVirtualFile();
+                declInfo[0] = basePath != null ? relativize(basePath, declVf.getPath()) : declVf.getPath();
+                Document declDoc = FileDocumentManager.getInstance().getDocument(declVf);
+                if (declDoc != null) {
+                    declInfo[1] = String.valueOf(declDoc.getLineNumber(firstDecl.getTextOffset()) + 1);
+                }
+            }
+
             return formatDeclarationResults(declarations, symbolName);
         });
+
+        if (declInfo[0] != null && declInfo[1] != null) {
+            int declLine = Integer.parseInt(declInfo[1]);
+            FileTools.followFileIfEnabled(project, declInfo[0], declLine, declLine,
+                FileTools.HIGHLIGHT_READ, FileTools.agentLabel() + " found declaration");
+        }
+
+        return result;
     }
 
     private List<PsiElement> findDeclarationsOnLine(

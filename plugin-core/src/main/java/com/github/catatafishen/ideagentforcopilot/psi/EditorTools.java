@@ -180,7 +180,12 @@ class EditorTools extends AbstractToolHandler {
                     (errorMsg[0] != null ? ": " + errorMsg[0] : "");
             }
 
-            return "Created scratch file: " + resultFile[0].getPath() + " (" + content.length() + FORMAT_CHARS_SUFFIX;
+            String scratchPath = resultFile[0].getPath();
+            int lineCount = content.isEmpty() ? 1 : (int) content.lines().count();
+            FileTools.followFileIfEnabled(project, scratchPath, 1, lineCount,
+                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel() + " created scratch");
+
+            return "Created scratch file: " + scratchPath + " (" + content.length() + FORMAT_CHARS_SUFFIX;
         } catch (Exception e) {
             LOG.warn("Failed to create scratch file", e);
             return "Error creating scratch file: " + e.getMessage();

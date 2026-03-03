@@ -39,11 +39,11 @@ class FileTools extends AbstractToolHandler {
     private static final String PARAM_END_LINE = "end_line";
     private static final String PARAM_NEW_STR = "new_str";
     private static final String FORMAT_CHARS_SUFFIX = " chars)";
-    private static final java.awt.Color HIGHLIGHT_EDIT = new java.awt.Color(80, 160, 80, 40);
-    private static final java.awt.Color HIGHLIGHT_READ = new java.awt.Color(80, 120, 200, 35);
+    static final java.awt.Color HIGHLIGHT_EDIT = new java.awt.Color(80, 160, 80, 40);
+    static final java.awt.Color HIGHLIGHT_READ = new java.awt.Color(80, 120, 200, 35);
 
     /** Returns a label like "ui-reviewer", "claude-sonnet-4.5", or "Agent" as fallback. */
-    private static String agentLabel() {
+    static String agentLabel() {
         String agent = CopilotSettings.getActiveAgentLabel();
         if (agent != null) return agent;
         String model = CopilotSettings.getSelectedModel();
@@ -110,7 +110,7 @@ class FileTools extends AbstractToolHandler {
             return hint != null ? hint + "\n" + content : content;
         });
 
-        followFileIfEnabled(pathStr, startLine > 0 ? startLine : -1, endLine > 0 ? endLine : -1, HIGHLIGHT_READ, agentLabel() + " is reading");
+        followFileIfEnabled(project, pathStr, startLine > 0 ? startLine : -1, endLine > 0 ? endLine : -1, HIGHLIGHT_READ, agentLabel() + " is reading");
         return result;
     }
 
@@ -151,14 +151,15 @@ class FileTools extends AbstractToolHandler {
     /**
      * Opens the file in the editor if "Follow Agent Files" is enabled.
      * Scrolls to the middle of [startLine, endLine] and briefly highlights the region.
+     * Package-private so other tool handlers can reuse it.
      */
-    private void followFileIfEnabled(String pathStr, int startLine, int endLine,
-                                     java.awt.Color highlightColor, String actionLabel) {
+    static void followFileIfEnabled(Project project, String pathStr, int startLine, int endLine,
+                                    java.awt.Color highlightColor, String actionLabel) {
         if (!CopilotSettings.getFollowAgentFiles()) return;
 
         EdtUtil.invokeLater(() -> {
             try {
-                VirtualFile vf = resolveVirtualFile(pathStr);
+                VirtualFile vf = ToolUtils.resolveVirtualFile(project, pathStr);
                 if (vf == null) return;
 
                 FileEditorManager fem = FileEditorManager.getInstance(project);
@@ -178,7 +179,7 @@ class FileTools extends AbstractToolHandler {
         });
     }
 
-    private void scrollAndHighlight(FileEditorManager fem, VirtualFile vf,
+    private static void scrollAndHighlight(FileEditorManager fem, VirtualFile vf,
                                     int startLine, int endLine, int midLine,
                                     java.awt.Color highlightColor, String actionLabel) {
         for (com.intellij.openapi.fileEditor.FileEditor fe : fem.getEditors(vf)) {
@@ -216,7 +217,7 @@ class FileTools extends AbstractToolHandler {
         }
     }
 
-    private void flashLineRange(com.intellij.openapi.editor.Editor editor, Document doc,
+    private static void flashLineRange(com.intellij.openapi.editor.Editor editor, Document doc,
                                 int startLine, int endLine,
                                 java.awt.Color color, String actionLabel,
                                 TextEditor disposableParent) {
@@ -334,7 +335,7 @@ class FileTools extends AbstractToolHandler {
         });
 
         String result = resultFuture.get(15, TimeUnit.SECONDS);
-        followFileIfEnabled(pathStr, followRange[0], followRange[1], HIGHLIGHT_EDIT, agentLabel() + " is editing");
+        followFileIfEnabled(project, pathStr, followRange[0], followRange[1], HIGHLIGHT_EDIT, agentLabel() + " is editing");
         return result;
     }
 
@@ -706,7 +707,7 @@ class FileTools extends AbstractToolHandler {
         });
 
         String result = resultFuture.get(10, TimeUnit.SECONDS);
-        followFileIfEnabled(pathStr, 1, lineCount, HIGHLIGHT_EDIT, agentLabel() + " created");
+        followFileIfEnabled(project, pathStr, 1, lineCount, HIGHLIGHT_EDIT, agentLabel() + " created");
         return result;
     }
 
