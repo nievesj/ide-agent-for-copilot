@@ -4,11 +4,16 @@ import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vcs.changes.VcsDirtyScopeManager;
+import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.VfsUtil;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -33,6 +38,15 @@ final class GitToolHandler {
 
     private static final String STATUS_PARAM = "status";
 
+    /**
+     * Git subcommands that modify the repository and require a VCS refresh.
+     */
+    private static final Set<String> WRITE_COMMANDS = Set.of(
+        "add", "branch", "checkout", "cherry-pick", "commit", "fetch", "merge",
+        "pull", "push", "rebase", "remote", "reset", "restore",
+        "revert", "stash", "switch", "tag"
+    );
+
     private final Project project;
     private final FileTools fileTools;
 
@@ -41,7 +55,35 @@ final class GitToolHandler {
         this.fileTools = fileTools;
     }
 
+    /**
+     * Run a git command, preferring IntelliJ's Git4Idea infrastructure for proper VCS integration.
+     * Falls back to ProcessBuilder if Git4Idea is unavailable or the command is not mapped.
+     */
     private String runGit(String... args) throws Exception {
+        if (args.length == 0) return "Error: no git command";
+
+        String result;
+        try {
+            result = IdeGitSupport.run(project, args);
+            if (result == null) {
+                result = runGitProcess(args);
+            }
+        } catch (NoClassDefFoundError e) {
+            // Git4Idea plugin not available — fall back to ProcessBuilder
+            result = runGitProcess(args);
+        }
+
+        if (WRITE_COMMANDS.contains(args[0])) {
+            refreshVcsState();
+        }
+
+        return result;
+    }
+
+    /**
+     * Fallback: run git via ProcessBuilder (bypasses IntelliJ VCS layer).
+     */
+    private String runGitProcess(String... args) throws Exception {
         String basePath = project.getBasePath();
         if (basePath == null) return "Error: no project base path";
 
@@ -68,6 +110,22 @@ final class GitToolHandler {
             return "Error (exit " + p.exitValue() + "): " + stderr.trim();
         }
         return stdout;
+    }
+
+    /**
+     * Refresh IntelliJ's VCS state after git write operations so the Git tool window
+     * (Changes tab, Log tab, branch indicator) updates in real time.
+     */
+    private void refreshVcsState() {
+        String basePath = project.getBasePath();
+        if (basePath == null) return;
+        ApplicationManager.getApplication().invokeLater(() -> {
+            var root = LocalFileSystem.getInstance().findFileByPath(basePath);
+            if (root != null) {
+                VfsUtil.markDirtyAndRefresh(true, true, true, root);
+            }
+            VcsDirtyScopeManager.getInstance(project).markEverythingDirty();
+        });
     }
 
     /**
@@ -576,5 +634,80 @@ final class GitToolHandler {
             gitArgs.add(args.get("path").getAsString());
         }
         return runGit(gitArgs.toArray(new String[0]));
+    }
+
+    /**
+     * Runs git commands through IntelliJ's Git4Idea infrastructure (GitLineHandler).
+     * <p>
+     * Isolated in a static inner class so git4idea class loading is deferred until first use.
+     * If Git4Idea is disabled, the outer class catches {@link NoClassDefFoundError} and falls
+     * back to ProcessBuilder.
+     */
+    private static final class IdeGitSupport {
+        private static final Map<String, git4idea.commands.GitCommand> COMMAND_MAP = Map.ofEntries(
+            Map.entry("add", git4idea.commands.GitCommand.ADD),
+            Map.entry("blame", git4idea.commands.GitCommand.BLAME),
+            Map.entry("branch", git4idea.commands.GitCommand.BRANCH),
+            Map.entry("checkout", git4idea.commands.GitCommand.CHECKOUT),
+            Map.entry("cherry-pick", git4idea.commands.GitCommand.CHERRY_PICK),
+            Map.entry("commit", git4idea.commands.GitCommand.COMMIT),
+            Map.entry("config", git4idea.commands.GitCommand.CONFIG),
+            Map.entry("diff", git4idea.commands.GitCommand.DIFF),
+            Map.entry("fetch", git4idea.commands.GitCommand.FETCH),
+            Map.entry("log", git4idea.commands.GitCommand.LOG),
+            Map.entry("merge", git4idea.commands.GitCommand.MERGE),
+            Map.entry("pull", git4idea.commands.GitCommand.PULL),
+            Map.entry("push", git4idea.commands.GitCommand.PUSH),
+            Map.entry("rebase", git4idea.commands.GitCommand.REBASE),
+            Map.entry("remote", git4idea.commands.GitCommand.REMOTE),
+            Map.entry("reset", git4idea.commands.GitCommand.RESET),
+            Map.entry("restore", git4idea.commands.GitCommand.RESTORE),
+            Map.entry("rev-parse", git4idea.commands.GitCommand.REV_PARSE),
+            Map.entry("revert", git4idea.commands.GitCommand.REVERT),
+            Map.entry("show", git4idea.commands.GitCommand.SHOW),
+            Map.entry("stash", git4idea.commands.GitCommand.STASH),
+            Map.entry("status", git4idea.commands.GitCommand.STATUS),
+            Map.entry("switch", git4idea.commands.GitCommand.CHECKOUT),
+            Map.entry("tag", git4idea.commands.GitCommand.TAG)
+        );
+
+        /** Returns command output, or null to signal fallback to ProcessBuilder. */
+        static String run(Project project, String[] args) {
+            if (args.length == 0) return null;
+
+            git4idea.commands.GitCommand command = COMMAND_MAP.get(args[0]);
+            if (command == null) return null;
+
+            List<git4idea.repo.GitRepository> repos =
+                git4idea.repo.GitRepositoryManager.getInstance(project).getRepositories();
+            if (repos.isEmpty()) return null;
+
+            // Find the repo matching the project base path
+            git4idea.repo.GitRepository repo = repos.getFirst();
+            String basePath = project.getBasePath();
+            if (basePath != null && repos.size() > 1) {
+                for (git4idea.repo.GitRepository r : repos) {
+                    if (r.getRoot().getPath().equals(basePath)) {
+                        repo = r;
+                        break;
+                    }
+                }
+            }
+
+            git4idea.commands.GitLineHandler handler =
+                new git4idea.commands.GitLineHandler(project, repo.getRoot(), command);
+            handler.setSilent(true);
+            handler.setStdoutSuppressed(true);
+            if (args.length > 1) {
+                handler.addParameters(Arrays.asList(args).subList(1, args.length));
+            }
+
+            git4idea.commands.GitCommandResult result =
+                git4idea.commands.Git.getInstance().runCommand(handler);
+            if (result.success()) {
+                return result.getOutputAsJoinedString();
+            }
+            return "Error (exit " + result.getExitCode() + "): " + result.getErrorOutputAsJoinedString();
+        }
     }
 }
