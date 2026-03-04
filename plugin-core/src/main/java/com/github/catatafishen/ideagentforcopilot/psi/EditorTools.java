@@ -415,9 +415,18 @@ class EditorTools extends AbstractToolHandler {
                 var config = settings.getConfiguration();
 
                 // 4. Set script/file path via reflection
-                boolean pathSet = setScriptPath(config, scratchFile.getPath());
+                boolean pathSet;
+                if (config instanceof com.intellij.execution.scratch.JavaScratchConfiguration scratchConfig) {
+                    scratchConfig.setScratchFileUrl(scratchFile.getUrl());
+                    // Main class name must match the public class in the scratch file
+                    String className = scratchFile.getNameWithoutExtension();
+                    scratchConfig.setMainClassName(className);
+                    pathSet = true;
+                } else {
+                    pathSet = setScriptPath(config, scratchFile.getPath());
+                }
 
-                // 5. Set classpath module
+                // 5. Set classpath module (auto-detect for Java if not specified)
                 String moduleStatus = "";
                 if (!moduleName.isEmpty()) {
                     var module = com.intellij.openapi.module.ModuleManager.getInstance(project)
@@ -427,6 +436,12 @@ class EditorTools extends AbstractToolHandler {
                         moduleStatus = "\nClasspath: " + moduleName;
                     } else {
                         moduleStatus = "\nWarning: Module '" + moduleName + "' not found";
+                    }
+                } else if (config instanceof com.intellij.execution.scratch.JavaScratchConfiguration) {
+                    var modules = com.intellij.openapi.module.ModuleManager.getInstance(project).getModules();
+                    if (modules.length > 0) {
+                        trySetModule(config, modules[0]);
+                        moduleStatus = "\nClasspath: " + modules[0].getName() + " (auto-detected)";
                     }
                 }
 
@@ -516,10 +531,14 @@ class EditorTools extends AbstractToolHandler {
     private com.intellij.execution.configurations.ConfigurationType findScratchConfigType(String extension) {
         if (extension == null) return null;
 
+        // Java scratch files have a dedicated config type
+        if ("java".equalsIgnoreCase(extension)) {
+            return com.intellij.execution.scratch.JavaScratchConfigurationType.getInstance();
+        }
+
         String searchTerm = switch (extension.toLowerCase()) {
             case "kts" -> "kotlin script";
             case "kt" -> "kotlin";
-            case "java" -> "application";
             case "groovy", "gvy" -> "groovy";
             case "py" -> "python";
             case "scala" -> "scala";

@@ -12,20 +12,31 @@ PLUGIN_DIR_NAME="plugin-core"
 DIST_DIR="plugin-core/build/distributions"
 BRIDGE_FILE="$HOME/.copilot/psi-bridge.json"
 
-# Auto-detect IntelliJ install dir (Toolbox layout)
+# Auto-detect IntelliJ install dir
 detect_install_dir() {
     local base="$HOME/.local/share/JetBrains"
+
+    # 1. Toolbox per-IDE plugin dir: ~/.local/share/JetBrains/IntelliJIdea*/plugin-core
+    local ide_dir
+    ide_dir=$(ls -dt "$base"/IntelliJIdea* 2>/dev/null | head -1)
+    if [[ -n "$ide_dir" && -d "$ide_dir/$PLUGIN_DIR_NAME" ]]; then
+        echo "$ide_dir/$PLUGIN_DIR_NAME"
+        return
+    fi
+
+    # 2. Toolbox app-level: ~/.local/share/JetBrains/Toolbox/apps/.../plugins/plugin-core
     local dir
-    dir=$(find "$base" -maxdepth 2 -name "$PLUGIN_DIR_NAME" -type d 2>/dev/null | head -1)
+    dir=$(find "$base/Toolbox/apps" -maxdepth 3 -name "plugins" -type d 2>/dev/null | while read -r d; do
+        [[ -d "$d/$PLUGIN_DIR_NAME" ]] && echo "$d/$PLUGIN_DIR_NAME" && break
+    done)
     if [[ -n "$dir" ]]; then
         echo "$dir"
-    else
-        # Fallback: newest IntelliJIdea dir
-        local ide_dir
-        ide_dir=$(ls -dt "$base"/IntelliJIdea* 2>/dev/null | head -1)
-        if [[ -n "$ide_dir" ]]; then
-            echo "$ide_dir/$PLUGIN_DIR_NAME"
-        fi
+        return
+    fi
+
+    # 3. Fallback: newest IntelliJIdea dir (create if needed)
+    if [[ -n "$ide_dir" ]]; then
+        echo "$ide_dir/$PLUGIN_DIR_NAME"
     fi
 }
 

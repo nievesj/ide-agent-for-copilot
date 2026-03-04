@@ -241,16 +241,31 @@ tasks.register("deployToMainIde") {
 
 /** Finds the plugin install directory in the running IDE's plugin folder. */
 fun detectPluginInstallDir(): File {
-    // Toolbox layout: ~/.local/share/JetBrains/Toolbox/apps/.../plugins/plugin-core
-    val toolboxBase = File(System.getProperty("user.home"), ".local/share/JetBrains/Toolbox/apps")
+    val home = System.getProperty("user.home")
+
+    // 1. Toolbox per-IDE plugin dir: ~/.local/share/JetBrains/IntelliJIdea*/plugin-core
+    //    This is where Toolbox-managed IDEs store user-installed plugins.
+    val dataBase = File(home, ".local/share/JetBrains")
+    if (dataBase.exists()) {
+        val found = dataBase.listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith("IntelliJIdea") }
+            ?.sortedByDescending { it.name }
+            ?.map { it.resolve("plugin-core") }
+            ?.firstOrNull { it.exists() }
+        if (found != null) return found
+    }
+
+    // 2. Toolbox app-level plugins: ~/.local/share/JetBrains/Toolbox/apps/.../plugins/plugin-core
+    val toolboxBase = File(home, ".local/share/JetBrains/Toolbox/apps")
     if (toolboxBase.exists()) {
         val found = toolboxBase.walkTopDown().maxDepth(3)
             .filter { it.isDirectory && it.name == "plugins" && File(it, "plugin-core").exists() }
             .firstOrNull()
         if (found != null) return File(found, "plugin-core")
     }
-    // Standard config layout: ~/.config/JetBrains/IntelliJIdea*/plugins/plugin-core
-    val configBase = File(System.getProperty("user.home"), ".config/JetBrains")
+
+    // 3. Standard config layout: ~/.config/JetBrains/IntelliJIdea*/plugins/plugin-core
+    val configBase = File(home, ".config/JetBrains")
     if (configBase.exists()) {
         val found = configBase.listFiles()
             ?.filter { it.isDirectory && it.name.startsWith("IntelliJIdea") }
