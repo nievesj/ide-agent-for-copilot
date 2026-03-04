@@ -146,6 +146,25 @@ val buildChatUi by tasks.registering {
     }
 }
 
+// Run chat-ui JavaScript tests (Vitest + happy-dom)
+val jsTest by tasks.registering {
+    group = "verification"
+    description = "Run chat-ui JavaScript unit tests (Vitest)"
+    inputs.dir("chat-ui/src")
+    inputs.dir("js-tests")
+
+    doLast {
+        exec {
+            workingDir = file("js-tests")
+            commandLine("npm", "test")
+        }
+    }
+}
+
+tasks.named("check") {
+    dependsOn(jsTest)
+}
+
 tasks.named("processResources") {
     dependsOn(buildChatUi)
 }
