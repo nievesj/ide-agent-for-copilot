@@ -1,11 +1,15 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
+import com.github.catatafishen.ideagentforcopilot.ui.StatusBanner.Companion.INFO_DISMISS_MS
+import com.github.catatafishen.ideagentforcopilot.ui.StatusBanner.Companion.WARNING_DISMISS_MS
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.ui.EditorNotificationPanel
 import com.intellij.ui.InlineBanner
 import com.intellij.util.Alarm
+import com.intellij.util.ui.GraphicsUtil
 import java.awt.BorderLayout
+import java.awt.Graphics
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.SwingUtilities
@@ -57,7 +61,15 @@ class StatusBanner(parentDisposable: Disposable) :
     private fun show(message: String, status: EditorNotificationPanel.Status) {
         SwingUtilities.invokeLater {
             dismiss()
-            val banner = InlineBanner(message, status)
+            val banner = object : InlineBanner(message, status) {
+                override fun paintComponent(g: Graphics) {
+                    super.paintComponent(g)
+                    val config = GraphicsUtil.setupAAPainting(g)
+                    g.color = background
+                    g.fillRect(0, 0, width, height)
+                    config.restore()
+                }
+            }
             banner.showCloseButton(true)
             banner.setCloseAction { dismiss() }
             banner.accessibleContext.accessibleName = when (status) {
