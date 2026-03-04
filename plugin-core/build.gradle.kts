@@ -223,7 +223,7 @@ tasks.register("deployToMainIde") {
                     }
                     val httpCode = result.standardOutput.asText.get().trim()
                     if (httpCode == "200") {
-                        logger.lifecycle("🔄 Reload requested — if it fails, restart IDE to apply")
+                        logger.lifecycle("🔄 IDE restart triggered — reloading with new plugin version")
                     } else {
                         logger.lifecycle("ℹ️  Dynamic reload unavailable (HTTP $httpCode) — restart IDE to apply")
                     }

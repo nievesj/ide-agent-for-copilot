@@ -224,11 +224,11 @@ public final class PsiBridgeService implements Disposable {
     }
 
     /**
-     * Handles POST /reload-plugin — dynamically reloads this plugin from a built ZIP file.
+     * Handles POST /reload-plugin — deploys plugin and offers IDE restart.
      * Accepts JSON body: {@code {"zipPath": "/path/to/plugin.zip"}}
      * <p>
-     * Sends the HTTP response immediately, then schedules the actual reload on the EDT.
-     * The plugin (including this HTTP server) will be unloaded and reloaded.
+     * Files are already deployed to the plugin directory by the Gradle task.
+     * This endpoint triggers an IDE restart to pick up the new version.
      */
     private void handleReloadPlugin(HttpExchange exchange) throws IOException {
         if (!"POST".equals(exchange.getRequestMethod())) {
@@ -257,62 +257,16 @@ public final class PsiBridgeService implements Disposable {
             return;
         }
 
-        // Send response before scheduling reload (this server will be shut down during reload)
-        byte[] resp = "{\"status\":\"reload_scheduled\"}".getBytes(StandardCharsets.UTF_8);
+        byte[] resp = "{\"status\":\"restart_scheduled\"}".getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set(CONTENT_TYPE_HEADER, APPLICATION_JSON);
         exchange.sendResponseHeaders(200, resp.length);
         exchange.getResponseBody().write(resp);
         exchange.getResponseBody().close();
 
-        LOG.info("Reload requested, ZIP: " + zipPath);
-        ApplicationManager.getApplication().invokeLater(() -> {
-            try {
-                // Use reflection — DynamicPlugins, PluginDescriptorLoader, IdeaPluginDescriptorImpl are @ApiStatus.Internal
-                var buildNumber = com.intellij.ide.plugins.PluginManagerCore.getBuildNumber();
-                Class<?> loaderClass = Class.forName("com.intellij.ide.plugins.PluginDescriptorLoader");
-                var loadMethod = loaderClass.getMethod("loadDescriptorFromArtifact",
-                    Path.class, com.intellij.openapi.util.BuildNumber.class);
-                Object descriptor = loadMethod.invoke(null, zipPath, buildNumber);
-                if (descriptor == null) {
-                    LOG.error("Failed to load plugin descriptor from: " + zipPath);
-                    return;
-                }
-
-                // Check why dynamic reload might fail
-                Class<?> dynamicPluginsClass = Class.forName("com.intellij.ide.plugins.DynamicPlugins");
-                Class<?> descriptorImplClass = Class.forName("com.intellij.ide.plugins.IdeaPluginDescriptorImpl");
-                Object dpInstance = dynamicPluginsClass.getField("INSTANCE").get(null);
-
-                var checkMethod = dynamicPluginsClass.getMethod("checkCanUnloadWithoutRestart", descriptorImplClass);
-                String reason = (String) checkMethod.invoke(dpInstance, descriptor);
-                if (reason != null) {
-                    LOG.warn("Plugin cannot be dynamically reloaded: " + reason);
-                    return;
-                }
-
-                // Unload old plugin, then load new one
-                var pluginId = com.intellij.openapi.extensions.PluginId.getId("com.github.catatafishen.ideagentforcopilot");
-                var currentDesc = com.intellij.ide.plugins.PluginManagerCore.getPlugin(pluginId);
-                if (currentDesc != null) {
-                    var unloadMethod = dynamicPluginsClass.getMethod("unloadPlugin", descriptorImplClass);
-                    boolean unloaded = (boolean) unloadMethod.invoke(dpInstance, currentDesc);
-                    if (!unloaded) {
-                        LOG.warn("Failed to unload current plugin — IDE restart required");
-                        return;
-                    }
-                }
-
-                var loadPluginMethod = dynamicPluginsClass.getMethod("loadPlugin", descriptorImplClass);
-                boolean loaded = (boolean) loadPluginMethod.invoke(dpInstance, descriptor);
-                if (loaded) {
-                    LOG.info("Plugin reloaded successfully from: " + zipPath);
-                } else {
-                    LOG.warn("Failed to load new plugin version — IDE restart required");
-                }
-            } catch (Exception e) {
-                LOG.error("Failed to reload plugin", e);
-            }
-        });
+        LOG.info("Plugin deploy reload requested, ZIP: " + zipPath);
+        ApplicationManager.getApplication().invokeLater(() ->
+            ApplicationManager.getApplication().restart()
+        );
     }
 
     private void handleToolStatus(HttpExchange exchange) throws IOException {
