@@ -536,23 +536,30 @@ class EditorTools extends AbstractToolHandler {
             return com.intellij.execution.scratch.JavaScratchConfigurationType.getInstance();
         }
 
+        // Map extensions to config type IDs or display-name search terms
+        // Use exact IDs (prefixed with "id:") when available to avoid ambiguous matches
         String searchTerm = switch (extension.toLowerCase()) {
             case "kts" -> "kotlin script";
             case "kt" -> "kotlin";
             case "groovy", "gvy" -> "groovy";
             case "py" -> "python";
             case "scala" -> "scala";
-            case "js", "mjs" -> "node.js";
-            case "ts", "mts" -> "node.js";
+            case "js", "mjs", "ts", "mts" -> "id:NodeJSConfigurationType";
             default -> extension;
         };
 
         for (var ct : com.intellij.execution.configurations.ConfigurationType
             .CONFIGURATION_TYPE_EP.getExtensionList()) {
-            String displayName = ct.getDisplayName().toLowerCase();
-            String id = ct.getId().toLowerCase();
-            if (displayName.contains(searchTerm) || id.contains(searchTerm.replace(" ", ""))) {
-                return ct;
+            if (searchTerm.startsWith("id:")) {
+                if (ct.getId().equals(searchTerm.substring(3))) {
+                    return ct;
+                }
+            } else {
+                String displayName = ct.getDisplayName().toLowerCase();
+                String id = ct.getId().toLowerCase();
+                if (displayName.contains(searchTerm) || id.contains(searchTerm.replace(" ", ""))) {
+                    return ct;
+                }
             }
         }
         return null;
