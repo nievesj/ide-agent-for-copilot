@@ -1260,6 +1260,14 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             };"
         )
         sb.append("--error-a12:${rgba(ERROR_COLOR, 0.12)};--error-a16:${rgba(ERROR_COLOR, 0.16)};")
+        val bannerInfoBg = com.intellij.util.ui.JBUI.CurrentTheme.Banner.INFO_BACKGROUND
+        val bannerInfoBorder = com.intellij.util.ui.JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR
+        val bannerErrorBg = com.intellij.util.ui.JBUI.CurrentTheme.Banner.ERROR_BACKGROUND
+        val bannerErrorBorder = com.intellij.util.ui.JBUI.CurrentTheme.Banner.ERROR_BORDER_COLOR
+        val bannerFg = com.intellij.util.ui.JBUI.CurrentTheme.Banner.FOREGROUND
+        sb.append("--banner-info-bg:${rgb(bannerInfoBg)};--banner-info-border:${rgb(bannerInfoBorder)};")
+        sb.append("--banner-error-bg:${rgb(bannerErrorBg)};--banner-error-border:${rgb(bannerErrorBorder)};")
+        sb.append("--banner-fg:${rgb(bannerFg)};")
         sb.append("--shadow:${rgba(THINK_COLOR, 0.25)};")
         for (i in SA_COLORS.indices) {
             val c = SA_COLORS[i]
