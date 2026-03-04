@@ -46,6 +46,13 @@ class StatusBanner(parentDisposable: Disposable) :
         const val WARNING_DISMISS_MS = 15_000
     }
 
+    /** The border color of the currently active banner, or null when no banner is shown. */
+    var activeBorderColor: java.awt.Color? = null
+        private set
+
+    /** Called on the EDT whenever a banner is shown or dismissed. */
+    var onBannerChanged: (() -> Unit)? = null
+
     private val dismissAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, parentDisposable)
     private var currentBanner: InlineBanner? = null
     private var hovered = false
@@ -119,9 +126,11 @@ class StatusBanner(parentDisposable: Disposable) :
             }
 
             currentBanner = banner
+            activeBorderColor = borderColor
             add(banner, BorderLayout.CENTER)
             revalidate()
             repaint()
+            onBannerChanged?.invoke()
         }
     }
 
@@ -136,12 +145,14 @@ class StatusBanner(parentDisposable: Disposable) :
         hovered = false
         currentBanner?.let { banner ->
             currentBanner = null
+            activeBorderColor = null
             banner.close()
             // Ensure parent relayouts after InlineBanner's close animation
             SwingUtilities.invokeLater {
                 revalidate()
                 repaint()
             }
+            onBannerChanged?.invoke()
         }
     }
 }

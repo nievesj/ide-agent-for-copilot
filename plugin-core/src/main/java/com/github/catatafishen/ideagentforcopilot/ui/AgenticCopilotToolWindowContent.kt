@@ -493,11 +493,37 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             loadModels()
         }
         northStack.add(copilotBanner)
-        northStack.add(createGhSetupBanner { billing.loadBillingData() })
-        northStack.add(GitWarningBanner(project))
+        val ghBanner = createGhSetupBanner { billing.loadBillingData() }
+        northStack.add(ghBanner)
+        val gitBanner = GitWarningBanner(project)
+        northStack.add(gitBanner)
         val sb = StatusBanner(project)
         statusBanner = sb
         northStack.add(sb)
+
+        // Dynamic container border: colored when a banner is visible, grey otherwise.
+        // The bottom-most visible banner determines the color.
+        val bannerColors: List<Pair<java.awt.Component, () -> java.awt.Color?>> = listOf(
+            psiBridgeBanner to { if (psiBridgeBanner.isVisible) statusBorderColor(EditorNotificationPanel.Status.Warning) else null },
+            copilotBanner!! to { if (copilotBanner!!.isVisible) statusBorderColor(EditorNotificationPanel.Status.Warning) else null },
+            ghBanner to { if (ghBanner.isVisible) statusBorderColor(EditorNotificationPanel.Status.Warning) else null },
+            gitBanner to { if (gitBanner.isVisible) statusBorderColor(EditorNotificationPanel.Status.Error) else null },
+            sb to { sb.activeBorderColor },
+        )
+
+        fun updateContainerBorder() {
+            val color = bannerColors.asReversed().firstNotNullOfOrNull { it.second() } ?: JBColor.border()
+            responsePanelContainer.border = JBUI.Borders.customLine(color, 1, 0, 0, 0)
+        }
+
+        val visibilityListener = object : java.awt.event.ComponentAdapter() {
+            override fun componentShown(e: java.awt.event.ComponentEvent) = updateContainerBorder()
+            override fun componentHidden(e: java.awt.event.ComponentEvent) = updateContainerBorder()
+        }
+        for ((component, _) in bannerColors) {
+            component.addComponentListener(visibilityListener)
+        }
+        sb.onBannerChanged = ::updateContainerBorder
         consolePanel.onStatusMessage = { type, message ->
             when (type) {
                 "error" -> sb.showError(message)
