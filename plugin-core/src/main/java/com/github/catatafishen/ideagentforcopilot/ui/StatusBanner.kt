@@ -61,12 +61,16 @@ class StatusBanner(parentDisposable: Disposable) :
         SwingUtilities.invokeLater {
             dismiss()
             val banner = object : InlineBanner(message, status) {
+                private val statusBorderColor: java.awt.Color =
+                    (border as? javax.swing.border.LineBorder)?.lineColor
+                        ?: com.intellij.ui.JBColor.border()
+
                 override fun paintComponent(g: Graphics) {
                     val g2 = g.create() as java.awt.Graphics2D
                     try {
                         g2.color = background
                         g2.fillRect(0, 0, width, height)
-                        g2.color = com.intellij.ui.JBColor.border()
+                        g2.color = statusBorderColor
                         g2.fillRect(0, 0, width, 1)
                         g2.fillRect(0, height - 1, width, 1)
                     } finally {
