@@ -1483,78 +1483,132 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
     private fun executePrompt(prompt: String) {
         try {
-            // Block prompts while signed out — banner must be visible for sign-in
-            if (authService.pendingAuthError != null) {
-                SwingUtilities.invokeLater {
-                    consolePanel.addErrorEntry("Not signed in to Copilot. Use the Sign In button in the banner above.")
-                    copilotBanner?.triggerCheck()
-                }
-                return
-            }
+            if (isBlockedByAuth()) return
 
             val service = CopilotService.getInstance(project)
             val client = service.getClient()
             val sessionId = ensureSessionCreated(client)
+            wirePermissionListener(client)
 
-            // Wire permission request listener so ASK-mode tools show a bubble in chat
-            client.setPermissionRequestListener { req ->
-                ApplicationManager.getApplication().invokeLater {
-                    consolePanel.showPermissionRequest(
-                        req.reqId.toString(), req.displayName, req.description
-                    ) { allowed -> req.respond(allowed) }
-                    notifyPermissionRequestIfUnfocused(req.displayName)
-                }
-            }
+            addTimelineEvent(EventType.MESSAGE_SENT, "Prompt: " + prompt.take(80))
 
-            addTimelineEvent(
-                EventType.MESSAGE_SENT,
-                "Prompt: ${prompt.take(80)}${if (prompt.length > 80) "..." else ""}"
-            )
-
-            val selectedModelObj =
-                if (selectedModelIndex >= 0 && selectedModelIndex < loadedModels.size) loadedModels[selectedModelIndex] else null
-            val modelId = selectedModelObj?.id ?: ""
-            turnToolCallCount = 0
-            activeSubAgentId = null
-            turnModelId = modelId
-
-            SwingUtilities.invokeLater {
-                consolePanel.setCurrentModel(modelId)
-                consolePanel.setPromptStats(modelId, getModelMultiplier(modelId))
-            }
+            val modelId = prepareModelAndTurnState()
 
             val references = buildContextReferences()
             val effectivePrompt = buildEffectivePrompt(prompt)
-
-            if (references.isNotEmpty()) {
-                val contextFiles = (0 until contextListModel.size()).map { i ->
-                    val item = contextListModel.getElementAt(i)
-                    Pair(item.name, item.path)
-                }
-                consolePanel.addContextFilesEntry(contextFiles)
-            }
+            addContextEntries(references)
             SwingUtilities.invokeLater { contextListModel.clear() }
 
-            var receivedContent = false
-            client.sendPrompt(
-                sessionId, effectivePrompt, modelId,
-                references.ifEmpty { null },
-                { chunk ->
-                    if (!receivedContent) {
-                        receivedContent = true
-                        setResponseStatus("Responding...")
-                    }
-                    appendResponse(chunk)
-                },
-                { update -> handlePromptStreamingUpdate(update, receivedContent) },
-                null // premium requests tracked via billing API, not per-turn
-            )
+            dispatchPromptWithRetry(client, sessionId, effectivePrompt, modelId, references)
 
             handlePromptCompletion(prompt)
         } catch (e: Exception) {
             handlePromptError(e)
         } finally {
             setSendingState(false)
+        }
+    }
+
+    private fun dispatchPromptWithRetry(
+        client: CopilotAcpClient,
+        initialSessionId: String,
+        effectivePrompt: String,
+        modelId: String,
+        references: List<CopilotAcpClient.ResourceReference>
+    ) {
+        var receivedContent = false
+        val refs = references.ifEmpty { null }
+        val onChunk = createStreamingChunkHandler { receivedContent = true }
+        val onUpdate = java.util.function.Consumer<com.google.gson.JsonObject> { update ->
+            handlePromptStreamingUpdate(update, receivedContent)
+        }
+        var sessionId = initialSessionId
+        val sendPromptCall: () -> Unit = {
+            client.sendPrompt(sessionId, effectivePrompt, modelId, refs, onChunk, onUpdate, null)
+        }
+        sessionId = sendWithSessionRetry(client, sessionId, sendPromptCall) { receivedContent = false }
+    }
+
+    private fun isBlockedByAuth(): Boolean {
+        if (authService.pendingAuthError == null) return false
+        SwingUtilities.invokeLater {
+            consolePanel.addErrorEntry("Not signed in to Copilot. Use the Sign In button in the banner above.")
+            copilotBanner?.triggerCheck()
+        }
+        return true
+    }
+
+    private fun wirePermissionListener(client: CopilotAcpClient) {
+        client.setPermissionRequestListener { req ->
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel.showPermissionRequest(
+                    req.reqId.toString(), req.displayName, req.description
+                ) { allowed -> req.respond(allowed) }
+                notifyPermissionRequestIfUnfocused(req.displayName)
+            }
+        }
+    }
+
+    private fun prepareModelAndTurnState(): String {
+        val selectedModelObj =
+            if (selectedModelIndex >= 0 && selectedModelIndex < loadedModels.size) loadedModels[selectedModelIndex] else null
+        val modelId = selectedModelObj?.id ?: ""
+        turnToolCallCount = 0
+        activeSubAgentId = null
+        turnModelId = modelId
+        SwingUtilities.invokeLater {
+            consolePanel.setCurrentModel(modelId)
+            consolePanel.setPromptStats(modelId, getModelMultiplier(modelId))
+        }
+        return modelId
+    }
+
+    private fun addContextEntries(references: List<CopilotAcpClient.ResourceReference>) {
+        if (references.isNotEmpty()) {
+            val contextFiles = (0 until contextListModel.size()).map { i ->
+                val item = contextListModel.getElementAt(i)
+                Pair(item.name, item.path)
+            }
+            consolePanel.addContextFilesEntry(contextFiles)
+        }
+    }
+
+    private fun createStreamingChunkHandler(onFirstChunk: () -> Unit): java.util.function.Consumer<String> {
+        var received = false
+        return java.util.function.Consumer { chunk ->
+            if (!received) {
+                received = true
+                onFirstChunk()
+                setResponseStatus("Responding...")
+            }
+            appendResponse(chunk)
+        }
+    }
+
+    /**
+     * Attempts to call [sendCall]. If it fails with a "not found" session error,
+     * invalidates the current session, creates a fresh one, resets state via [onRetry],
+     * and retries once. Returns the (possibly new) session ID.
+     */
+    private fun sendWithSessionRetry(
+        client: CopilotAcpClient,
+        initialSessionId: String,
+        sendCall: () -> Unit,
+        onRetry: () -> Unit
+    ): String {
+        try {
+            sendCall()
+            return initialSessionId
+        } catch (e: com.github.catatafishen.ideagentforcopilot.bridge.CopilotException) {
+            if (e.message != null && e.message!!.contains("not found", ignoreCase = true)) {
+                LOG.info("Session expired ('not found'), creating new session and retrying")
+                currentSessionId = null
+                val newSessionId = ensureSessionCreated(client)
+                onRetry()
+                sendCall()
+                return newSessionId
+            }
+            throw e
         }
     }
 
