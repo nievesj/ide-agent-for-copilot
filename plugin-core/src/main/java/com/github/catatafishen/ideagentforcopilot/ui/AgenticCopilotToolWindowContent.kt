@@ -465,7 +465,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
     private fun createPromptTab(): JComponent {
         val panel = JBPanel<JBPanel<*>>(BorderLayout())
-        panel.border = JBUI.Borders.customLine(JBColor.border(), 1, 0, 0, 0)
 
         // PSI bridge status banner (shown when bridge is not reachable)
         val psiBridgeBanner = createPsiBridgeBanner()
@@ -473,6 +472,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         // Response/chat history area (top of splitter)
         val responsePanel = createResponsePanel()
         responsePanelContainer = JBPanel<JBPanel<*>>(BorderLayout())
+        responsePanelContainer.border = JBUI.Borders.customLine(JBColor.border(), 1, 0, 0, 0)
         responsePanelContainer.add(responsePanel, BorderLayout.CENTER)
         val topPanel = JBPanel<JBPanel<*>>(BorderLayout())
         val northStack = JBPanel<JBPanel<*>>()
