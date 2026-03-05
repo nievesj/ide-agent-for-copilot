@@ -465,6 +465,7 @@ class EditorTools extends AbstractToolHandler {
 
                 // 7. Execute
                 settings.setTemporary(true);
+                settings.setEditBeforeRun(false);
                 runManager.addConfiguration(settings);
                 runManager.setSelectedConfiguration(settings);
 
