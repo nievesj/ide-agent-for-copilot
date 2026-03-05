@@ -46,8 +46,16 @@ internal object ToolRenderers {
         "find_references" to SearchResultRenderer,
         "get_file_outline" to FileOutlineRenderer,
         "get_class_outline" to ClassOutlineRenderer,
-        // IDE
+        // Navigation
+        "go_to_declaration" to GoToDeclarationRenderer,
+        "get_type_hierarchy" to TypeHierarchyRenderer,
+        // Refactoring
+        "refactor" to RefactorRenderer,
+        // Project & files
+        "list_project_files" to ListProjectFilesRenderer,
         "get_project_info" to ProjectInfoRenderer,
+        // Infrastructure
+        "run_command" to RunCommandRenderer,
         // HTTP
         "http_request" to HttpRequestRenderer,
     )

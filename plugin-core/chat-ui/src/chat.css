@@ -2036,3 +2036,334 @@ permission-request {
     color: var(--fg-a08);
     background: var(--fg-a05);
 }
+
+/* ── File list (list_project_files) ─────────────────── */
+.file-list-result {
+    border-radius: 6px;
+    border: 1px solid var(--fg-a08);
+    overflow: hidden;
+}
+
+.file-list-header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--fg-a08);
+}
+
+.file-list-count {
+    font-weight: 700;
+    font-size: 1.1em;
+}
+
+.file-list-label {
+    color: var(--fg-muted);
+    font-size: 0.9em;
+}
+
+.file-list-entries {
+    padding: 4px 0;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.file-list-dir {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 12px 1px;
+    margin-top: 4px;
+}
+
+.file-list-dir-name {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--fg-muted);
+    font-family: monospace;
+}
+
+.file-list-entry {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 1px 12px 1px 24px;
+    font-size: 0.88em;
+}
+
+.file-list-tag {
+    font-size: 0.75em;
+    padding: 0 5px;
+    border-radius: 3px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.file-tag-type {
+    color: var(--fg-muted);
+    background: var(--fg-a05);
+}
+
+.file-tag-test {
+    color: var(--success);
+    background: rgba(var(--success-rgb, 80, 161, 79), 0.12);
+}
+
+.file-tag-generated {
+    color: var(--fg-muted);
+    background: var(--fg-a08);
+}
+
+.file-tag-excluded {
+    color: var(--warning);
+    background: rgba(var(--warning-rgb, 190, 132, 46), 0.12);
+}
+
+/* ── Run command result ─────────────────────────────── */
+.cmd-result {
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.cmd-header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+}
+
+.cmd-success .build-icon,
+.cmd-success .build-status {
+    color: var(--success);
+}
+
+.cmd-fail .build-icon,
+.cmd-fail .build-status {
+    color: var(--danger);
+}
+
+.cmd-timeout .build-icon,
+.cmd-timeout .build-status {
+    color: var(--warning);
+}
+
+.cmd-result .tool-output {
+    margin-top: var(--sp-3);
+}
+
+/* ── Go to declaration ──────────────────────────────── */
+.decl-result {
+    border-radius: 6px;
+    border: 1px solid var(--fg-a08);
+    overflow: hidden;
+    font-size: 0.9em;
+}
+
+.decl-header {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--fg-a08);
+}
+
+.decl-symbol {
+    font-weight: 700;
+    font-family: monospace;
+}
+
+.decl-location {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 12px;
+    font-size: 0.9em;
+}
+
+.decl-context {
+    border-top: 1px solid var(--fg-a05);
+    font-family: monospace;
+    font-size: 0.88em;
+    line-height: 1.6;
+    padding: 4px 0;
+    background: var(--fg-a05);
+}
+
+.decl-line {
+    display: flex;
+    padding: 0 12px;
+    gap: 8px;
+}
+
+.decl-target {
+    background: var(--agent-a08);
+}
+
+.decl-line-num {
+    color: var(--fg-muted);
+    user-select: none;
+    min-width: 3ch;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.decl-line-code {
+    white-space: pre;
+    overflow-x: auto;
+}
+
+/* ── Refactor result ────────────────────────────────── */
+.refactor-result {
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.refactor-header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+}
+
+.refactor-success .build-icon,
+.refactor-success .build-status {
+    color: var(--success);
+}
+
+.refactor-fail .build-icon,
+.refactor-fail .build-status {
+    color: var(--danger);
+}
+
+.refactor-symbol {
+    font-family: monospace;
+    font-weight: 600;
+    font-size: 0.92em;
+}
+
+.refactor-detail {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: var(--sp-2);
+    font-family: monospace;
+    font-size: 0.92em;
+}
+
+.refactor-old {
+    text-decoration: line-through;
+    color: var(--danger);
+}
+
+.refactor-arrow {
+    color: var(--fg-muted);
+}
+
+.refactor-new {
+    font-weight: 600;
+    color: var(--success);
+}
+
+.refactor-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: var(--sp-2);
+    font-size: 0.88em;
+}
+
+.refactor-usages {
+    margin-top: var(--sp-3);
+    border-top: 1px solid var(--fg-a08);
+    padding-top: var(--sp-2);
+}
+
+.refactor-usage {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 1px 0;
+    font-size: 0.88em;
+}
+
+/* ── Type hierarchy ─────────────────────────────────── */
+.hierarchy-result {
+    border-radius: 6px;
+    border: 1px solid var(--fg-a08);
+    overflow: hidden;
+    font-size: 0.9em;
+}
+
+.hierarchy-section {
+    border-top: 1px solid var(--fg-a05);
+}
+
+.hierarchy-section:first-child {
+    border-top: none;
+}
+
+.hierarchy-entries {
+    padding: 2px 0;
+}
+
+.hierarchy-center {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-weight: 700;
+    background: var(--agent-a08);
+    border-top: 1px solid var(--fg-a08);
+    border-bottom: 1px solid var(--fg-a08);
+}
+
+.hierarchy-entry {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 12px;
+    font-size: 0.92em;
+}
+
+.hierarchy-kind {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    font-size: 0.75em;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.kind-class {
+    color: var(--link);
+    background: rgba(var(--link-rgb, 88, 157, 246), 0.15);
+}
+
+.kind-interface {
+    color: var(--success);
+    background: rgba(var(--success-rgb, 80, 161, 79), 0.15);
+}
+
+.kind-enum {
+    color: var(--warning);
+    background: rgba(var(--warning-rgb, 190, 132, 46), 0.15);
+}
+
+.kind-annotation {
+    color: var(--fg-muted);
+    background: var(--fg-a08);
+}
+
+.hierarchy-name {
+    font-family: monospace;
+}
+
+.hierarchy-type-name {
+    font-family: monospace;
+}
+
+.hierarchy-location {
+    margin-left: auto;
+    font-size: 0.85em;
+    color: var(--fg-muted);
+}
