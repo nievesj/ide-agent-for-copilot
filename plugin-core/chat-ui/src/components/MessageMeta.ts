@@ -37,6 +37,7 @@ export default class MessageMeta extends HTMLElement {
 
         this._strip.addEventListener('scroll', () => this._updateNav(), {passive: true});
         new ResizeObserver(() => this._updateNav()).observe(this._strip);
+        this._initDragScroll(this._strip);
     }
 
     appendChild<T extends Node>(node: T): T {
@@ -109,5 +110,31 @@ export default class MessageMeta extends HTMLElement {
         } else {
             this._badge.classList.add('hidden');
         }
+    }
+
+    private _initDragScroll(strip: HTMLElement): void {
+        let dragging = false;
+        let startX = 0;
+        let scrollStart = 0;
+
+        strip.addEventListener('mousedown', (e: MouseEvent) => {
+            if (e.button !== 0) return;
+            dragging = true;
+            startX = e.clientX;
+            scrollStart = strip.scrollLeft;
+            strip.classList.add('dragging');
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e: MouseEvent) => {
+            if (!dragging) return;
+            strip.scrollLeft = scrollStart - (e.clientX - startX);
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!dragging) return;
+            dragging = false;
+            strip.classList.remove('dragging');
+        });
     }
 }

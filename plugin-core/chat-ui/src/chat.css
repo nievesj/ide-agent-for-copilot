@@ -426,6 +426,11 @@ chat-message.agent-row:last-child:not(:has(message-bubble))::after {
     overflow: hidden;
     flex: 1;
     min-width: 0;
+    cursor: grab;
+}
+
+.chip-strip.dragging {
+    cursor: grabbing;
 }
 
 .chip-nav {
@@ -481,6 +486,7 @@ chat-message.agent-row:last-child:not(:has(message-bubble))::after {
     white-space: nowrap;
     flex-shrink: 0;
     animation: chipIn 0.25s ease;
+    user-select: none;
 }
 
 .turn-chip:hover {
