@@ -1,8 +1,10 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
+import com.intellij.ide.projectView.ProjectView;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 
+import javax.swing.*;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -24,13 +26,17 @@ final class FileAccessTracker {
     static void recordRead(Project project, String path) {
         VirtualFile vf = ToolUtils.resolveVirtualFile(project, path);
         if (vf == null) return;
+        AccessType prev = accessMap.get(vf.getPath());
         accessMap.merge(vf.getPath(), AccessType.READ, FileAccessTracker::merge);
+        if (prev == null) refreshProjectView(project);
     }
 
     static void recordWrite(Project project, String path) {
         VirtualFile vf = ToolUtils.resolveVirtualFile(project, path);
         if (vf == null) return;
+        AccessType prev = accessMap.get(vf.getPath());
         accessMap.merge(vf.getPath(), AccessType.WRITE, FileAccessTracker::merge);
+        if (prev != accessMap.get(vf.getPath())) refreshProjectView(project);
     }
 
     /**
@@ -52,5 +58,15 @@ final class FileAccessTracker {
             return AccessType.READ_WRITE;
         }
         return existing;
+    }
+
+    private static void refreshProjectView(Project project) {
+        SwingUtilities.invokeLater(() -> {
+            try {
+                ProjectView.getInstance(project).refresh();
+            } catch (Exception ignored) {
+                // Project view may not be available
+            }
+        });
     }
 }

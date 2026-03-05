@@ -229,14 +229,16 @@ class FileTools extends AbstractToolHandler {
                 if (fitsInViewport) {
                     int offset = doc.getLineStartOffset(Math.max(midLine - 1, 0));
                     editor.getCaretModel().moveToOffset(offset);
-                    editor.getScrollingModel().scrollToCaret(
+                    editor.getScrollingModel().scrollTo(
+                        editor.offsetToLogicalPosition(offset),
                         com.intellij.openapi.editor.ScrollType.CENTER);
                 } else {
                     // Place start line a few lines from the top so the inlay label is visible
                     int topLine = Math.max(startLine - 2, 1);
                     int offset = doc.getLineStartOffset(Math.max(topLine - 1, 0));
                     editor.getCaretModel().moveToOffset(offset);
-                    editor.getScrollingModel().scrollToCaret(
+                    editor.getScrollingModel().scrollTo(
+                        editor.offsetToLogicalPosition(offset),
                         com.intellij.openapi.editor.ScrollType.CENTER);
 
                     // After a pause, scroll down to the end so the user sees the full range
@@ -265,7 +267,8 @@ class FileTools extends AbstractToolHandler {
                 if (targetLine <= 0) return;
                 int offset = doc.getLineStartOffset(targetLine - 1);
                 editor.getCaretModel().moveToOffset(offset);
-                editor.getScrollingModel().scrollToCaret(
+                editor.getScrollingModel().scrollTo(
+                    editor.offsetToLogicalPosition(offset),
                     com.intellij.openapi.editor.ScrollType.CENTER);
             } catch (Exception ignored) {
                 // editor may have been disposed
