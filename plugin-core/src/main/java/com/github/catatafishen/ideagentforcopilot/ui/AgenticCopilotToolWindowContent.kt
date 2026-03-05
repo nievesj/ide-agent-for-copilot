@@ -969,12 +969,24 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
                 override fun actionPerformed(e: AnActionEvent) = openFileSearchPopup()
             })
+            group.add(object : AnAction(
+                "New Scratch File\u2026",
+                "Create a scratch file, open it in the editor, and attach to context",
+                AllIcons.FileTypes.Text
+            ) {
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun actionPerformed(ev: AnActionEvent) = handleCreateScratch(ev)
+            })
             group.addSeparator()
 
             // Trigger character sub-menu
             val triggerGroup = DefaultActionGroup("File Search Trigger", true)
             triggerGroup.templatePresentation.icon = AllIcons.General.Settings
-            for ((label, value) in listOf("# (VS Code style)" to "#", "@ (AI Assistant style)" to "@", "Disabled" to "")) {
+            for ((label, value) in listOf(
+                "# (VS Code style)" to "#",
+                "@ (AI Assistant style)" to "@",
+                "Disabled" to ""
+            )) {
                 triggerGroup.add(object : ToggleAction(label) {
                     override fun getActionUpdateThread() = ActionUpdateThread.BGT
                     override fun isSelected(e: AnActionEvent) = CopilotSettings.getAttachTriggerChar() == value
@@ -2182,7 +2194,11 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
     private fun openFileSearchPopup() {
         val model = com.intellij.ide.util.gotoByName.GotoFileModel(project)
-        val popup = com.intellij.ide.util.gotoByName.ChooseByNamePopup.createPopup(project, model, null as com.intellij.psi.PsiElement?)
+        val popup = com.intellij.ide.util.gotoByName.ChooseByNamePopup.createPopup(
+            project,
+            model,
+            null as com.intellij.psi.PsiElement?
+        )
         popup.invoke(object : com.intellij.ide.util.gotoByName.ChooseByNamePopupComponent.Callback() {
             override fun elementChosen(element: Any?) {
                 val psiFile = element as? com.intellij.psi.PsiFile ?: return
@@ -2193,7 +2209,9 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
                 val lineCount = try {
                     com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf)?.lineCount ?: 0
-                } catch (_: Exception) { 0 }
+                } catch (_: Exception) {
+                    0
+                }
 
                 contextListModel.addElement(
                     ContextItem(
@@ -2203,6 +2221,69 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 )
             }
         }, com.intellij.openapi.application.ModalityState.current(), false)
+    }
+
+    private fun handleCreateScratch(e: AnActionEvent) {
+        val languages = listOf(
+            "Java" to "java", "Kotlin" to "kt", "Python" to "py",
+            "JavaScript" to "js", "TypeScript" to "ts",
+            "Go" to "go", "Rust" to "rs", "C" to "c", "C++" to "cpp",
+            "Ruby" to "rb", "Shell" to "sh",
+            "HTML" to "html", "CSS" to "css", "SQL" to "sql",
+            "JSON" to "json", "YAML" to "yaml", "XML" to "xml",
+            "Markdown" to "md", "Plain Text" to "txt"
+        )
+        val group = DefaultActionGroup()
+        for ((label, ext) in languages) {
+            group.add(object : AnAction(label) {
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun actionPerformed(e: AnActionEvent) = createAndAttachScratch(ext)
+            })
+        }
+        val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createActionGroupPopup(
+            "Select File Type", group, e.dataContext,
+            com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
+        )
+        popup.showCenteredInCurrentWindow(project)
+    }
+
+    private fun createAndAttachScratch(ext: String) {
+        ApplicationManager.getApplication().invokeLater {
+            try {
+                val scratchService = com.intellij.ide.scratch.ScratchFileService.getInstance()
+                val scratchRoot = com.intellij.ide.scratch.ScratchRootType.getInstance()
+                val name = "scratch.$ext"
+
+                @Suppress("RedundantCast") // Explicit Computable needed: runWriteAction is overloaded
+                val file = ApplicationManager.getApplication().runWriteAction(
+                    com.intellij.openapi.util.Computable<com.intellij.openapi.vfs.VirtualFile?> {
+                        try {
+                            scratchService.findFile(
+                                scratchRoot, name,
+                                com.intellij.ide.scratch.ScratchFileService.Option.create_new_always
+                            )
+                        } catch (e: java.io.IOException) {
+                            LOG.warn("Failed to create scratch file", e)
+                            null
+                        }
+                    }
+                )
+
+                if (file != null) {
+                    com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+                        .openFile(file, true)
+                    contextListModel.addElement(
+                        ContextItem(
+                            path = file.path, name = file.name,
+                            startLine = 1, endLine = 0,
+                            fileType = file.fileType, isSelection = false
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                LOG.warn("Failed to create scratch file from attach menu", e)
+            }
+        }
     }
 
     // Debug/Timeline/Settings tabs extracted to DebugPanel.kt
