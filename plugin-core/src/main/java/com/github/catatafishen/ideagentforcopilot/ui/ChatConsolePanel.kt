@@ -953,10 +953,29 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                     log.warn("No VCS root found for git commit link $hash")
                     return@invokeLater
                 }
-                // Resolve short hash to full 40-char SHA — VcsProjectLog requires exact match
                 val fullHash = resolveFullHash(hash) ?: hash
                 val hashObj = com.intellij.vcs.log.impl.HashImpl.build(fullHash)
-                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, root, hashObj)
+
+                // Refresh VCS log first — after a recent commit the index may be stale.
+                // Listen for the data pack update so we show only after the refresh lands.
+                val vcsLog = com.intellij.vcs.log.impl.VcsProjectLog.getInstance(project)
+                val dataManager = vcsLog.dataManager
+                if (dataManager != null) {
+                    val listener = object : com.intellij.vcs.log.data.DataPackChangeListener {
+                        override fun onDataPackChange(dataPack: com.intellij.vcs.log.data.DataPack) {
+                            dataManager.removeDataPackChangeListener(this)
+                            ApplicationManager.getApplication().invokeLater {
+                                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(
+                                    project, root, hashObj
+                                )
+                            }
+                        }
+                    }
+                    dataManager.addDataPackChangeListener(listener)
+                    dataManager.refresh(listOf(root))
+                } else {
+                    com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, root, hashObj)
+                }
             } catch (e: Exception) {
                 log.warn("Failed to open git commit $hash", e)
             }
