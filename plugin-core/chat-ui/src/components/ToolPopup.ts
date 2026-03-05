@@ -65,6 +65,7 @@ export default class ToolPopup extends HTMLElement {
             const startTop = this.offsetTop;
             this._dragged = true;
             header.style.cursor = 'grabbing';
+            globalThis._bridge?.setCursor('grabbing');
 
             this._onDragMove = (ev: MouseEvent) => {
                 const left = startLeft + (ev.clientX - startX);
@@ -74,6 +75,7 @@ export default class ToolPopup extends HTMLElement {
             };
             this._onDragUp = () => {
                 header.style.cursor = '';
+                globalThis._bridge?.setCursor('default');
                 if (this._onDragMove) document.removeEventListener('mousemove', this._onDragMove);
                 if (this._onDragUp) document.removeEventListener('mouseup', this._onDragUp);
                 this._onDragMove = null;
@@ -94,6 +96,7 @@ export default class ToolPopup extends HTMLElement {
             const startY = me.clientY;
             const startW = this.offsetWidth;
             const startH = this.offsetHeight;
+            globalThis._bridge?.setCursor('nwse-resize');
 
             this._onResizeMove = (ev: MouseEvent) => {
                 const w = Math.max(220, startW + (ev.clientX - startX));
@@ -103,6 +106,7 @@ export default class ToolPopup extends HTMLElement {
                 this.style.height = h + 'px';
             };
             this._onResizeUp = () => {
+                globalThis._bridge?.setCursor('default');
                 if (this._onResizeMove) document.removeEventListener('mousemove', this._onResizeMove);
                 if (this._onResizeUp) document.removeEventListener('mouseup', this._onResizeUp);
                 this._onResizeMove = null;

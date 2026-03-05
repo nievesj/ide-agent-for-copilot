@@ -123,6 +123,7 @@ export default class MessageMeta extends HTMLElement {
             startX = e.clientX;
             scrollStart = strip.scrollLeft;
             strip.classList.add('dragging');
+            globalThis._bridge?.setCursor('grabbing');
             e.preventDefault();
         });
 
@@ -135,6 +136,7 @@ export default class MessageMeta extends HTMLElement {
             if (!dragging) return;
             dragging = false;
             strip.classList.remove('dragging');
+            globalThis._bridge?.setCursor('grab');
         });
     }
 }
