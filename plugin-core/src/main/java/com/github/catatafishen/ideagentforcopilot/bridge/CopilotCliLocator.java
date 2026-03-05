@@ -15,7 +15,7 @@ import java.util.List;
 
 /**
  * Locates the Copilot CLI binary, MCP server JAR, and builds the ACP command.
- * Extracted from CopilotAcpClient for file-size reduction.
+ * Extracted from AcpClient for file-size reduction.
  */
 final class CopilotCliLocator {
     private static final Logger LOG = Logger.getInstance(CopilotCliLocator.class);

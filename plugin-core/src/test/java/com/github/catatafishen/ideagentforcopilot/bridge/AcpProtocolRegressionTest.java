@@ -42,7 +42,7 @@ class AcpProtocolRegressionTest {
         MockAcpServer server = createServerWithPermissionHandler();
 
         // We need to test that the client properly responds to request_permission.
-        // Since CopilotAcpClient uses an internal Process, we test the protocol
+        // Since AcpClient uses an internal Process, we test the protocol
         // flow by writing/reading from the server's pipes directly.
         BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(server.getProcessStdin()));
         BufferedReader reader = new BufferedReader(new InputStreamReader(server.getProcessStdout()));

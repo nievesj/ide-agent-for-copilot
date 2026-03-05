@@ -23,7 +23,7 @@ import java.util.function.Function;
 
 /**
  * Mock ACP server that simulates the copilot-language-server stdin/stdout protocol.
- * Used for integration testing the CopilotAcpClient without needing a real Copilot backend.
+ * Used for integration testing the AcpClient without needing a real Copilot backend.
  * <p>
  * Each test can register handlers for specific methods. The server reads JSON-RPC
  * messages from its stdin pipe and writes responses/notifications to stdout.

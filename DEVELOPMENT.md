@@ -131,31 +131,45 @@ locks prevent this — close the sandbox IDE first, then re-run `runIde`.
 The plugin communicates with GitHub Copilot CLI via the **Agent Client Protocol (ACP)** — JSON-RPC 2.0 over
 stdin/stdout:
 
-```
-Plugin (CopilotAcpClient)
-  │
-  ├─► initialize          → Agent capabilities, auth methods
-  ├─► session/new         → Create session, get models
-  ├─► session/prompt      → Send prompt, receive streaming chunks
-  │     ◄── session/update (notifications: chunks, tool_calls, plan)
-  │     ◄── session/request_permission (agent requests)
-  │     ──► permission response (approve/deny)
-  └─► session/cancel      → Abort current prompt
+```mermaid
+sequenceDiagram
+    participant P as Plugin (AcpClient)
+    participant C as Copilot CLI
+
+    P->>C: initialize
+    C-->>P: Agent capabilities, auth methods
+
+    P->>C: session/new
+    C-->>P: Session ID, available models
+
+    P->>C: session/prompt
+    C-->>P: session/update (chunks, tool_calls, plan)
+    C-->>P: session/request_permission
+    P->>C: permission response (approve/deny)
+
+    P->>C: session/cancel
 ```
 
 ### Permission Deny + Retry Flow
 
 Built-in Copilot file operations are **denied** so all writes go through IntelliJ's Document API:
 
-```
-1. User sends prompt
-2. Agent decides to edit a file → sends request_permission (kind="edit")
-3. Plugin DENIES the permission (responds with reject_once)
-4. Agent reports tool failure, turn ends (stopReason: end_turn)
-5. Plugin detects denial occurred → sends automatic retry prompt:
-   "Use intellij_write_file MCP tool instead"
-6. Agent retries using MCP tool → write goes through Document API
-7. Auto-format runs (optimize imports + reformat code)
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant P as Plugin
+    participant A as Agent
+    participant MCP as MCP Tool
+
+    U->>P: Send prompt
+    P->>A: session/prompt
+    A->>P: request_permission (kind="edit")
+    P--xA: DENY (reject_once)
+    A->>P: Tool failure, turn ends
+    P->>A: Auto-retry: "Use intellij_write_file instead"
+    A->>MCP: intellij_write_file
+    MCP->>P: Write via Document API
+    P->>P: Auto-format (imports + reformat)
 ```
 
 **Denied permission kinds**: `edit`, `create`, `read`, `execute`, `runInTerminal`  
@@ -164,9 +178,10 @@ Built-in Copilot file operations are **denied** so all writes go through Intelli
 
 ### MCP Tool Bridge
 
-```
-Copilot CLI ──stdio──► MCP Server (JAR) ──HTTP──► PsiBridgeService
-                       intellij-code-tools         (IntelliJ process)
+```mermaid
+graph LR
+    CLI["Copilot CLI"] -- stdio --> MCP["MCP Server (JAR)<br/>intellij-code-tools"]
+    MCP -- HTTP --> PSI["PsiBridgeService<br/>(IntelliJ process)"]
 ```
 
 - **MCP Server** (`mcp-server/`): Standalone JAR, stdio protocol, routes tool calls to PSI bridge
@@ -187,8 +202,8 @@ This runs inside a single undoable command group on the EDT.
 
 | File                                                    | Purpose                                     |
 |---------------------------------------------------------|---------------------------------------------|
-| `plugin-core/.../bridge/CopilotAcpClient.java`          | ACP client, permission handler, retry logic |
-| `plugin-core/.../psi/PsiBridgeService.java`             | 66 MCP tools via IntelliJ APIs              |
+| `plugin-core/.../bridge/AcpClient.java`              | ACP client, permission handler, retry logic |
+| `plugin-core/.../psi/PsiBridgeService.java`             | 80 MCP tools via IntelliJ APIs              |
 | `plugin-core/.../services/CopilotService.java`          | Service entry point, starts ACP client      |
 | `plugin-core/.../ui/AgenticCopilotToolWindowContent.kt` | Main UI (Kotlin Swing)                      |
 | `mcp-server/.../mcp/McpServer.java`                     | MCP stdio server, tool registrations        |
@@ -218,6 +233,44 @@ Add to `Help > Diagnostic Tools > Debug Log Settings`:
 | "RPC call failed: session.create" | ACP process died              | Check `idea.log` for stderr          |
 | Agent uses built-in edit tool     | Deny+retry not working        | Check permission handler logs        |
 | "file changed externally" dialog  | Write bypassed Document API   | Verify `intellij_write_file` is used |
+
+### Platform API False Positives (`PlatformApiCompat`)
+
+The IDE daemon shows false-positive resolution errors on certain IntelliJ Platform API calls.
+This happens because the dev IDE resolves symbols against its **own** bundled platform JARs,
+which differ from the target SDK configured in Gradle (`platformVersion` in `build.gradle.kts`).
+The Gradle build compiles cleanly — only the IDE analyzer is affected.
+
+**Symptoms:** Red error highlights like `Cannot resolve method 'getService'`, `Cannot resolve
+method 'connect()'`, `Unknown class`, or `Incompatible types` on standard platform API calls.
+
+**Solution:** All affected API calls are wrapped in
+`PlatformApiCompat.java` (`plugin-core/.../psi/PlatformApiCompat.java`). This concentrates
+all false positives in a single file. Each wrapper method has Javadoc explaining:
+- What the original API call is
+- Why the IDE shows a false positive
+- Why it compiles and works correctly at runtime
+
+**When you encounter a new false positive:**
+
+1. Add a new static method to `PlatformApiCompat` with a descriptive name
+2. Add Javadoc explaining the false positive (follow existing examples)
+3. Replace the call site with the wrapper
+4. Verify with `./gradlew :plugin-core:compileJava :plugin-core:compileKotlin --quiet`
+
+**Known false-positive patterns:**
+
+| Pattern | Example |
+|---------|---------|
+| `@NotNull` annotation mismatch | `PluginManagerCore.isPluginInstalled(PluginId)` |
+| Extension point generics | `ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()` |
+| `Project.getService(Class<T>)` wildcard bounds | `project.getService(someClass)` |
+| MessageBus connect/subscribe/disconnect | `project.getMessageBus().connect()` |
+| JCEF adapter method signatures | `CefLoadHandlerAdapter`, `CefDisplayHandlerAdapter` |
+| Kotlin platform types vs Java generics | `LafManagerListener.TOPIC` |
+| Git4Idea bundled plugin APIs | `HashImpl`, `GitRepositoryManager`, `GitLineHandler` |
+| JPS model types | `JavaSourceRootType`, `JavaSourceRootProperties` |
+| `ThrowableRunnable` functional interface | `WriteAction.runAndWait()` |
 
 ## Dynamic Plugin Loading
 

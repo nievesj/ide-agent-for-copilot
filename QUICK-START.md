@@ -83,7 +83,7 @@ restarting.
 
 ## What's Included
 
-- **60 MCP tools** — File I/O, PSI analysis, refactoring, git, testing, terminal, documentation
+- **80 MCP tools** — File I/O, PSI analysis, refactoring, git, testing, terminal, documentation
 - **ACP protocol** — Direct integration with GitHub Copilot CLI
 - **Multi-turn chat** — Session-based conversations with context awareness
 - **Permission routing** — File edits routed through IntelliJ Document API with auto-format
@@ -92,4 +92,4 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for full architecture and debugging guide.
 
 ---
 
-*Last Updated: 2026-02-13*
+*Last Updated: 2026-03-05*

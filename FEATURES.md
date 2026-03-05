@@ -1,6 +1,6 @@
 # IDE Agent for Copilot — Features
 
-> **66 tools** across 10 categories — the most comprehensive AI agent integration for JetBrains IDEs.
+> **80 tools** across 10 categories — the most comprehensive AI agent integration for JetBrains IDEs.
 
 IDE Agent for Copilot connects GitHub Copilot's agentic mode directly to IntelliJ's internal APIs.
 Every file edit, refactoring, inspection, and git operation goes through IntelliJ's own engine — not
@@ -126,6 +126,13 @@ conversation.
 - **`git_blame`** — Show per-line authorship (with optional line-range filtering)
 - **`git_push`** — Push commits to a remote
 - **`git_remote`** — List, add, remove, or configure remote repositories
+- **`git_fetch`** — Download objects and refs from a remote without merging
+- **`git_pull`** — Fetch and integrate changes into the current branch
+- **`git_merge`** — Merge a branch into the current branch (supports squash, no-ff, ff-only, abort)
+- **`git_rebase`** — Rebase current branch onto another (supports abort, continue, skip, interactive)
+- **`git_cherry_pick`** — Apply specific commits from another branch
+- **`git_tag`** — List, create, or delete tags
+- **`git_reset`** — Reset HEAD to a specific commit (soft, mixed, or hard)
 - **`git_revert`** — Revert a commit (with optional no-commit mode)
 
 ---
@@ -136,6 +143,7 @@ Run shell commands with output capture, or use IntelliJ's integrated terminal.
 
 - **`run_command`** — Run a shell command with paginated output in the Run panel
 - **`run_in_terminal`** — Run a command in IntelliJ's integrated terminal
+- **`write_terminal_input`** — Send text or keystrokes to a running terminal session (e.g. answer prompts, send Ctrl-C)
 - **`read_terminal_output`** — Read output from a terminal tab
 - **`read_run_output`** — Read output from a Run panel tab
 
@@ -182,7 +190,7 @@ The chat interface is a full-featured agent console built on JCEF (Chromium).
 
 Fine-grained control over what the agent can do.
 
-- **Per-tool permissions** — Allow, Ask, or Deny for each of the 66 tools
+- **Per-tool permissions** — Allow, Ask, or Deny for each of the 80 tools
 - **Path-based rules** — different permissions for project files vs. files outside the project
 - **Built-in edit interception** — Copilot CLI file edits are redirected through IntelliJ's document API so every change
   is undoable

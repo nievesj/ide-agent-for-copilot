@@ -22,6 +22,7 @@
     --font-size: 11pt;
     --code-font-size: 10pt;
     --fg: rgb(187, 187, 187);
+    --fg-a05: rgba(187, 187, 187, 0.05);
     --fg-a08: rgba(187, 187, 187, 0.08);
     --fg-a16: rgba(187, 187, 187, 0.16);
     --bg: rgb(43, 43, 43);
@@ -105,6 +106,15 @@
     --sa-c7-a06: rgba(86, 156, 214, 0.06);
     --sa-c7-a10: rgba(86, 156, 214, 0.10);
     --sa-c7-a15: rgba(86, 156, 214, 0.15);
+    /* Semantic colors for tool result renderers */
+    --success: #5cb85c;
+    --success-bg: rgba(92, 184, 92, 0.15);
+    --danger: #d9534f;
+    --danger-bg: rgba(217, 83, 79, 0.15);
+    --warning: #f0ad4e;
+    --warning-bg: rgba(240, 173, 78, 0.15);
+    --purple: #9b59b6;
+    --purple-bg: rgba(155, 89, 182, 0.15);
 }
 
 html {
@@ -218,11 +228,7 @@ body {
 
 .agent-bubble .streaming {
     white-space: pre-wrap;
-    margin: 0;
-    background: none;
-    padding: 0;
     font-family: inherit;
-    font-size: inherit;
 }
 
 /* "Working" indicator: last agent message with no text bubble yet */
@@ -679,10 +685,6 @@ thinking-chip.thinking-active .thought-bubble {
 }
 
 /* ── Markdown content ────────────────────────────────── */
-h2, h3, h4, h5 {
-    margin: var(--sp-4) 0 var(--sp-2) 0;
-}
-
 p {
     margin: var(--sp-1) 0;
 }
@@ -705,7 +707,7 @@ code {
     font-size: var(--code-font-size);
 }
 
-pre {
+pre:has(code) {
     background: var(--code-bg);
     padding: var(--sp-5) var(--sp-10) var(--sp-5) var(--sp-6);
     border-radius: var(--r-sm);
@@ -792,9 +794,18 @@ h2 {
     border-bottom: 1px solid var(--tbl-border);
 }
 
-h3 { font-size: 1.1em; }
-h4 { font-size: 1.0em; }
-h5 { font-size: 0.95em; color: var(--fg-muted); }
+h3 {
+    font-size: 1.1em;
+}
+
+h4 {
+    font-size: 1.0em;
+}
+
+h5 {
+    font-size: 0.95em;
+    color: var(--fg-muted);
+}
 
 /* ── Blockquotes ─────────────────────────────────────── */
 
@@ -1068,11 +1079,11 @@ permission-request {
 }
 
 .perm-allowed {
-    color: #5cb85c;
+    color: var(--success);
 }
 
 .perm-denied {
-    color: #d9534f;
+    color: var(--danger);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1085,6 +1096,15 @@ permission-request {
     html {
         scroll-behavior: auto;
     }
+}
+
+/* ── Shared container pattern ────────────────────────── */
+.inspection-result, .search-result, .outline-result,
+.blame-result, .branch-result, .project-info,
+.coverage-result, .http-result {
+    border-radius: 6px;
+    border: 1px solid var(--fg-a08);
+    overflow: hidden;
 }
 
 /* ── Git commit result card ──────────────────────────── */
@@ -1138,12 +1158,12 @@ permission-request {
 }
 
 .git-stat-ins {
-    color: #5cb85c;
+    color: var(--success);
     font-weight: 600;
 }
 
 .git-stat-del {
-    color: #d9534f;
+    color: var(--danger);
     font-weight: 600;
 }
 
@@ -1174,12 +1194,12 @@ permission-request {
 
 .git-file-add {
     background: rgba(80, 180, 80, 0.15);
-    color: #5cb85c;
+    color: var(--success);
 }
 
 .git-file-del {
     background: rgba(220, 80, 80, 0.15);
-    color: #d9534f;
+    color: var(--danger);
 }
 
 .git-file-mod {
@@ -1188,12 +1208,1184 @@ permission-request {
 }
 
 .git-file-rename {
-    background: rgba(240, 173, 78, 0.15);
-    color: #f0ad4e;
+    background: var(--warning-bg);
+    color: var(--warning);
 }
 
 .git-file-path {
     font-family: monospace;
     font-size: 0.92em;
     word-break: break-all;
+}
+
+/* ── Git status result ──────────────────────────────── */
+.git-status-result {
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.git-status-branch {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-3);
+}
+
+.git-status-branch-name {
+    font-weight: 600;
+}
+
+.git-status-tracking {
+    font-size: 0.85em;
+    color: var(--think);
+}
+
+.git-status-clean {
+    color: var(--think);
+    font-style: italic;
+}
+
+.git-status-section {
+    margin-top: var(--sp-3);
+}
+
+.git-status-section-header {
+    font-size: 0.82em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
+    padding-bottom: 2px;
+    border-bottom: 1px solid var(--fg-a08);
+}
+
+.git-status-staged {
+    color: var(--success);
+}
+
+.git-status-unstaged {
+    color: var(--link);
+}
+
+.git-status-untracked {
+    color: var(--think);
+}
+
+.git-status-conflict {
+    color: var(--danger);
+}
+
+.git-file-untracked {
+    background: rgba(128, 128, 128, 0.15);
+    color: var(--think);
+}
+
+.git-file-conflict {
+    background: rgba(220, 80, 80, 0.25);
+    color: var(--danger);
+}
+
+/* ── Git stage result ───────────────────────────────── */
+.git-stage-result {
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.git-stage-header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    background: var(--success-bg);
+    color: var(--success);
+    border-radius: var(--r-sm);
+    padding: var(--sp-2) var(--sp-3);
+    margin-bottom: var(--sp-3);
+    font-weight: 500;
+}
+
+.git-stage-label {
+    font-weight: 500;
+}
+
+/* ── Git diff result ────────────────────────────────── */
+.git-diff-result {
+    font-size: 0.88em;
+    line-height: 1.45;
+}
+
+.git-diff-file {
+    margin-bottom: var(--sp-4);
+}
+
+.git-diff-file:last-child {
+    margin-bottom: 0;
+}
+
+.git-diff-file-header {
+    font-weight: 600;
+    padding: 3px var(--sp-3);
+    background: var(--fg-a08);
+    border-radius: var(--r-sm) var(--r-sm) 0 0;
+    border-bottom: 1px solid var(--fg-a08);
+}
+
+.git-diff-hunks {
+    font-family: monospace;
+    font-size: 0.92em;
+    overflow-x: auto;
+}
+
+.git-diff-hunk-header {
+    color: var(--think);
+    font-family: monospace;
+    font-size: 0.9em;
+    padding: 2px var(--sp-3);
+    background: var(--fg-a05);
+    border-top: 1px solid var(--fg-a08);
+    margin-top: var(--sp-2);
+}
+
+.git-diff-hunk-header:first-child {
+    margin-top: 0;
+}
+
+.git-diff-hunk-ctx {
+    color: var(--think);
+    font-style: italic;
+}
+
+.git-diff-line {
+    padding: 0 var(--sp-3);
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: monospace;
+}
+
+.git-diff-add {
+    background: rgba(80, 180, 80, 0.12);
+    color: var(--success);
+}
+
+.git-diff-del {
+    background: rgba(220, 80, 80, 0.12);
+    color: var(--danger);
+}
+
+.git-diff-ctx {
+    color: var(--fg);
+    opacity: 0.7;
+}
+
+.git-diff-meta {
+    color: var(--think);
+    font-style: italic;
+}
+
+.git-diff-stat-summary {
+    font-weight: 500;
+    margin-top: var(--sp-3);
+    padding-top: var(--sp-3);
+    border-top: 1px solid var(--fg-a08);
+}
+
+.git-diff-stat-file {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: 1px 0;
+}
+
+.git-diff-stat-count {
+    font-family: monospace;
+    font-size: 0.9em;
+    color: var(--think);
+    min-width: 2ch;
+    text-align: right;
+}
+
+.git-diff-stat-bar {
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+/* ── Git log result ─────────────────────────────────── */
+.git-log-result {
+    font-size: 0.9em;
+    line-height: 1.55;
+}
+
+.git-log-entry {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+    padding: 2px 0;
+    flex-wrap: wrap;
+}
+
+.git-log-hash {
+    font-family: monospace;
+    font-size: 0.92em;
+    font-weight: 600;
+    color: var(--link);
+    text-decoration: none;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.git-log-hash:hover {
+    text-decoration: underline;
+}
+
+.git-log-message {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.git-log-meta {
+    font-size: 0.85em;
+    color: var(--think);
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+/* ── Build result ───────────────────────────────────── */
+.build-result {
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.build-header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+}
+
+.build-icon {
+    font-size: 1.1em;
+    font-weight: 700;
+}
+
+.build-success .build-icon,
+.build-success .build-status {
+    color: var(--success);
+}
+
+.build-fail .build-icon,
+.build-fail .build-status {
+    color: var(--danger);
+}
+
+.build-abort .build-icon,
+.build-abort .build-status {
+    color: var(--warning);
+}
+
+.build-status {
+    font-weight: 600;
+}
+
+.build-meta {
+    font-size: 0.85em;
+    color: var(--think);
+}
+
+.build-errors {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--danger);
+}
+
+.build-warnings {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--warning);
+}
+
+.build-messages {
+    margin-top: var(--sp-3);
+    border-top: 1px solid var(--fg-a08);
+    padding-top: var(--sp-3);
+}
+
+.build-msg {
+    font-family: monospace;
+    font-size: 0.88em;
+    padding: 1px 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.build-msg-error {
+    color: var(--danger);
+}
+
+.build-msg-warn {
+    color: var(--warning);
+}
+
+.build-msg-info {
+    color: var(--think);
+}
+
+/* ── Inspection / Compilation Results ────────────────────── */
+
+/* Shared result-card header layout */
+.inspection-header, .search-header, .blame-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    font-size: 0.92em;
+}
+
+.inspection-header {
+    font-weight: 600;
+}
+
+.search-header {
+    font-weight: 600;
+    background: var(--fg-a05);
+}
+
+.blame-header {
+    background: var(--fg-a05);
+}
+
+.inspection-success {
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.inspection-errors {
+    background: var(--danger-bg);
+    color: var(--danger);
+}
+
+.inspection-warnings {
+    background: var(--warning-bg);
+    color: var(--warning);
+}
+
+.inspection-icon, .search-icon {
+    font-size: 1.1em;
+}
+
+.inspection-count, .search-count {
+    font-size: 1.1em;
+    font-weight: 700;
+}
+
+.search-count {
+    color: var(--link);
+}
+
+.inspection-label, .search-label {
+    opacity: 0.8;
+}
+
+.inspection-files, .search-files {
+    padding: 4px 0;
+}
+
+.inspection-file, .search-file {
+    border-top: 1px solid var(--fg-a05);
+}
+
+.inspection-file-header, .search-file-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: var(--fg-a05);
+}
+
+.inspection-file-count, .search-file-count {
+    font-size: 0.8em;
+    color: var(--fg-a08);
+    background: var(--fg-a05);
+    border-radius: 8px;
+    padding: 1px 6px;
+    min-width: 18px;
+    text-align: center;
+}
+
+.inspection-file-findings {
+    padding: 2px 12px 4px;
+}
+
+.inspection-finding {
+    padding: 2px 0;
+    font-size: 0.88em;
+    font-family: monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.inspection-severity {
+    display: inline-block;
+    width: 16px;
+    text-align: center;
+    border-radius: 3px;
+    font-size: 0.82em;
+    font-weight: 700;
+}
+
+.severity-error {
+    color: var(--danger);
+    background: var(--danger-bg);
+}
+
+.severity-warning {
+    color: var(--warning);
+    background: var(--warning-bg);
+}
+
+.severity-weak {
+    color: var(--think);
+    background: var(--fg-a05);
+}
+
+.severity-info {
+    color: var(--fg-a08);
+    background: var(--fg-a05);
+}
+
+.inspection-line {
+    color: var(--fg-a08);
+    font-size: 0.9em;
+}
+
+.inspection-tool {
+    color: var(--link);
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+.inspection-desc {
+    color: var(--fg);
+}
+
+/* ── Search Results ──────────────────────────────────────── */
+
+.search-empty {
+    color: var(--fg-a08);
+}
+
+.search-file-matches {
+    padding: 2px 12px 4px;
+}
+
+.search-match {
+    padding: 2px 0;
+    font-size: 0.88em;
+    font-family: monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.search-line {
+    color: var(--fg-a08);
+    font-size: 0.9em;
+}
+
+.search-badge {
+    color: var(--link);
+    font-size: 0.85em;
+    opacity: 0.8;
+}
+
+.search-content {
+    color: var(--fg);
+}
+
+/* ── Test Results (extends build-result) ─────────────────── */
+
+.test-stats {
+    display: flex;
+    gap: 8px;
+    padding: 6px 12px;
+    flex-wrap: wrap;
+}
+
+.test-badge {
+    font-size: 0.82em;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.test-passed {
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.test-failed, .test-errors {
+    background: var(--danger-bg);
+    color: var(--danger);
+}
+
+.test-skipped {
+    background: var(--fg-a05);
+    color: var(--fg-a08);
+}
+
+.test-name {
+    font-weight: 600;
+}
+
+/* ── File Outline ────────────────────────────────────────── */
+
+.outline-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--fg-a05);
+}
+
+.outline-entries {
+    padding: 4px 12px 6px;
+}
+
+.outline-entry {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 0.88em;
+}
+
+.outline-name {
+    font-family: monospace;
+}
+
+.outline-badge-class {
+    background: rgba(86, 156, 214, 0.2);
+    color: var(--link);
+}
+
+.outline-badge-interface {
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.outline-badge-enum {
+    background: var(--warning-bg);
+    color: var(--warning);
+}
+
+.outline-badge-method {
+    background: var(--purple-bg);
+    color: var(--purple);
+}
+
+.outline-badge-field {
+    background: var(--fg-a05);
+    color: var(--fg-a08);
+}
+
+/* ── Git Blame ───────────────────────────────────────────── */
+
+.blame-count {
+    font-weight: 600;
+}
+
+.blame-authors {
+    color: var(--fg-a08);
+}
+
+.blame-lines {
+    font-family: monospace;
+    font-size: 0.85em;
+    overflow-x: auto;
+}
+
+.blame-line {
+    display: flex;
+    gap: 8px;
+    padding: 1px 12px;
+    white-space: pre;
+}
+
+.blame-group-start {
+    border-top: 1px solid var(--fg-a05);
+}
+
+.blame-author {
+    width: 100px;
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+}
+
+.blame-date {
+    color: var(--fg-a08);
+    flex-shrink: 0;
+    width: 80px;
+}
+
+.blame-code {
+    color: var(--fg);
+}
+
+/* ── Git Show (extends git-commit-result) ────────────────── */
+
+.git-show-author {
+    color: var(--fg-a08);
+    font-weight: 400;
+    font-size: 0.9em;
+}
+
+.git-show-date {
+    color: var(--fg-a08);
+    font-size: 0.85em;
+    padding: 0 var(--sp-4);
+}
+
+/* ── Git Branch ──────────────────────────────────────────── */
+
+.branch-entries {
+    padding: 4px 12px 6px;
+}
+
+.branch-entry {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 0.88em;
+}
+
+.branch-current {
+    font-weight: 600;
+}
+
+.branch-name {
+    font-family: monospace;
+    min-width: 120px;
+}
+
+.branch-msg {
+    color: var(--fg-a08);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Project Info ────────────────────────────────────────── */
+
+.project-info-header {
+    padding: 8px 12px;
+    font-weight: 700;
+    font-size: 1em;
+}
+
+.project-info-kv {
+    display: flex;
+    gap: 8px;
+    padding: 2px 12px;
+    font-size: 0.88em;
+}
+
+.project-info-key {
+    color: var(--fg-a08);
+    min-width: 100px;
+    flex-shrink: 0;
+}
+
+.project-info-value {
+    font-family: monospace;
+    word-break: break-all;
+}
+
+.project-info-section {
+    border-top: 1px solid var(--fg-a05);
+}
+
+.project-info-item {
+    padding: 2px 12px 2px 24px;
+    font-size: 0.88em;
+    font-family: monospace;
+}
+
+/* ── Coverage result ─────────────────────────────────── */
+.coverage-entries {
+    padding: 4px 0;
+}
+
+.coverage-entry {
+    padding: 6px 12px;
+    border-top: 1px solid var(--fg-a05);
+}
+
+.coverage-entry-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.coverage-name {
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+.coverage-pct {
+    font-weight: 700;
+    font-size: 0.9em;
+}
+
+.coverage-bar {
+    height: 6px;
+    background: var(--fg-a08);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 2px;
+}
+
+.coverage-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.coverage-detail {
+    font-size: 0.78em;
+    color: var(--fg-a08);
+    text-align: right;
+}
+
+/* ── HTTP request result ─────────────────────────────── */
+.http-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    font-weight: 600;
+}
+
+.http-status-success {
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.http-status-warning {
+    background: var(--warning-bg);
+    color: var(--warning);
+}
+
+.http-status-danger {
+    background: var(--danger-bg);
+    color: var(--danger);
+}
+
+.http-code {
+    font-size: 1.1em;
+    font-weight: 700;
+}
+
+.http-section {
+    border-top: 1px solid var(--fg-a05);
+}
+
+.http-section-title {
+    padding: 4px 12px;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--fg-a08);
+    background: var(--fg-a05);
+}
+
+.http-headers {
+    padding: 4px 12px;
+}
+
+.http-header {
+    display: flex;
+    gap: 8px;
+    padding: 1px 0;
+    font-size: 0.85em;
+    font-family: monospace;
+}
+
+.http-header-key {
+    color: var(--link);
+    flex-shrink: 0;
+}
+
+.http-header-key::after {
+    content: ':';
+}
+
+.http-header-value {
+    color: var(--fg);
+    word-break: break-all;
+}
+
+.http-body {
+    margin: 0;
+    padding: 8px 12px;
+    font-size: 0.85em;
+    max-height: 300px;
+    overflow: auto;
+}
+
+/* ── Class outline extras ────────────────────────────── */
+.class-outline-inheritance {
+    padding: 2px 12px 6px;
+    font-size: 0.85em;
+    font-style: italic;
+    color: var(--fg-a08);
+    border-bottom: 1px solid var(--fg-a05);
+}
+
+.outline-section {
+    border-top: 1px solid var(--fg-a05);
+}
+
+.outline-section-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    font-weight: 600;
+    font-size: 0.85em;
+    color: var(--fg-a08);
+    background: var(--fg-a05);
+}
+
+/* ── File list (list_project_files) ─────────────────── */
+.file-list-result {
+    border-radius: 6px;
+    border: 1px solid var(--fg-a08);
+    overflow: hidden;
+}
+
+.file-list-header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--fg-a08);
+}
+
+.file-list-count {
+    font-weight: 700;
+    font-size: 1.1em;
+}
+
+.file-list-label {
+    color: var(--fg-muted);
+    font-size: 0.9em;
+}
+
+.file-list-entries {
+    padding: 4px 0;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.file-list-dir {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 12px 1px;
+    margin-top: 4px;
+}
+
+.file-list-dir-name {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--fg-muted);
+    font-family: monospace;
+}
+
+.file-list-entry {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 1px 12px 1px 24px;
+    font-size: 0.88em;
+}
+
+.file-list-tag {
+    font-size: 0.75em;
+    padding: 0 5px;
+    border-radius: 3px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.file-tag-type {
+    color: var(--fg-muted);
+    background: var(--fg-a05);
+}
+
+.file-tag-test {
+    color: var(--success);
+    background: rgba(var(--success-rgb, 80, 161, 79), 0.12);
+}
+
+.file-tag-generated {
+    color: var(--fg-muted);
+    background: var(--fg-a08);
+}
+
+.file-tag-excluded {
+    color: var(--warning);
+    background: rgba(var(--warning-rgb, 190, 132, 46), 0.12);
+}
+
+/* ── Run command result ─────────────────────────────── */
+.cmd-result {
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.cmd-header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+}
+
+.cmd-success .build-icon,
+.cmd-success .build-status {
+    color: var(--success);
+}
+
+.cmd-fail .build-icon,
+.cmd-fail .build-status {
+    color: var(--danger);
+}
+
+.cmd-timeout .build-icon,
+.cmd-timeout .build-status {
+    color: var(--warning);
+}
+
+.cmd-result .tool-output {
+    margin-top: var(--sp-3);
+}
+
+/* ── Go to declaration ──────────────────────────────── */
+.decl-result {
+    border-radius: 6px;
+    border: 1px solid var(--fg-a08);
+    overflow: hidden;
+    font-size: 0.9em;
+}
+
+.decl-header {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--fg-a08);
+}
+
+.decl-symbol {
+    font-weight: 700;
+    font-family: monospace;
+}
+
+.decl-location {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 12px;
+    font-size: 0.9em;
+}
+
+.decl-context {
+    border-top: 1px solid var(--fg-a05);
+    font-family: monospace;
+    font-size: 0.88em;
+    line-height: 1.6;
+    padding: 4px 0;
+    background: var(--fg-a05);
+}
+
+.decl-line {
+    display: flex;
+    padding: 0 12px;
+    gap: 8px;
+}
+
+.decl-target {
+    background: var(--agent-a08);
+}
+
+.decl-line-num {
+    color: var(--fg-muted);
+    user-select: none;
+    min-width: 3ch;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.decl-line-code {
+    white-space: pre;
+    overflow-x: auto;
+}
+
+/* ── Refactor result ────────────────────────────────── */
+.refactor-result {
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.refactor-header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+}
+
+.refactor-success .build-icon,
+.refactor-success .build-status {
+    color: var(--success);
+}
+
+.refactor-fail .build-icon,
+.refactor-fail .build-status {
+    color: var(--danger);
+}
+
+.refactor-symbol {
+    font-family: monospace;
+    font-weight: 600;
+    font-size: 0.92em;
+}
+
+.refactor-detail {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: var(--sp-2);
+    font-family: monospace;
+    font-size: 0.92em;
+}
+
+.refactor-old {
+    text-decoration: line-through;
+    color: var(--danger);
+}
+
+.refactor-arrow {
+    color: var(--fg-muted);
+}
+
+.refactor-new {
+    font-weight: 600;
+    color: var(--success);
+}
+
+.refactor-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: var(--sp-2);
+    font-size: 0.88em;
+}
+
+.refactor-usages {
+    margin-top: var(--sp-3);
+    border-top: 1px solid var(--fg-a08);
+    padding-top: var(--sp-2);
+}
+
+.refactor-usage {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 1px 0;
+    font-size: 0.88em;
+}
+
+/* ── Type hierarchy ─────────────────────────────────── */
+.hierarchy-result {
+    border-radius: 6px;
+    border: 1px solid var(--fg-a08);
+    overflow: hidden;
+    font-size: 0.9em;
+}
+
+.hierarchy-section {
+    border-top: 1px solid var(--fg-a05);
+}
+
+.hierarchy-section:first-child {
+    border-top: none;
+}
+
+.hierarchy-entries {
+    padding: 2px 0;
+}
+
+.hierarchy-center {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-weight: 700;
+    background: var(--agent-a08);
+    border-top: 1px solid var(--fg-a08);
+    border-bottom: 1px solid var(--fg-a08);
+}
+
+.hierarchy-entry {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 12px;
+    font-size: 0.92em;
+}
+
+.hierarchy-kind {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    font-size: 0.75em;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.kind-class {
+    color: var(--link);
+    background: rgba(var(--link-rgb, 88, 157, 246), 0.15);
+}
+
+.kind-interface {
+    color: var(--success);
+    background: rgba(var(--success-rgb, 80, 161, 79), 0.15);
+}
+
+.kind-enum {
+    color: var(--warning);
+    background: rgba(var(--warning-rgb, 190, 132, 46), 0.15);
+}
+
+.kind-annotation {
+    color: var(--fg-muted);
+    background: var(--fg-a08);
+}
+
+.hierarchy-name {
+    font-family: monospace;
+}
+
+.hierarchy-type-name {
+    font-family: monospace;
+}
+
+.hierarchy-location {
+    margin-left: auto;
+    font-size: 0.85em;
+    color: var(--fg-muted);
 }

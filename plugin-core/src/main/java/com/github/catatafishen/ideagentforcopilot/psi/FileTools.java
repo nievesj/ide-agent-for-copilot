@@ -158,7 +158,7 @@ class FileTools extends AbstractToolHandler {
      */
     static void followFileIfEnabled(Project project, String pathStr, int startLine, int endLine,
                                     java.awt.Color highlightColor, String actionLabel) {
-        if (!CopilotSettings.getFollowAgentFiles()) return;
+        if (!CopilotSettings.getFollowAgentFiles(project)) return;
 
         EdtUtil.invokeLater(() -> {
             try {
@@ -836,7 +836,7 @@ class FileTools extends AbstractToolHandler {
         int undone = 0;
         for (int i = 0; i < count; i++) {
             if (!undoManager.isUndoAvailable(fileEditor)) break;
-            String actionName = undoManager.getUndoActionNameAndDescription(fileEditor).first;
+            String actionName = PlatformApiCompat.getUndoActionName(undoManager, fileEditor);
             undoManager.undo(fileEditor);
             undone++;
             if (!actions.isEmpty()) actions.append(", ");

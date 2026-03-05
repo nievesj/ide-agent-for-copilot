@@ -1,6 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.github.catatafishen.ideagentforcopilot.bridge.CopilotAcpClient
+import com.github.catatafishen.ideagentforcopilot.bridge.AcpClient
 import com.github.catatafishen.ideagentforcopilot.services.CopilotService
 import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings
 import com.intellij.icons.AllIcons
@@ -53,7 +53,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private val contextListModel = DefaultListModel<ContextItem>()
 
     // Shared model list (populated from ACP)
-    private var loadedModels: List<CopilotAcpClient.Model> = emptyList()
+    private var loadedModels: List<AcpClient.Model> = emptyList()
 
     // Current conversation session — reused for multi-turn
     private var currentSessionId: String? = null
@@ -738,7 +738,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         // Right toolbar: processing indicator + usage graph (always right-aligned)
         val rightGroup = DefaultActionGroup()
         rightGroup.add(ProcessingIndicatorAction())
-        rightGroup.add(billing.UsageGraphAction())
+        rightGroup.add(billing.createUsageGraphAction())
 
         val usageToolbar = ActionManager.getInstance().createActionToolbar(
             "CopilotUsage", rightGroup, true
@@ -1037,10 +1037,10 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
         override fun isSelected(e: AnActionEvent): Boolean =
-            CopilotSettings.getFollowAgentFiles()
+            CopilotSettings.getFollowAgentFiles(project)
 
         override fun setSelected(e: AnActionEvent, state: Boolean) {
-            CopilotSettings.setFollowAgentFiles(state)
+            CopilotSettings.setFollowAgentFiles(project, state)
         }
 
     }
@@ -1427,7 +1427,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         addTimelineEvent(EventType.ERROR, "Prompt cancelled by user")
     }
 
-    private fun ensureSessionCreated(client: CopilotAcpClient): String {
+    private fun ensureSessionCreated(client: AcpClient): String {
         if (currentSessionId == null) {
             currentSessionId = client.createSession(project.basePath)
             addTimelineEvent(EventType.SESSION_START, "Session created")
@@ -1483,7 +1483,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         SwingUtilities.invokeLater {
             consolePanel.component.revalidate()
             consolePanel.component.repaint()
-            if (com.github.catatafishen.ideagentforcopilot.services.CopilotSettings.getFollowAgentFiles()) {
+            if (com.github.catatafishen.ideagentforcopilot.services.CopilotSettings.getFollowAgentFiles(project)) {
                 promptTextArea.requestFocusInWindow()
             }
         }
@@ -1518,11 +1518,11 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     private fun dispatchPromptWithRetry(
-        client: CopilotAcpClient,
+        client: AcpClient,
         initialSessionId: String,
         effectivePrompt: String,
         modelId: String,
-        references: List<CopilotAcpClient.ResourceReference>
+        references: List<AcpClient.ResourceReference>
     ) {
         var receivedContent = false
         val refs = references.ifEmpty { null }
@@ -1546,7 +1546,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         return true
     }
 
-    private fun wirePermissionListener(client: CopilotAcpClient) {
+    private fun wirePermissionListener(client: AcpClient) {
         client.setPermissionRequestListener { req ->
             ApplicationManager.getApplication().invokeLater {
                 consolePanel.showPermissionRequest(
@@ -1571,7 +1571,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         return modelId
     }
 
-    private fun addContextEntries(references: List<CopilotAcpClient.ResourceReference>) {
+    private fun addContextEntries(references: List<AcpClient.ResourceReference>) {
         if (references.isNotEmpty()) {
             val contextFiles = (0 until contextListModel.size()).map { i ->
                 val item = contextListModel.getElementAt(i)
@@ -1599,7 +1599,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
      * and retries once. Returns the (possibly new) session ID.
      */
     private fun sendWithSessionRetry(
-        client: CopilotAcpClient,
+        client: AcpClient,
         initialSessionId: String,
         sendCall: () -> Unit,
         onRetry: () -> Unit
@@ -1620,8 +1620,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
     }
 
-    private fun buildContextReferences(): List<CopilotAcpClient.ResourceReference> {
-        val references = mutableListOf<CopilotAcpClient.ResourceReference>()
+    private fun buildContextReferences(): List<AcpClient.ResourceReference> {
+        val references = mutableListOf<AcpClient.ResourceReference>()
         for (i in 0 until contextListModel.size()) {
             val item = contextListModel.getElementAt(i)
             try {
@@ -1705,7 +1705,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         return parts.joinToString("\n\n")
     }
 
-    private fun buildSingleReference(item: ContextItem): CopilotAcpClient.ResourceReference? {
+    private fun buildSingleReference(item: ContextItem): AcpClient.ResourceReference? {
         val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(item.path)
             ?: return null
         var doc: com.intellij.openapi.editor.Document? = null
@@ -1743,7 +1743,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 )
             }"
         )
-        return CopilotAcpClient.ResourceReference(uri, mimeType, text)
+        return AcpClient.ResourceReference(uri, mimeType, text)
     }
 
     private fun getMimeTypeForFileType(fileTypeName: String): String {
@@ -2155,7 +2155,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         updateSessionInfo()
     }
 
-    private fun restoreModelSelection(models: List<CopilotAcpClient.Model>) {
+    private fun restoreModelSelection(models: List<AcpClient.Model>) {
         val savedModel = CopilotSettings.getSelectedModel()
         LOG.info("Restoring model selection: saved='$savedModel', available=${models.map { it.id }}")
         if (savedModel != null) {
@@ -2168,7 +2168,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         if (models.isNotEmpty()) selectedModelIndex = 0
     }
 
-    private fun loadModelsAsync(onSuccess: (List<CopilotAcpClient.Model>) -> Unit) {
+    private fun loadModelsAsync(onSuccess: (List<AcpClient.Model>) -> Unit) {
         SwingUtilities.invokeLater {
             modelsStatusText = MSG_LOADING
             selectedModelIndex = -1

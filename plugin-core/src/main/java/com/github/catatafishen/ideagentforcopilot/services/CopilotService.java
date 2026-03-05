@@ -1,6 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.services;
 
-import com.github.catatafishen.ideagentforcopilot.bridge.CopilotAcpClient;
+import com.github.catatafishen.ideagentforcopilot.bridge.AcpClient;
+import com.github.catatafishen.ideagentforcopilot.bridge.CopilotAgentConfig;
+import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
@@ -18,7 +20,7 @@ public final class CopilotService implements Disposable {
     private static final Logger LOG = Logger.getInstance(CopilotService.class);
 
     private final Project project;
-    private CopilotAcpClient acpClient;
+    private AcpClient acpClient;
     private volatile boolean started = false;
 
     public CopilotService(Project project) {
@@ -28,7 +30,7 @@ public final class CopilotService implements Disposable {
 
     @NotNull
     public static CopilotService getInstance(@NotNull Project project) {
-        return project.getService(CopilotService.class);
+        return PlatformApiCompat.getService(project, CopilotService.class);
     }
 
     /**
@@ -47,7 +49,7 @@ public final class CopilotService implements Disposable {
             }
 
             String projectPath = project.getBasePath();
-            acpClient = new CopilotAcpClient(projectPath);
+            acpClient = new AcpClient(new CopilotAgentConfig(), projectPath);
             acpClient.start();
             started = true;
             LOG.info("Copilot ACP client started with config-dir: " + projectPath + "/.agent-work");
@@ -63,7 +65,7 @@ public final class CopilotService implements Disposable {
      * Starts the client if not already running.
      */
     @NotNull
-    public CopilotAcpClient getClient() {
+    public AcpClient getClient() {
         if (!started || acpClient == null || !acpClient.isHealthy()) {
             start();
         }

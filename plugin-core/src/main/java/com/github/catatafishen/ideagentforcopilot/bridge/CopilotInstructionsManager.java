@@ -21,7 +21,7 @@ import java.nio.file.Path;
  * to the project's instructions file on first run.</p>
  *
  * <p>Thread-safe: uses a class-level lock so concurrent calls from PsiBridgeStartup
- * and CopilotAcpClient don't race.</p>
+ * and AcpClient don't race.</p>
  */
 public final class CopilotInstructionsManager {
     private static final Logger LOG = Logger.getInstance(CopilotInstructionsManager.class);

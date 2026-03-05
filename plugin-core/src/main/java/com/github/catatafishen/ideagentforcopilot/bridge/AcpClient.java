@@ -33,11 +33,12 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 /**
- * Client for GitHub Copilot CLI via the Agent Client Protocol (ACP).
- * Spawns "copilot --acp --stdio" and communicates via JSON-RPC 2.0 over stdin/stdout.
+ * Generic ACP (Agent Client Protocol) client over JSON-RPC 2.0 stdin/stdout.
+ * Agent-specific concerns (binary discovery, auth, model parsing) are delegated
+ * to the {@link AgentConfig} strategy provided at construction time.
  */
-public class CopilotAcpClient implements Closeable {
-    private static final Logger LOG = Logger.getInstance(CopilotAcpClient.class);
+public class AcpClient implements Closeable {
+    private static final Logger LOG = Logger.getInstance(AcpClient.class);
     private static final long REQUEST_TIMEOUT_SECONDS = 30;
 
     // JSON-RPC field names
@@ -75,7 +76,7 @@ public class CopilotAcpClient implements Closeable {
 
     private final Object writerLock = new Object();
     private final String projectBasePath; // Project path for config-dir
-    private String resolvedCopilotPath; // Resolved path to copilot CLI binary
+    private final AgentConfig agentConfig;
     private Process process;
     private BufferedWriter writer;
     private Thread readerThread;
@@ -87,7 +88,6 @@ public class CopilotAcpClient implements Closeable {
     private static final long[] RESTART_DELAYS_MS = {1000, 2000, 4000}; // Exponential backoff
 
     // State from the initialization response
-    private JsonArray authMethods;
     private boolean initialized = false;
 
     // Session state
@@ -205,14 +205,15 @@ public class CopilotAcpClient implements Closeable {
     }
 
     /**
-     * Create ACP client with optional project base path for config-dir.
+     * Create ACP client with an agent configuration and optional project base path.
      */
-    public CopilotAcpClient(@Nullable String projectBasePath) {
+    public AcpClient(@NotNull AgentConfig agentConfig, @Nullable String projectBasePath) {
+        this.agentConfig = agentConfig;
         this.projectBasePath = projectBasePath;
     }
 
     /**
-     * Start the copilot ACP process and perform the initialization handshake.
+     * Start the ACP process and perform the initialization handshake.
      */
     public synchronized void start() throws CopilotException {
         // Clean up the previous process if it died
@@ -230,29 +231,26 @@ public class CopilotAcpClient implements Closeable {
             currentSessionId = null;
         }
 
-        // Ensure plugin instructions exist before starting the CLI process.
-        // The CLI reads copilot-instructions.md at session creation; without this,
-        // a race with PsiBridgeStartup can leave the file missing on first run.
-        CopilotInstructionsManager.ensureInstructions(projectBasePath);
+        // Let the agent config perform pre-launch setup (e.g., ensure instruction files)
+        agentConfig.prepareForLaunch(projectBasePath);
 
         try {
-            String copilotPath = CopilotCliLocator.findCopilotCli();
-            resolvedCopilotPath = copilotPath;
-            LOG.info("Starting Copilot ACP: " + copilotPath);
+            String binaryPath = agentConfig.findAgentBinary();
+            LOG.info("Starting " + agentConfig.getDisplayName() + " ACP: " + binaryPath);
 
-            ProcessBuilder pb = CopilotCliLocator.buildAcpCommand(copilotPath, projectBasePath);
+            ProcessBuilder pb = agentConfig.buildAcpProcess(binaryPath, projectBasePath);
             pb.redirectErrorStream(false);
             process = pb.start();
 
             writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream()));
 
             // Start a reader thread for responses and notifications
-            readerThread = new Thread(this::readLoop, "copilot-acp-reader");
+            readerThread = new Thread(this::readLoop, agentConfig.getDisplayName().toLowerCase() + "-acp-reader");
             readerThread.setDaemon(true);
             readerThread.start();
 
             // Start a thread to read stderr and capture process errors
-            Thread stderrReaderThread = new Thread(this::readStderrLoop, "copilot-acp-stderr");
+            Thread stderrReaderThread = new Thread(this::readStderrLoop, agentConfig.getDisplayName().toLowerCase() + "-acp-stderr");
             stderrReaderThread.setDaemon(true);
             stderrReaderThread.start();
 
@@ -260,7 +258,7 @@ public class CopilotAcpClient implements Closeable {
             doInitialize();
 
         } catch (IOException e) {
-            throw new CopilotException("Failed to start Copilot ACP process", e);
+            throw new CopilotException("Failed to start " + agentConfig.getDisplayName() + " ACP process", e);
         }
     }
 
@@ -282,7 +280,7 @@ public class CopilotAcpClient implements Closeable {
 
         JsonObject agentInfo = result.has("agentInfo") ? result.getAsJsonObject("agentInfo") : null;
         JsonObject agentCapabilities = result.has("agentCapabilities") ? result.getAsJsonObject("agentCapabilities") : null;
-        authMethods = result.has("authMethods") ? result.getAsJsonArray("authMethods") : null;
+        agentConfig.parseInitializeResponse(result);
 
         initialized = true;
         LOG.info("ACP initialized: " + (agentInfo != null ? agentInfo : "unknown agent")
@@ -353,7 +351,7 @@ public class CopilotAcpClient implements Closeable {
         model.setDescription(m.has(DESCRIPTION) ? m.get(DESCRIPTION).getAsString() : "");
         if (m.has(META)) {
             JsonObject meta = m.getAsJsonObject(META);
-            model.setUsage(meta.has("copilotUsage") ? meta.get("copilotUsage").getAsString() : null);
+            model.setUsage(agentConfig.parseModelUsage(meta));
         }
         return model;
     }
@@ -745,11 +743,11 @@ public class CopilotAcpClient implements Closeable {
     }
 
     /**
-     * Get the resolved path to the copilot CLI binary (for logout, auth commands).
+     * Get the resolved path to the agent binary (for logout, auth commands).
      */
     @Nullable
-    public String getCopilotCliPath() {
-        return resolvedCopilotPath;
+    public String getAgentBinaryPath() {
+        return agentConfig.getAgentBinaryPath();
     }
 
     /**
@@ -757,31 +755,7 @@ public class CopilotAcpClient implements Closeable {
      */
     @Nullable
     public AuthMethod getAuthMethod() {
-        if (authMethods == null || authMethods.isEmpty()) return null;
-        JsonObject first = authMethods.get(0).getAsJsonObject();
-        AuthMethod method = new AuthMethod();
-        method.setId(first.has("id") ? first.get("id").getAsString() : "");
-        method.setName(first.has("name") ? first.get("name").getAsString() : "");
-        method.setDescription(first.has(DESCRIPTION) ? first.get(DESCRIPTION).getAsString() : "");
-        parseTerminalAuth(first, method);
-        return method;
-    }
-
-    private void parseTerminalAuth(JsonObject jsonObject, AuthMethod method) {
-        if (jsonObject.has(META)) {
-            JsonObject meta = jsonObject.getAsJsonObject(META);
-            if (meta.has("terminal-auth")) {
-                JsonObject termAuth = meta.getAsJsonObject("terminal-auth");
-                method.setCommand(termAuth.has(COMMAND) ? termAuth.get(COMMAND).getAsString() : null);
-                if (termAuth.has("args")) {
-                    List<String> args = new ArrayList<>();
-                    for (JsonElement a : termAuth.getAsJsonArray("args")) {
-                        args.add(a.getAsString());
-                    }
-                    method.setArgs(args);
-                }
-            }
-        }
+        return agentConfig.getAuthMethod();
     }
 
     /**
@@ -874,9 +848,10 @@ public class CopilotAcpClient implements Closeable {
         // Immediately unblock any callers stuck in pollForPromptCompletion
         failAllPendingRequests();
 
+        String name = agentConfig.getDisplayName();
         if (restartAttempts.get() >= MAX_RESTART_ATTEMPTS) {
             LOG.warn("ACP process terminated after " + MAX_RESTART_ATTEMPTS + " restart attempts");
-            showNotification("Copilot Disconnected",
+            showNotification(name + " Disconnected",
                 "Could not reconnect after " + MAX_RESTART_ATTEMPTS + " attempts. Please restart the IDE.",
                 com.intellij.notification.NotificationType.ERROR);
             failAllPendingRequests();
@@ -888,7 +863,7 @@ public class CopilotAcpClient implements Closeable {
 
         LOG.info("ACP process terminated. Attempting restart " + attempts + "/" + MAX_RESTART_ATTEMPTS +
             " after " + delayMs + "ms...");
-        showNotification("Copilot Reconnecting...",
+        showNotification(name + " Reconnecting...",
             "Attempt " + attempts + "/" + MAX_RESTART_ATTEMPTS,
             com.intellij.notification.NotificationType.INFORMATION);
 
@@ -902,7 +877,7 @@ public class CopilotAcpClient implements Closeable {
                 }
                 start();
                 LOG.info("ACP process successfully restarted");
-                showNotification("Copilot Reconnected",
+                showNotification(name + " Reconnected",
                     "Connection restored — please retry your last message",
                     com.intellij.notification.NotificationType.INFORMATION);
                 restartAttempts.set(0); // Reset counter on successful restart
@@ -913,12 +888,12 @@ public class CopilotAcpClient implements Closeable {
                 LOG.warn("Failed to restart ACP process (attempt " + restartAttempts + ")", e);
                 attemptAutoRestart(); // Try again
             }
-        }, "CopilotACP-Restart").start();
+        }, name + "ACP-Restart").start();
     }
 
     private void showNotification(String title, String content, com.intellij.notification.NotificationType type) {
         com.intellij.notification.NotificationGroupManager.getInstance()
-            .getNotificationGroup("Copilot Notifications")
+            .getNotificationGroup(agentConfig.getNotificationGroupId())
             .createNotification(title, content, type)
             .notify(null);
     }
@@ -1016,7 +991,7 @@ public class CopilotAcpClient implements Closeable {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                LOG.warn("Copilot CLI stderr: " + line);
+                LOG.warn(agentConfig.getDisplayName() + " CLI stderr: " + line);
             }
         } catch (IOException e) {
             if (!closed) {

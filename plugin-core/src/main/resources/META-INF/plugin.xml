@@ -49,7 +49,7 @@
     <h3>Requirements</h3>
     <ul>
         <li>A supported JetBrains IDE (IntelliJ IDEA, WebStorm, PyCharm, GoLand, etc.)</li>
-        <li>GitHub Copilot plugin installed and authenticated</li>
+        <li>GitHub Copilot CLI installed and authenticated</li>
         <li>An active GitHub Copilot subscription</li>
     </ul>
 

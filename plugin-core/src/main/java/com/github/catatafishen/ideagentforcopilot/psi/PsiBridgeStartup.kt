@@ -20,7 +20,7 @@ class PsiBridgeStartup : ProjectActivity {
         createAgentWorkspace(project)
 
         // Ensure copilot-instructions.md exists with plugin instructions.
-        // This is also called from CopilotAcpClient.start() as a safety net
+        // This is also called from AcpClient.start() as a safety net
         // against race conditions (tool window may start CLI before this runs).
         CopilotInstructionsManager.ensureInstructions(project.basePath)
         notifyIfNewInstructions(project)

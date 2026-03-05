@@ -12,7 +12,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -255,19 +254,41 @@ final class GitToolHandler {
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("add");
 
+        boolean stageAll = false;
+        List<String> stagedPaths = new ArrayList<>();
+
         if (args.has("all") && args.get("all").getAsBoolean()) {
             gitArgs.add(GIT_FLAG_ALL);
+            stageAll = true;
         } else if (args.has(JSON_PATHS)) {
             for (var elem : args.getAsJsonArray(JSON_PATHS)) {
-                gitArgs.add(elem.getAsString());
+                String p = elem.getAsString();
+                gitArgs.add(p);
+                stagedPaths.add(p);
             }
         } else if (args.has("path")) {
-            gitArgs.add(args.get("path").getAsString());
+            String p = args.get("path").getAsString();
+            gitArgs.add(p);
+            stagedPaths.add(p);
         } else {
             return "Error: 'path', 'paths', or 'all' parameter is required";
         }
 
-        return runGit(gitArgs.toArray(new String[0]));
+        String result = runGit(gitArgs.toArray(new String[0]));
+
+        // On success, git add produces no output — provide descriptive result
+        if (result.isBlank()) {
+            if (stageAll) {
+                String cached = runGit("diff", "--cached", "--name-status");
+                if (cached.isBlank()) return "✓ Nothing to stage";
+                return "✓ Staged all changes:\n" + cached.trim();
+            }
+            var sb = new StringBuilder("✓ Staged ");
+            sb.append(stagedPaths.size()).append(stagedPaths.size() == 1 ? " file" : " files").append(":\n");
+            for (String p : stagedPaths) sb.append(p).append('\n');
+            return sb.toString().trim();
+        }
+        return result;
     }
 
     String gitUnstage(JsonObject args) throws Exception {
@@ -667,64 +688,32 @@ final class GitToolHandler {
     /**
      * Opens the Git Log tool window and navigates to the newly created commit (HEAD).
      * <p>
-     * Commits already go through IntelliJ's git4idea layer (Git.runCommand via
-     * GitLineHandler in IdeGitSupport), which is the correct programmatic API.
-     * IntelliJ's higher-level commit APIs (GitCheckinEnvironment, ChangeListManager)
-     * are UI-coupled and not designed for headless/programmatic commits.
-     * <p>
-     * The Git Log tool window is opened immediately. Then we poll for the commit
-     * to appear in the log's index (up to 5 attempts at 200ms intervals). The VCS
-     * Log indexes new commits asynchronously via file watchers — even though runGit
-     * already calls refreshVcsState(), the log's internal DataPack may not have
-     * processed the new commit yet. If polling exhausts all attempts, we accept
-     * that the tool window is already open and visible — good enough.
+     * Uses {@link PlatformApiCompat#showRevisionInLogAfterRefresh} to register a
+     * {@code DataPackChangeListener} and trigger a VCS log refresh. Navigation happens
+     * only after the log has indexed the new commit, avoiding the
+     * "Commit or reference 'xxx' not found" notification.
      */
-    private static final int COMMIT_POLL_ATTEMPTS = 5;
-    private static final long COMMIT_POLL_INTERVAL_MS = 200;
-
     private void showNewCommitInLog() {
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
                 String fullHash = runGit("rev-parse", "HEAD").trim();
                 if (fullHash.length() != 40) return;
 
-                var vcsHash = com.intellij.vcs.log.impl.HashImpl.build(fullHash);
-
-                // Open the Git Log tool window immediately
                 ApplicationManager.getApplication().invokeLater(() -> {
+                    // Open the Git Log tool window
                     var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
                     var tw = twm.getToolWindow("Version Control");
                     if (tw != null) tw.activate(null);
-                });
 
-                // Poll for the commit to appear in the log index
-                pollForCommitInLog(vcsHash);
+                    // Navigate after VCS log refresh (avoids "not found" notification)
+                    PlatformApiCompat.showRevisionInLogAfterRefresh(project, fullHash);
+                });
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             } catch (Exception ignored) {
                 // best-effort — fall back silently
             }
         });
-    }
-
-    /**
-     * Polls for a commit to appear in the VCS Log index, then navigates to it.
-     * Gives up silently after exhausting all attempts — the Git Log is already open.
-     */
-    private void pollForCommitInLog(com.intellij.vcs.log.Hash vcsHash) throws InterruptedException {
-        for (int attempt = 0; attempt < COMMIT_POLL_ATTEMPTS; attempt++) {
-            Thread.sleep(COMMIT_POLL_INTERVAL_MS);
-            boolean[] found = {false};
-            ApplicationManager.getApplication().invokeAndWait(() -> {
-                try {
-                    com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, vcsHash);
-                    found[0] = true;
-                } catch (Exception ignored) {
-                    // commit not yet indexed — retry
-                }
-            });
-            if (found[0]) return;
-        }
     }
 
     /**
@@ -748,8 +737,7 @@ final class GitToolHandler {
         String finalHash = hash;
         ApplicationManager.getApplication().invokeLater(() -> {
             try {
-                var vcsHash = com.intellij.vcs.log.impl.HashImpl.build(finalHash);
-                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, vcsHash);
+                PlatformApiCompat.showRevisionInLog(project, finalHash);
             } catch (Exception ignored) {
                 // best-effort UI follow-along
             }
@@ -757,79 +745,14 @@ final class GitToolHandler {
     }
 
     /**
-     * Runs git commands through IntelliJ's Git4Idea infrastructure (GitLineHandler).
-     * <p>
-     * Isolated in a static inner class so git4idea class loading is deferred until first use.
+     * Delegates to {@link PlatformApiCompat#runIdeGitCommand} which isolates all Git4Idea API
+     * calls that produce false-positive errors in the IDE editor.
      * If Git4Idea is disabled, the outer class catches {@link NoClassDefFoundError} and falls
      * back to ProcessBuilder.
      */
     private static final class IdeGitSupport {
-        private static final Map<String, git4idea.commands.GitCommand> COMMAND_MAP = Map.ofEntries(
-            Map.entry("add", git4idea.commands.GitCommand.ADD),
-            Map.entry("blame", git4idea.commands.GitCommand.BLAME),
-            Map.entry("branch", git4idea.commands.GitCommand.BRANCH),
-            Map.entry("checkout", git4idea.commands.GitCommand.CHECKOUT),
-            Map.entry("cherry-pick", git4idea.commands.GitCommand.CHERRY_PICK),
-            Map.entry("commit", git4idea.commands.GitCommand.COMMIT),
-            Map.entry("config", git4idea.commands.GitCommand.CONFIG),
-            Map.entry("diff", git4idea.commands.GitCommand.DIFF),
-            Map.entry("fetch", git4idea.commands.GitCommand.FETCH),
-            Map.entry("log", git4idea.commands.GitCommand.LOG),
-            Map.entry("merge", git4idea.commands.GitCommand.MERGE),
-            Map.entry("pull", git4idea.commands.GitCommand.PULL),
-            Map.entry("push", git4idea.commands.GitCommand.PUSH),
-            Map.entry("rebase", git4idea.commands.GitCommand.REBASE),
-            Map.entry("remote", git4idea.commands.GitCommand.REMOTE),
-            Map.entry("reset", git4idea.commands.GitCommand.RESET),
-            Map.entry("restore", git4idea.commands.GitCommand.RESTORE),
-            Map.entry("rev-parse", git4idea.commands.GitCommand.REV_PARSE),
-            Map.entry("revert", git4idea.commands.GitCommand.REVERT),
-            Map.entry("show", git4idea.commands.GitCommand.SHOW),
-            Map.entry("stash", git4idea.commands.GitCommand.STASH),
-            Map.entry("status", git4idea.commands.GitCommand.STATUS),
-            Map.entry("switch", git4idea.commands.GitCommand.CHECKOUT),
-            Map.entry("tag", git4idea.commands.GitCommand.TAG)
-        );
-
-        /**
-         * Returns command output, or null to signal fallback to ProcessBuilder.
-         */
         static String run(Project project, String[] args) {
-            if (args.length == 0) return null;
-
-            git4idea.commands.GitCommand command = COMMAND_MAP.get(args[0]);
-            if (command == null) return null;
-
-            List<git4idea.repo.GitRepository> repos =
-                git4idea.repo.GitRepositoryManager.getInstance(project).getRepositories();
-            if (repos.isEmpty()) return null;
-
-            // Find the repo matching the project base path
-            git4idea.repo.GitRepository repo = repos.getFirst();
-            String basePath = project.getBasePath();
-            if (basePath != null && repos.size() > 1) {
-                for (git4idea.repo.GitRepository r : repos) {
-                    if (r.getRoot().getPath().equals(basePath)) {
-                        repo = r;
-                        break;
-                    }
-                }
-            }
-
-            git4idea.commands.GitLineHandler handler =
-                new git4idea.commands.GitLineHandler(project, repo.getRoot(), command);
-            handler.setSilent(true);
-            handler.setStdoutSuppressed(true);
-            if (args.length > 1) {
-                handler.addParameters(Arrays.asList(args).subList(1, args.length));
-            }
-
-            git4idea.commands.GitCommandResult result =
-                git4idea.commands.Git.getInstance().runCommand(handler);
-            if (result.success()) {
-                return result.getOutputAsJoinedString();
-            }
-            return "Error (exit " + result.getExitCode() + "): " + result.getErrorOutputAsJoinedString();
+            return PlatformApiCompat.runIdeGitCommand(project, args);
         }
     }
 }

@@ -660,8 +660,17 @@ public class McpServer {
         // ---- Terminal tools ----
 
         addIfEnabled.accept(buildTool("run_in_terminal", "Run In Terminal",
-            Map.of(),
-            List.of()));
+            Map.of(
+                "command", Map.of("type", "string", "description",
+                    "The command to run in the terminal"),
+                "tab_name", Map.of("type", "string", "description",
+                    "Name for the terminal tab. If omitted, reuses the most recent agent-created tab or creates a new one"),
+                "new_tab", Map.of("type", "boolean", "description",
+                    "If true, always create a new terminal tab instead of reusing an existing one"),
+                "shell", Map.of("type", "string", "description",
+                    "Shell to use (e.g., 'bash', 'zsh'). If omitted, uses the default shell")
+            ),
+            List.of("command")));
 
         addIfEnabled.accept(buildTool("write_terminal_input", "Write Terminal Input",
             Map.of(
@@ -676,7 +685,9 @@ public class McpServer {
 
         addIfEnabled.accept(buildTool("read_terminal_output", "Read Terminal Output",
             Map.of(
-                "tab_name", Map.of("type", "string", "description", "Name of the terminal tab to read from")
+                "tab_name", Map.of("type", "string", "description", "Name of the terminal tab to read from"),
+                "max_lines", Map.of("type", "integer", "description",
+                    "Maximum number of lines to return from the end of the terminal buffer (default: 50). Use 0 for the full buffer.")
             ),
             List.of()));
 

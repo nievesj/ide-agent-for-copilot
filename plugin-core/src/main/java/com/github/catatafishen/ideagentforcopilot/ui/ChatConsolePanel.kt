@@ -1,8 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.intellij.ide.ui.LafManagerListener
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers
 import com.intellij.openapi.application.ApplicationManager
-
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
@@ -17,9 +16,6 @@ import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefJSQuery
 import com.intellij.util.ui.UIUtil
-import org.cef.browser.CefBrowser
-import org.cef.browser.CefFrame
-import org.cef.handler.CefLoadHandlerAdapter
 import java.awt.BorderLayout
 import java.awt.Color
 import java.io.File
@@ -47,6 +43,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private var currentTurnId = ""
     private var toolJustCompleted = false
     private val toolCallNames = mutableMapOf<String, String>() // domId → tool baseName
+    private val toolCallEntries = mutableMapOf<String, EntryData.ToolCall>() // domId → entry
 
     // ── JCEF ───────────────────────────────────────────────────────
     private val browser: JBCefBrowser?
@@ -182,37 +179,26 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
             add(browser.component, BorderLayout.CENTER)
 
-            browser.jbCefClient.addLoadHandler(object : CefLoadHandlerAdapter() {
-                override fun onLoadEnd(b: CefBrowser?, frame: CefFrame?, httpStatusCode: Int) {
-                    if (frame?.isMain == true) {
-                        SwingUtilities.invokeLater {
-                            browserReady = true
-                            pendingJs.forEach { browser.cefBrowser.executeJavaScript(it, "", 0) }
-                            pendingJs.clear()
-                        }
+            browser.jbCefClient.addLoadHandler(
+                com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat.createMainFrameLoadEndHandler {
+                    SwingUtilities.invokeLater {
+                        browserReady = true
+                        pendingJs.forEach { browser.cefBrowser.executeJavaScript(it, "", 0) }
+                        pendingJs.clear()
                     }
-                }
-            }, browser.cefBrowser)
+                }, browser.cefBrowser
+            )
 
-            browser.jbCefClient.addDisplayHandler(object : org.cef.handler.CefDisplayHandlerAdapter() {
-                override fun onConsoleMessage(
-                    b: org.cef.browser.CefBrowser?,
-                    level: org.cef.CefSettings.LogSeverity?,
-                    message: String?,
-                    source: String?,
-                    line: Int
-                ): Boolean {
+            browser.jbCefClient.addDisplayHandler(
+                com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat.createConsoleLogHandler(
                     com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
-                        .info("JCEF Console [$level]: $message")
-                    return false
-                }
-            }, browser.cefBrowser)
+                ), browser.cefBrowser
+            )
 
             browser.loadHTML(buildInitialPage())
             fallbackArea = null
 
-            val conn = ApplicationManager.getApplication().messageBus.connect(this)
-            conn.subscribe(LafManagerListener.TOPIC, LafManagerListener { updateThemeColors() })
+            com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat.subscribeLafChanges(this) { updateThemeColors() }
         } else {
             browser = null; openFileQuery = null
             fallbackArea = JBTextArea().apply { isEditable = false; lineWrap = true; wrapStyleWord = true }
@@ -302,15 +288,17 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun addToolCallEntry(id: String, title: String, arguments: String?, kind: String?) {
         finalizeCurrentText()
         val resolvedKind = kind ?: "other"
-        entries.add(EntryData.ToolCall(title, arguments, resolvedKind))
+        val entry = EntryData.ToolCall(title, arguments, resolvedKind)
+        entries.add(entry)
         val did = domId(id)
         val baseName = title.substringAfterLast("-")
         toolCallNames[did] = baseName
+        toolCallEntries[did] = entry
         val info = TOOL_DISPLAY_INFO[baseName]
         val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
         val short = formatToolSubtitle(baseName, arguments)
         val label = if (short != null) "$displayName — $short" else displayName
-        val hasCustomRenderer = baseName in TOOL_RESULT_RENDERERS
+        val hasCustomRenderer = ToolRenderers.hasRenderer(baseName)
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
         val safeKind = escJs(resolvedKind)
         executeJs("ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','$safeKind')")
@@ -319,6 +307,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun updateToolCall(id: String, status: String, details: String?) {
         val did = domId(id)
         val baseName = toolCallNames[did]
+        toolCallEntries[did]?.let { it.result = details; it.status = status }
         val resultHtml = renderToolResult(baseName, status, details)
         val failed = if (status == "failed") "failed" else "completed"
         executeJs("(function(){ChatController.updateToolCall('$did','$failed',$resultHtml);})()")
@@ -334,7 +323,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
         val short = formatToolSubtitle(baseName, arguments)
         val label = if (short != null) "$displayName — $short" else displayName
-        val hasCustomRenderer = baseName in TOOL_RESULT_RENDERERS
+        val hasCustomRenderer = ToolRenderers.hasRenderer(baseName)
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
         executeJs("ChatController.addSubAgentToolCall('$saDid','$toolDid','${escJs(label)}','$paramsJson')")
     }
@@ -492,6 +481,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                         e.arguments ?: ""
                     )
                     obj.addProperty("kind", e.kind)
+                    if (!e.result.isNullOrEmpty()) obj.addProperty("result", e.result)
+                    if (!e.status.isNullOrEmpty()) obj.addProperty("status", e.status)
                 }
 
                 is EntryData.SubAgent -> {
@@ -572,7 +563,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 EntryData.ToolCall(
                     obj["title"]?.asString ?: "",
                     obj["args"]?.asString,
-                    obj["kind"]?.asString ?: "other"
+                    obj["kind"]?.asString ?: "other",
+                    obj["result"]?.asString,
+                    obj["status"]?.asString
                 )
             )
 
@@ -651,12 +644,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 val label = if (short != null) "$displayName — $short" else displayName
                 val did = "restored-tool-${entries.size}"
                 val kind = obj["kind"]?.asString ?: "other"
+                val result = obj["result"]?.asString
+                val status = obj["status"]?.asString ?: "completed"
+                val hasCustomRenderer = ToolRenderers.hasRenderer(baseName)
+                val paramsJson = if (!args.isNullOrBlank() && !hasCustomRenderer) escJs(args) else ""
+                val resultHtml = renderToolResult(baseName, status, result)
                 executeJs(
-                    "ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','${escJs(args ?: "")}','${
-                        escJs(
-                            kind
-                        )
-                    }');ChatController.updateToolCall('$did','completed','Completed')"
+                    "ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','${
+                        escJs(kind)
+                    }');ChatController.updateToolCall('$did','$status',$resultHtml)"
                 )
             }
 
@@ -795,16 +791,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                                 val short = formatToolSubtitle(baseName, args)
                                 val label = if (short != null) "$displayName — $short" else displayName
                                 val id = "batch-tool-${batchIdCounter++}"
+                                val result = e["result"]?.asString
+                                val status = e["status"]?.asString ?: "completed"
+                                val resultHtml = renderToolResultHtml(baseName, status, result)
                                 metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(kind)}' data-chip-for='$id'></tool-chip>")
                                 detailsContent.append("<tool-section id='$id' title='${esc(label)}'")
-                                if (args != null && baseName !in TOOL_RESULT_RENDERERS) detailsContent.append(
-                                    " params='${
-                                        esc(
-                                            args
-                                        )
-                                    }'"
+                                if (args != null && !ToolRenderers.hasRenderer(baseName)) detailsContent.append(
+                                    " params='${esc(args)}'"
                                 )
-                                detailsContent.append("><div class='tool-params'></div><div class='tool-result'>Completed</div></tool-section>")
+                                detailsContent.append("><div class='tool-params'></div><div class='tool-result'>$resultHtml</div></tool-section>")
                             }
 
                             "text" -> {
@@ -958,14 +953,43 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                     log.warn("No VCS root found for git commit link $hash")
                     return@invokeLater
                 }
-                // Resolve short hash to full 40-char SHA — VcsProjectLog requires exact match
                 val fullHash = resolveFullHash(hash) ?: hash
                 val hashObj = com.intellij.vcs.log.impl.HashImpl.build(fullHash)
-                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, root, hashObj)
+
+                // Refresh VCS log to pick up recent commits
+                val vcsLog = com.intellij.vcs.log.impl.VcsProjectLog.getInstance(project)
+                val dataManager = vcsLog.dataManager
+                dataManager?.refresh(listOf(root))
+
+                // Poll until the commit appears in the VCS log storage, then navigate
+                showRevisionWhenIndexed(root, hashObj, attemptsLeft = 25, delayMs = 200)
             } catch (e: Exception) {
                 log.warn("Failed to open git commit $hash", e)
             }
         }
+    }
+
+    private fun showRevisionWhenIndexed(
+        root: com.intellij.openapi.vfs.VirtualFile,
+        hash: com.intellij.vcs.log.Hash,
+        attemptsLeft: Int,
+        delayMs: Long,
+    ) {
+        val dm = com.intellij.vcs.log.impl.VcsProjectLog.getInstance(project).dataManager
+        val commitId = com.intellij.vcs.log.CommitId(hash, root)
+        val indexed = dm != null && dm.storage.containsCommit(commitId)
+
+        if (indexed || attemptsLeft <= 0) {
+            ApplicationManager.getApplication().invokeLater {
+                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, root, hash)
+            }
+            return
+        }
+
+        // Commit not yet indexed — retry after delay (total budget ~5 seconds)
+        com.intellij.util.concurrency.AppExecutorUtil.getAppScheduledExecutorService().schedule({
+            showRevisionWhenIndexed(root, hash, attemptsLeft - 1, delayMs)
+        }, delayMs, java.util.concurrent.TimeUnit.MILLISECONDS)
     }
 
     private fun resolveFullHash(shortHash: String): String? {
@@ -1039,137 +1063,22 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
      * Returns a JS expression that evaluates to an HTML string.
      */
     private fun renderToolResult(baseName: String?, status: String, details: String?): String {
+        val html = renderToolResultHtml(baseName, status, details)
+        return if (details.isNullOrBlank()) "'$html'" else "b64('${b64(html)}')"
+    }
+
+    /** Returns raw HTML for a tool result, applying custom renderers when available. */
+    private fun renderToolResultHtml(baseName: String?, status: String?, details: String?): String {
         if (details.isNullOrBlank()) {
-            return if (status == "completed") "'Completed'"
-            else "'<span style=\"color:var(--error)\">✖ Failed</span>'"
+            return if (status != "failed") "Completed"
+            else "<span style=\"color:var(--error)\">✖ Failed</span>"
         }
-        if (status == "completed" && baseName != null) {
-            val custom = TOOL_RESULT_RENDERERS[baseName]?.invoke(details)
-            if (custom != null) return "b64('${b64(custom)}')"
+        if (status != "failed" && baseName != null) {
+            val renderer = ToolRenderers.get(baseName)
+            val custom = renderer?.render(details)
+            if (custom != null) return custom
         }
-        val encoded = b64(
-            "<pre class='tool-output'><code>${esc(details)}</code></pre>"
-        )
-        return "b64('$encoded')"
-    }
-
-    /** Per-tool custom result renderers. Return HTML string or null to use default. */
-    private val TOOL_RESULT_RENDERERS: Map<String, (String) -> String?> = mapOf(
-        "git_commit" to ::renderGitCommitResult,
-    )
-
-    /**
-     * Renders a git commit result as a rich card with commit metadata,
-     * message, changed files with stats, and a link to show in IDE git tools.
-     */
-    private fun renderGitCommitResult(output: String): String? {
-        // Parse: [branch hash] message\n N files changed, X insertions(+), Y deletions(-)\n ...
-        val lines = output.trimEnd().lines()
-        if (lines.isEmpty()) return null
-
-        val headerLine = lines[0]
-        // Match "[branch hash] message" pattern
-        val headerMatch = Regex("""\[(\S+)\s+([a-f0-9]+)]\s+(.+)""").find(headerLine) ?: return null
-        val branch = esc(headerMatch.groupValues[1])
-        val shortHash = esc(headerMatch.groupValues[2])
-        val message = esc(headerMatch.groupValues[3])
-
-        // Remaining lines: stats summary and file entries
-        val fileLines = mutableListOf<String>()
-        var summaryLine = ""
-        for (i in 1 until lines.size) {
-            val line = lines[i].trim()
-            if (line.isEmpty()) continue
-            if (line.matches(Regex("""\d+ files? changed.*"""))) {
-                summaryLine = line
-            } else {
-                fileLines.add(line)
-            }
-        }
-
-        val sb = StringBuilder()
-        sb.append("<div class='git-commit-result'>")
-
-        // Header: hash + branch
-        sb.append("<div class='git-commit-header'>")
-        sb.append("<span class='git-commit-hash'>")
-        sb.append("<a href='gitshow://$shortHash' class='git-commit-link' title='Show commit in IDE'>$shortHash</a>")
-        sb.append("</span>")
-        sb.append(" <span class='git-commit-branch'>$branch</span>")
-        sb.append("</div>")
-
-        // Commit message
-        sb.append("<div class='git-commit-message'>$message</div>")
-
-        // Stats summary
-        if (summaryLine.isNotEmpty()) {
-            val statsParts = parseDiffStats(summaryLine)
-            sb.append("<div class='git-commit-stats'>")
-            sb.append("<span class='git-stat-files'>${esc(statsParts.files)}</span>")
-            if (statsParts.insertions.isNotEmpty()) {
-                sb.append(" <span class='git-stat-ins'>+${esc(statsParts.insertions)}</span>")
-            }
-            if (statsParts.deletions.isNotEmpty()) {
-                sb.append(" <span class='git-stat-del'>-${esc(statsParts.deletions)}</span>")
-            }
-            sb.append("</div>")
-        }
-
-        // Changed files
-        if (fileLines.isNotEmpty()) {
-            sb.append("<div class='git-commit-files'>")
-            for (fileLine in fileLines) {
-                val rendered = renderFileEntry(fileLine)
-                sb.append(rendered)
-            }
-            sb.append("</div>")
-        }
-
-        sb.append("</div>")
-        return sb.toString()
-    }
-
-    private data class DiffStats(val files: String, val insertions: String, val deletions: String)
-
-    private fun parseDiffStats(line: String): DiffStats {
-        val filesMatch = Regex("""(\d+ files? changed)""").find(line)
-        val insMatch = Regex("""(\d+) insertions?\(\+\)""").find(line)
-        val delMatch = Regex("""(\d+) deletions?\(-\)""").find(line)
-        return DiffStats(
-            files = filesMatch?.groupValues?.get(1) ?: line,
-            insertions = insMatch?.groupValues?.get(1) ?: "",
-            deletions = delMatch?.groupValues?.get(1) ?: "",
-        )
-    }
-
-    private fun renderFileEntry(line: String): String {
-        // "create mode 100644 path/to/file" or "delete mode 100644 path/to/file" or just path
-        val createMatch = Regex("""create mode \d+ (.+)""").find(line)
-        val deleteMatch = Regex("""delete mode \d+ (.+)""").find(line)
-        val renameMatch = Regex("""rename (.+) => (.+) \((\d+)%\)""").find(line)
-
-        return when {
-            createMatch != null -> {
-                val path = esc(createMatch.groupValues[1].trim())
-                "<div class='git-file-entry'><span class='git-file-badge git-file-add'>A</span> <span class='git-file-path'>$path</span></div>"
-            }
-
-            deleteMatch != null -> {
-                val path = esc(deleteMatch.groupValues[1].trim())
-                "<div class='git-file-entry'><span class='git-file-badge git-file-del'>D</span> <span class='git-file-path'>$path</span></div>"
-            }
-
-            renameMatch != null -> {
-                val from = esc(renameMatch.groupValues[1].trim())
-                val to = esc(renameMatch.groupValues[2].trim())
-                "<div class='git-file-entry'><span class='git-file-badge git-file-rename'>R</span> <span class='git-file-path'>$from → $to</span></div>"
-            }
-
-            else -> {
-                val path = esc(line.trim())
-                "<div class='git-file-entry'><span class='git-file-badge git-file-mod'>M</span> <span class='git-file-path'>$path</span></div>"
-            }
-        }
+        return "<pre class='tool-output'><code>${esc(details)}</code></pre>"
     }
 
     // ── Helpers ────────────────────────────────────────────────────
@@ -1203,7 +1112,14 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             UIManager.getColor("ToolTip.background") ?: JBColor(Color(0xF7, 0xF7, 0xF7), Color(0x3C, 0x3F, 0x41))
         val sb = StringBuilder()
         sb.append("--font-family:'${font.family}';--font-size:${font.size - 2}pt;--code-font-size:${font.size - 3}pt;")
-        sb.append("--fg:${rgb(fg)};--fg-a08:${rgba(fg, 0.08)};--fg-a16:${rgba(fg, 0.16)};--fg-muted:${rgba(fg, 0.55)};--bg:${rgb(bg)};")
+        sb.append(
+            "--fg:${rgb(fg)};--fg-a05:${rgba(fg, 0.05)};--fg-a08:${rgba(fg, 0.08)};--fg-a16:${
+                rgba(
+                    fg,
+                    0.16
+                )
+            };--fg-muted:${rgba(fg, 0.55)};--bg:${rgb(bg)};"
+        )
         sb.append(
             "--user:${rgb(USER_COLOR)};--user-a06:${rgba(USER_COLOR, 0.06)};--user-a08:${
                 rgba(

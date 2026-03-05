@@ -1,7 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
-import com.intellij.ide.plugins.PluginManagerCore;
-import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 
@@ -30,7 +28,7 @@ abstract class AbstractToolHandler {
      * Use this to skip registering tools that depend on plugins the user doesn't have.
      */
     protected static boolean isPluginInstalled(String pluginId) {
-        return PluginManagerCore.isPluginInstalled(PluginId.getId(pluginId));
+        return PlatformApiCompat.isPluginInstalled(pluginId);
     }
 
     /**
