@@ -1037,10 +1037,10 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
         override fun isSelected(e: AnActionEvent): Boolean =
-            CopilotSettings.getFollowAgentFiles()
+            CopilotSettings.getFollowAgentFiles(project)
 
         override fun setSelected(e: AnActionEvent, state: Boolean) {
-            CopilotSettings.setFollowAgentFiles(state)
+            CopilotSettings.setFollowAgentFiles(project, state)
         }
 
     }
@@ -1483,7 +1483,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         SwingUtilities.invokeLater {
             consolePanel.component.revalidate()
             consolePanel.component.repaint()
-            if (com.github.catatafishen.ideagentforcopilot.services.CopilotSettings.getFollowAgentFiles()) {
+            if (com.github.catatafishen.ideagentforcopilot.services.CopilotSettings.getFollowAgentFiles(project)) {
                 promptTextArea.requestFocusInWindow()
             }
         }

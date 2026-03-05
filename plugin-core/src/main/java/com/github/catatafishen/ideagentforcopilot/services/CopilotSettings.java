@@ -118,13 +118,14 @@ public final class CopilotSettings {
 
     /**
      * Whether to open files in the editor when the agent reads/writes them.
+     * Project-scoped so each open IDE/project can have its own setting.
      */
-    public static boolean getFollowAgentFiles() {
-        return PropertiesComponent.getInstance().getBoolean(KEY_FOLLOW_AGENT_FILES, true);
+    public static boolean getFollowAgentFiles(@NotNull com.intellij.openapi.project.Project project) {
+        return PropertiesComponent.getInstance(project).getBoolean(KEY_FOLLOW_AGENT_FILES, true);
     }
 
-    public static void setFollowAgentFiles(boolean enabled) {
-        PropertiesComponent.getInstance().setValue(KEY_FOLLOW_AGENT_FILES, enabled, true);
+    public static void setFollowAgentFiles(@NotNull com.intellij.openapi.project.Project project, boolean enabled) {
+        PropertiesComponent.getInstance(project).setValue(KEY_FOLLOW_AGENT_FILES, enabled, true);
     }
 
     public static boolean getFormatAfterEdit() {

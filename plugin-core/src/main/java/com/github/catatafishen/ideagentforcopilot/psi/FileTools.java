@@ -158,7 +158,7 @@ class FileTools extends AbstractToolHandler {
      */
     static void followFileIfEnabled(Project project, String pathStr, int startLine, int endLine,
                                     java.awt.Color highlightColor, String actionLabel) {
-        if (!CopilotSettings.getFollowAgentFiles()) return;
+        if (!CopilotSettings.getFollowAgentFiles(project)) return;
 
         EdtUtil.invokeLater(() -> {
             try {
