@@ -1025,21 +1025,20 @@ class ProjectTools extends AbstractToolHandler {
             return "SDK '" + sdkName + "' already exists.";
         }
 
-        // Create and configure the SDK
+        // Resolve version outside write action (may run external process)
         final com.intellij.openapi.projectRoots.SdkType finalSdkType = sdkType;
         final String finalHome = adjustedHome;
         final String finalName = sdkName;
+        String version = sdkType.getVersionString(finalHome);
 
         com.intellij.openapi.application.WriteAction.runAndWait(() -> {
             Sdk sdk = jdkTable.createSdk(finalName, finalSdkType);
             var modificator = sdk.getSdkModificator();
             modificator.setHomePath(finalHome);
-            String version = finalSdkType.getVersionString(finalHome);
             if (version != null) {
                 modificator.setVersionString(version);
             }
             modificator.commitChanges();
-            finalSdkType.setupSdkPaths(sdk);
             jdkTable.addJdk(sdk);
         });
 
