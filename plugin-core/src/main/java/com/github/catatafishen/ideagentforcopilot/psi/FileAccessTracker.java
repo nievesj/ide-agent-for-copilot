@@ -44,8 +44,8 @@ final class FileAccessTracker {
         String key = vf.getPath();
         accessMap.merge(key, AccessType.READ, FileAccessTracker::merge);
         activeLabels.put(key, "Agent reading");
-        refreshProjectView(project);
-        scheduleLabelExpiry(project, key);
+        refreshNode(project, vf);
+        scheduleLabelExpiry(project, key, vf);
     }
 
     static void recordWrite(Project project, String path) {
@@ -54,8 +54,8 @@ final class FileAccessTracker {
         String key = vf.getPath();
         accessMap.merge(key, AccessType.WRITE, FileAccessTracker::merge);
         activeLabels.put(key, "Agent editing");
-        refreshProjectView(project);
-        scheduleLabelExpiry(project, key);
+        refreshNode(project, vf);
+        scheduleLabelExpiry(project, key, vf);
     }
 
     /**
@@ -89,22 +89,41 @@ final class FileAccessTracker {
         return existing;
     }
 
-    private static void scheduleLabelExpiry(Project project, String key) {
+    private static void scheduleLabelExpiry(Project project, String key, VirtualFile vf) {
         scheduler.schedule(() -> {
             activeLabels.remove(key);
-            refreshProjectView(project);
+            refreshNode(project, vf);
         }, LABEL_DURATION_MS, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * Refreshes decoration for a single file node in the project view.
+     * Uses {@code updateFrom()} to re-evaluate decorators for the specific node,
+     * which is lighter than rebuilding the entire tree.
+     */
+    private static void refreshNode(Project project, VirtualFile vf) {
+        SwingUtilities.invokeLater(() -> {
+            try {
+                var pane = ProjectView.getInstance(project).getCurrentProjectViewPane();
+                if (pane != null) {
+                    pane.updateFrom(vf, false, false);
+                }
+            } catch (Exception ignored) {
+                // Project view may not be available
+            }
+        });
+    }
+
+    /**
+     * Refreshes all file decorations in the project view by rebuilding from root.
+     * Used at end-of-turn when all highlights need to be cleared at once.
+     */
     private static void refreshProjectView(Project project) {
         SwingUtilities.invokeLater(() -> {
             try {
                 var pane = ProjectView.getInstance(project).getCurrentProjectViewPane();
-                if (pane != null && pane.getTree() != null) {
-                    // Repaint the tree directly to re-trigger decorators on visible nodes.
-                    // ProjectView.refresh() rebuilds tree structure but may skip
-                    // re-decoration of nodes whose structure hasn't changed.
-                    pane.getTree().repaint();
+                if (pane != null) {
+                    pane.updateFromRoot(false);
                 }
             } catch (Exception ignored) {
                 // Project view may not be available
