@@ -63,7 +63,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private var modelsStatusText: String? = MSG_LOADING
     private lateinit var controlsToolbar: ActionToolbar
     private lateinit var promptTextArea: EditorTextField
-    private lateinit var loadingSpinner: AsyncProcessIcon
     private var currentPromptThread: Thread? = null
     private var isSending = false
     private lateinit var processingTimerPanel: ProcessingTimerPanel
@@ -537,8 +536,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         panel.add(splitter, BorderLayout.CENTER)
 
         // Fixed footer: controls + usage (not resized by splitter)
-        loadingSpinner = AsyncProcessIcon("loading-models")
-        loadingSpinner.preferredSize = JBUI.size(16, 16)
         val fixedFooter = createFixedFooter()
         panel.add(fixedFooter, BorderLayout.SOUTH)
 
@@ -2142,7 +2139,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
     private fun loadModelsAsync(onSuccess: (List<CopilotAcpClient.Model>) -> Unit) {
         SwingUtilities.invokeLater {
-            loadingSpinner.isVisible = true
             modelsStatusText = MSG_LOADING
             selectedModelIndex = -1
         }
@@ -2152,7 +2148,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 try {
                     val models = CopilotService.getInstance(project).getClient().listModels().toList()
                     SwingUtilities.invokeLater {
-                        loadingSpinner.isVisible = false
                         modelsStatusText = null
                         restoreModelSelection(models)
                         onSuccess(models)
@@ -2167,8 +2162,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             val errorMsg = lastError?.message ?: MSG_UNKNOWN_ERROR
             LOG.warn("Failed to load models: $errorMsg")
             SwingUtilities.invokeLater {
-                loadingSpinner.suspend()
-                loadingSpinner.isVisible = false
                 modelsStatusText = "Unavailable"
                 if (authService.isAuthenticationError(errorMsg)) {
                     authService.markAuthError(errorMsg)
