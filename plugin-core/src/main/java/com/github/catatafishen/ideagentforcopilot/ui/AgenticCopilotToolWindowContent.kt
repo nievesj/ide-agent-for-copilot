@@ -1483,6 +1483,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         SwingUtilities.invokeLater {
             consolePanel.component.revalidate()
             consolePanel.component.repaint()
+            promptTextArea.requestFocusInWindow()
         }
     }
 
