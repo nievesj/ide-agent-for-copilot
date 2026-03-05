@@ -37,7 +37,14 @@ internal sealed class EntryData {
     class Prompt(val text: String, val timestamp: String = "") : EntryData()
     class Text(val raw: StringBuilder = StringBuilder()) : EntryData()
     class Thinking(val raw: StringBuilder = StringBuilder()) : EntryData()
-    class ToolCall(val title: String, val arguments: String? = null, val kind: String = "other") : EntryData()
+    class ToolCall(
+        val title: String,
+        val arguments: String? = null,
+        val kind: String = "other",
+        var result: String? = null,
+        var status: String? = null
+    ) : EntryData()
+
     class SubAgent(
         val agentType: String,
         val description: String,

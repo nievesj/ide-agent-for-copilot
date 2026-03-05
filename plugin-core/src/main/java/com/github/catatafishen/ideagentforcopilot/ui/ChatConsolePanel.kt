@@ -43,6 +43,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private var currentTurnId = ""
     private var toolJustCompleted = false
     private val toolCallNames = mutableMapOf<String, String>() // domId → tool baseName
+    private val toolCallEntries = mutableMapOf<String, EntryData.ToolCall>() // domId → entry
 
     // ── JCEF ───────────────────────────────────────────────────────
     private val browser: JBCefBrowser?
@@ -185,12 +186,14 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                         pendingJs.forEach { browser.cefBrowser.executeJavaScript(it, "", 0) }
                         pendingJs.clear()
                     }
-                }, browser.cefBrowser)
+                }, browser.cefBrowser
+            )
 
             browser.jbCefClient.addDisplayHandler(
                 com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat.createConsoleLogHandler(
                     com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
-                ), browser.cefBrowser)
+                ), browser.cefBrowser
+            )
 
             browser.loadHTML(buildInitialPage())
             fallbackArea = null
@@ -285,10 +288,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun addToolCallEntry(id: String, title: String, arguments: String?, kind: String?) {
         finalizeCurrentText()
         val resolvedKind = kind ?: "other"
-        entries.add(EntryData.ToolCall(title, arguments, resolvedKind))
+        val entry = EntryData.ToolCall(title, arguments, resolvedKind)
+        entries.add(entry)
         val did = domId(id)
         val baseName = title.substringAfterLast("-")
         toolCallNames[did] = baseName
+        toolCallEntries[did] = entry
         val info = TOOL_DISPLAY_INFO[baseName]
         val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
         val short = formatToolSubtitle(baseName, arguments)
@@ -302,6 +307,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun updateToolCall(id: String, status: String, details: String?) {
         val did = domId(id)
         val baseName = toolCallNames[did]
+        toolCallEntries[did]?.let { it.result = details; it.status = status }
         val resultHtml = renderToolResult(baseName, status, details)
         val failed = if (status == "failed") "failed" else "completed"
         executeJs("(function(){ChatController.updateToolCall('$did','$failed',$resultHtml);})()")
@@ -475,6 +481,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                         e.arguments ?: ""
                     )
                     obj.addProperty("kind", e.kind)
+                    if (!e.result.isNullOrEmpty()) obj.addProperty("result", e.result)
+                    if (!e.status.isNullOrEmpty()) obj.addProperty("status", e.status)
                 }
 
                 is EntryData.SubAgent -> {
@@ -555,7 +563,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 EntryData.ToolCall(
                     obj["title"]?.asString ?: "",
                     obj["args"]?.asString,
-                    obj["kind"]?.asString ?: "other"
+                    obj["kind"]?.asString ?: "other",
+                    obj["result"]?.asString,
+                    obj["status"]?.asString
                 )
             )
 
@@ -634,12 +644,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 val label = if (short != null) "$displayName — $short" else displayName
                 val did = "restored-tool-${entries.size}"
                 val kind = obj["kind"]?.asString ?: "other"
+                val result = obj["result"]?.asString
+                val status = obj["status"]?.asString ?: "completed"
+                val hasCustomRenderer = ToolRenderers.hasRenderer(baseName)
+                val paramsJson = if (!args.isNullOrBlank() && !hasCustomRenderer) escJs(args) else ""
+                val resultHtml = renderToolResult(baseName, status, result)
                 executeJs(
-                    "ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','${escJs(args ?: "")}','${
-                        escJs(
-                            kind
-                        )
-                    }');ChatController.updateToolCall('$did','completed','Completed')"
+                    "ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','${
+                        escJs(kind)
+                    }');ChatController.updateToolCall('$did','$status',$resultHtml)"
                 )
             }
 
@@ -778,16 +791,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                                 val short = formatToolSubtitle(baseName, args)
                                 val label = if (short != null) "$displayName — $short" else displayName
                                 val id = "batch-tool-${batchIdCounter++}"
+                                val result = e["result"]?.asString
+                                val status = e["status"]?.asString ?: "completed"
+                                val resultHtml = renderToolResultHtml(baseName, status, result)
                                 metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(kind)}' data-chip-for='$id'></tool-chip>")
                                 detailsContent.append("<tool-section id='$id' title='${esc(label)}'")
                                 if (args != null && !ToolRenderers.hasRenderer(baseName)) detailsContent.append(
-                                    " params='${
-                                        esc(
-                                            args
-                                        )
-                                    }'"
+                                    " params='${esc(args)}'"
                                 )
-                                detailsContent.append("><div class='tool-params'></div><div class='tool-result'>Completed</div></tool-section>")
+                                detailsContent.append("><div class='tool-params'></div><div class='tool-result'>$resultHtml</div></tool-section>")
                             }
 
                             "text" -> {
@@ -1022,19 +1034,22 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
      * Returns a JS expression that evaluates to an HTML string.
      */
     private fun renderToolResult(baseName: String?, status: String, details: String?): String {
+        val html = renderToolResultHtml(baseName, status, details)
+        return if (details.isNullOrBlank()) "'$html'" else "b64('${b64(html)}')"
+    }
+
+    /** Returns raw HTML for a tool result, applying custom renderers when available. */
+    private fun renderToolResultHtml(baseName: String?, status: String?, details: String?): String {
         if (details.isNullOrBlank()) {
-            return if (status == "completed") "'Completed'"
-            else "'<span style=\"color:var(--error)\">✖ Failed</span>'"
+            return if (status != "failed") "Completed"
+            else "<span style=\"color:var(--error)\">✖ Failed</span>"
         }
-        if (status == "completed" && baseName != null) {
+        if (status != "failed" && baseName != null) {
             val renderer = ToolRenderers.get(baseName)
             val custom = renderer?.render(details)
-            if (custom != null) return "b64('${b64(custom)}')"
+            if (custom != null) return custom
         }
-        val encoded = b64(
-            "<pre class='tool-output'><code>${esc(details)}</code></pre>"
-        )
-        return "b64('$encoded')"
+        return "<pre class='tool-output'><code>${esc(details)}</code></pre>"
     }
 
     // ── Helpers ────────────────────────────────────────────────────
@@ -1068,7 +1083,14 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             UIManager.getColor("ToolTip.background") ?: JBColor(Color(0xF7, 0xF7, 0xF7), Color(0x3C, 0x3F, 0x41))
         val sb = StringBuilder()
         sb.append("--font-family:'${font.family}';--font-size:${font.size - 2}pt;--code-font-size:${font.size - 3}pt;")
-        sb.append("--fg:${rgb(fg)};--fg-a05:${rgba(fg, 0.05)};--fg-a08:${rgba(fg, 0.08)};--fg-a16:${rgba(fg, 0.16)};--fg-muted:${rgba(fg, 0.55)};--bg:${rgb(bg)};")
+        sb.append(
+            "--fg:${rgb(fg)};--fg-a05:${rgba(fg, 0.05)};--fg-a08:${rgba(fg, 0.08)};--fg-a16:${
+                rgba(
+                    fg,
+                    0.16
+                )
+            };--fg-muted:${rgba(fg, 0.55)};--bg:${rgb(bg)};"
+        )
         sb.append(
             "--user:${rgb(USER_COLOR)};--user-a06:${rgba(USER_COLOR, 0.06)};--user-a08:${
                 rgba(
