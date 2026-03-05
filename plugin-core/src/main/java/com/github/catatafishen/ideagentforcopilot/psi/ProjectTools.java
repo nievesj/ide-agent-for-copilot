@@ -52,6 +52,9 @@ class ProjectTools extends AbstractToolHandler {
         register("get_indexing_status", this::getIndexingStatus);
         register("download_sources", this::downloadSources);
         register("mark_directory", this::markDirectory);
+        if (isPluginInstalled("com.intellij.modules.java")) {
+            register("edit_project_structure", this::editProjectStructure);
+        }
     }
 
     // ---- get_project_info ----
@@ -82,6 +85,16 @@ class ProjectTools extends AbstractToolHandler {
             sb.append("IDE Build: ").append(appInfo.getBuild().asString()).append("\n");
         } catch (Exception e) {
             sb.append("IDE: unavailable\n");
+        }
+        try {
+            var descriptor = com.intellij.ide.plugins.PluginManagerCore.getPlugin(
+                com.intellij.openapi.extensions.PluginId.getId("com.github.catatafishen.ideagentforcopilot"));
+            if (descriptor != null) {
+                sb.append("Plugin: ").append(descriptor.getName())
+                    .append(" v").append(descriptor.getVersion()).append("\n");
+            }
+        } catch (Exception e) {
+            sb.append("Plugin version: unavailable\n");
         }
         sb.append("OS: ").append(System.getProperty(OS_NAME_PROPERTY))
             .append(" ").append(System.getProperty("os.version"))
@@ -550,5 +563,521 @@ class ProjectTools extends AbstractToolHandler {
             sb.append("  Gradle: click 'Reload All Gradle Projects' in the Gradle tool window\n");
             sb.append("  Or: File → Reload All from Disk\n");
         }
+    }
+
+    // ---- edit_project_structure ----
+
+    private static final String PARAM_ACTION = "action";
+    private static final String PARAM_DEPENDENCY_NAME = "dependency_name";
+    private static final String PARAM_DEPENDENCY_TYPE = "dependency_type";
+    private static final String PARAM_SCOPE = "scope";
+    private static final String PARAM_JAR_PATH = "jar_path";
+    private static final String MSG_MODULE_PREFIX = "Module '";
+    private static final String MSG_NOT_FOUND = "' not found";
+
+    private String editProjectStructure(JsonObject args) throws Exception {
+        String action = args.has(PARAM_ACTION) ? args.get(PARAM_ACTION).getAsString() : "";
+        return switch (action) {
+            case "list_modules" -> listModules();
+            case "list_dependencies" -> listDependencies(args);
+            case "add_dependency" -> addDependency(args);
+            case "remove_dependency" -> removeDependency(args);
+            case "list_sdks" -> listSdks();
+            case "add_sdk" -> addSdk(args);
+            case "remove_sdk" -> removeSdk(args);
+            default -> ToolUtils.ERROR_PREFIX + "Unknown action '" + action
+                + "'. Must be one of: list_modules, list_dependencies, add_dependency, remove_dependency, list_sdks, add_sdk, remove_sdk";
+        };
+    }
+
+    private String listModules() {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+            Module[] modules = ModuleManager.getInstance(project).getModules();
+            if (modules.length == 0) {
+                return "No modules found in the project.";
+            }
+
+            StringBuilder sb = new StringBuilder();
+            sb.append("Modules (").append(modules.length).append("):\n");
+            for (Module module : modules) {
+                sb.append("\n• ").append(module.getName()).append("\n");
+                appendModuleDependencySummary(sb, module);
+            }
+            return sb.toString().trim();
+        });
+    }
+
+    private void appendModuleDependencySummary(StringBuilder sb, Module module) {
+        ModuleRootManager rootManager = ModuleRootManager.getInstance(module);
+        int libCount = 0;
+        int modDepCount = 0;
+        List<String> moduleDepNames = new ArrayList<>();
+
+        for (var entry : rootManager.getOrderEntries()) {
+            if (entry instanceof com.intellij.openapi.roots.LibraryOrderEntry) {
+                libCount++;
+            } else if (entry instanceof com.intellij.openapi.roots.ModuleOrderEntry modEntry) {
+                String depName = modEntry.getModuleName();
+                if (!depName.isEmpty()) {
+                    modDepCount++;
+                    moduleDepNames.add(depName);
+                }
+            }
+        }
+
+        sb.append("  Libraries: ").append(libCount).append("\n");
+        sb.append("  Module dependencies: ").append(modDepCount).append("\n");
+        if (!moduleDepNames.isEmpty()) {
+            sb.append("  Depends on: ").append(String.join(", ", moduleDepNames)).append("\n");
+        }
+    }
+
+    private String listDependencies(JsonObject args) {
+        String moduleName = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
+        if (moduleName.isEmpty()) {
+            return ToolUtils.ERROR_PREFIX + "'module' parameter is required for list_dependencies";
+        }
+
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+            Module module = ModuleManager.getInstance(project).findModuleByName(moduleName);
+            if (module == null) {
+                return ToolUtils.ERROR_PREFIX + MSG_MODULE_PREFIX + moduleName + MSG_NOT_FOUND;
+            }
+
+            ModuleRootManager rootManager = ModuleRootManager.getInstance(module);
+            StringBuilder sb = new StringBuilder();
+            sb.append("Dependencies for module '").append(moduleName).append("':\n");
+
+            int index = formatDependencyEntries(sb, rootManager);
+
+            if (index == 0) {
+                sb.append("  (no dependencies)\n");
+            }
+            return sb.toString().trim();
+        });
+    }
+
+    private static int formatDependencyEntries(StringBuilder sb, ModuleRootManager rootManager) {
+        int index = 0;
+        for (var entry : rootManager.getOrderEntries()) {
+            if (entry instanceof com.intellij.openapi.roots.JdkOrderEntry jdkEntry) {
+                sb.append("\n").append(++index).append(". [SDK] ").append(jdkEntry.getPresentableName()).append("\n");
+            } else if (entry instanceof com.intellij.openapi.roots.LibraryOrderEntry libEntry) {
+                appendLibraryDetail(sb, libEntry, ++index);
+            } else if (entry instanceof com.intellij.openapi.roots.ModuleOrderEntry modEntry) {
+                index = appendModuleDependencyDetail(sb, modEntry, index);
+            }
+        }
+        return index;
+    }
+
+    private static int appendModuleDependencyDetail(StringBuilder sb,
+                                                    com.intellij.openapi.roots.ModuleOrderEntry modEntry, int index) {
+        String depName = modEntry.getModuleName();
+        if (!depName.isEmpty()) {
+            sb.append("\n").append(++index).append(". [Module] ").append(depName);
+            sb.append("  (scope: ").append(modEntry.getScope().name()).append(")\n");
+            if (modEntry.isExported()) {
+                sb.append("   exported: true\n");
+            }
+        }
+        return index;
+    }
+
+    private static void appendLibraryDetail(StringBuilder sb,
+                                            com.intellij.openapi.roots.LibraryOrderEntry libEntry, int index) {
+        sb.append("\n").append(index).append(". [Library] ").append(libEntry.getPresentableName()).append("\n");
+        sb.append("   scope: ").append(libEntry.getScope().name()).append("\n");
+        if (libEntry.isExported()) {
+            sb.append("   exported: true\n");
+        }
+        var library = libEntry.getLibrary();
+        if (library != null) {
+            VirtualFile[] classFiles = library.getFiles(com.intellij.openapi.roots.OrderRootType.CLASSES);
+            if (classFiles.length > 0) {
+                sb.append("   JARs:\n");
+                for (VirtualFile jar : classFiles) {
+                    sb.append("     - ").append(jar.getPresentableUrl()).append("\n");
+                }
+            }
+        }
+    }
+
+    private String addDependency(JsonObject args) throws Exception {
+        String moduleName = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
+        if (moduleName.isEmpty()) {
+            return ToolUtils.ERROR_PREFIX + "'module' parameter is required for add_dependency";
+        }
+
+        String depType = args.has(PARAM_DEPENDENCY_TYPE) ? args.get(PARAM_DEPENDENCY_TYPE).getAsString() : "library";
+        String depName = args.has(PARAM_DEPENDENCY_NAME) ? args.get(PARAM_DEPENDENCY_NAME).getAsString() : "";
+        String scopeStr = args.has(PARAM_SCOPE) ? args.get(PARAM_SCOPE).getAsString() : "COMPILE";
+        String jarPath = args.has(PARAM_JAR_PATH) ? args.get(PARAM_JAR_PATH).getAsString() : "";
+
+        if (JSON_MODULE.equals(depType)) {
+            if (depName.isEmpty()) {
+                return ToolUtils.ERROR_PREFIX + "'dependency_name' is required when dependency_type is 'module'";
+            }
+            return addModuleDependency(moduleName, depName, scopeStr);
+        } else {
+            if (jarPath.isEmpty()) {
+                return ToolUtils.ERROR_PREFIX + "'jar_path' is required when adding a library dependency";
+            }
+            return addLibraryDependency(moduleName, depName, jarPath, scopeStr);
+        }
+    }
+
+    private String addModuleDependency(String moduleName, String depModuleName, String scopeStr) throws Exception {
+        com.intellij.openapi.roots.DependencyScope scope = parseDependencyScope(scopeStr);
+        if (scope == null) {
+            return ToolUtils.ERROR_PREFIX + "Invalid scope '" + scopeStr
+                + "'. Must be one of: COMPILE, TEST, RUNTIME, PROVIDED";
+        }
+
+        CompletableFuture<String> future = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> {
+            try {
+                String result = ApplicationManager.getApplication().runWriteAction((Computable<String>)
+                    () -> doAddModuleDependency(moduleName, depModuleName, scope));
+                future.complete(result);
+            } catch (Exception e) {
+                future.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
+            }
+        });
+        return future.get(10, TimeUnit.SECONDS);
+    }
+
+    private String doAddModuleDependency(String moduleName, String depModuleName,
+                                         com.intellij.openapi.roots.DependencyScope scope) {
+        Module module = ModuleManager.getInstance(project).findModuleByName(moduleName);
+        if (module == null) {
+            return ToolUtils.ERROR_PREFIX + MSG_MODULE_PREFIX + moduleName + MSG_NOT_FOUND;
+        }
+        Module depModule = ModuleManager.getInstance(project).findModuleByName(depModuleName);
+        if (depModule == null) {
+            return ToolUtils.ERROR_PREFIX + "Dependency module '" + depModuleName + MSG_NOT_FOUND;
+        }
+
+        // Check for duplicate
+        ModuleRootManager rootManager = ModuleRootManager.getInstance(module);
+        for (var entry : rootManager.getOrderEntries()) {
+            if (entry instanceof com.intellij.openapi.roots.ModuleOrderEntry modEntry
+                && depModuleName.equals(modEntry.getModuleName())) {
+                return "Module dependency '" + depModuleName + "' already exists in module '" + moduleName + "'";
+            }
+        }
+
+        ModifiableRootModel model = rootManager.getModifiableModel();
+        try {
+            var modEntry = model.addModuleOrderEntry(depModule);
+            modEntry.setScope(scope);
+            model.commit();
+            return "Added module dependency '" + depModuleName + "' to module '" + moduleName
+                + "' (scope: " + scope.name() + ")";
+        } catch (Exception e) {
+            if (!model.isDisposed()) {
+                model.dispose();
+            }
+            return ToolUtils.ERROR_PREFIX + e.getMessage();
+        }
+    }
+
+    private String addLibraryDependency(String moduleName, String libName, String jarPath,
+                                        String scopeStr) throws Exception {
+        com.intellij.openapi.roots.DependencyScope scope = parseDependencyScope(scopeStr);
+        if (scope == null) {
+            return ToolUtils.ERROR_PREFIX + "Invalid scope '" + scopeStr
+                + "'. Must be one of: COMPILE, TEST, RUNTIME, PROVIDED";
+        }
+
+        // Resolve and validate the JAR path
+        Path resolved = Path.of(jarPath);
+        if (!resolved.isAbsolute() && project.getBasePath() != null) {
+            resolved = Path.of(project.getBasePath()).resolve(resolved);
+        }
+        if (!Files.exists(resolved)) {
+            return ToolUtils.ERROR_PREFIX + "JAR file not found: " + resolved;
+        }
+        String absoluteJarPath = resolved.toAbsolutePath().toString();
+
+        // Auto-generate library name from JAR filename if not provided
+        String effectiveLibName = (libName == null || libName.isEmpty())
+            ? resolved.getFileName().toString().replaceFirst("\\.jar$", "")
+            : libName;
+
+        CompletableFuture<String> future = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> {
+            try {
+                String result = ApplicationManager.getApplication().runWriteAction((Computable<String>)
+                    () -> doAddLibraryDependency(
+                        moduleName, effectiveLibName, absoluteJarPath, scope));
+                future.complete(result);
+            } catch (Exception e) {
+                future.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
+            }
+        });
+        return future.get(10, TimeUnit.SECONDS);
+    }
+
+    private String doAddLibraryDependency(String moduleName, String libName, String absoluteJarPath,
+                                          com.intellij.openapi.roots.DependencyScope scope) {
+        Module module = ModuleManager.getInstance(project).findModuleByName(moduleName);
+        if (module == null) {
+            return ToolUtils.ERROR_PREFIX + MSG_MODULE_PREFIX + moduleName + MSG_NOT_FOUND;
+        }
+
+        VirtualFile jarFile = LocalFileSystem.getInstance().refreshAndFindFileByPath(absoluteJarPath);
+        if (jarFile == null) {
+            return ToolUtils.ERROR_PREFIX + "Could not find JAR in VFS: " + absoluteJarPath;
+        }
+
+        // Create JAR URL (IntelliJ uses jar:// protocol)
+        String jarUrl = com.intellij.openapi.vfs.VfsUtilCore.pathToUrl(absoluteJarPath);
+        if (absoluteJarPath.endsWith(".jar")) {
+            jarUrl = "jar://" + absoluteJarPath + "!/";
+        }
+
+        // Create or find the project-level library
+        var libraryTable = com.intellij.openapi.roots.libraries.LibraryTablesRegistrar
+            .getInstance().getLibraryTable(project);
+        var existingLib = libraryTable.getLibraryByName(libName);
+
+        com.intellij.openapi.roots.libraries.Library library;
+        if (existingLib != null) {
+            library = existingLib;
+        } else {
+            var tableModel = libraryTable.getModifiableModel();
+            library = tableModel.createLibrary(libName);
+            var libModel = library.getModifiableModel();
+            libModel.addRoot(jarUrl, com.intellij.openapi.roots.OrderRootType.CLASSES);
+            libModel.commit();
+            tableModel.commit();
+        }
+
+        // Check for duplicate dependency on the module
+        ModuleRootManager rootManager = ModuleRootManager.getInstance(module);
+        for (var entry : rootManager.getOrderEntries()) {
+            if (entry instanceof com.intellij.openapi.roots.LibraryOrderEntry libEntry
+                && libEntry.getLibrary() != null
+                && libName.equals(libEntry.getLibrary().getName())) {
+                return "Library '" + libName + "' is already a dependency of module '" + moduleName + "'";
+            }
+        }
+
+        // Add library to module
+        ModifiableRootModel model = rootManager.getModifiableModel();
+        try {
+            var libEntry = model.addLibraryEntry(library);
+            libEntry.setScope(scope);
+            model.commit();
+            return "Added library '" + libName + "' (" + absoluteJarPath + ") to module '"
+                + moduleName + "' (scope: " + scope.name() + ")";
+        } catch (Exception e) {
+            if (!model.isDisposed()) {
+                model.dispose();
+            }
+            return ToolUtils.ERROR_PREFIX + e.getMessage();
+        }
+    }
+
+    private String removeDependency(JsonObject args) throws Exception {
+        String moduleName = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
+        String depName = args.has(PARAM_DEPENDENCY_NAME) ? args.get(PARAM_DEPENDENCY_NAME).getAsString() : "";
+
+        if (moduleName.isEmpty()) {
+            return ToolUtils.ERROR_PREFIX + "'module' parameter is required for remove_dependency";
+        }
+        if (depName.isEmpty()) {
+            return ToolUtils.ERROR_PREFIX + "'dependency_name' parameter is required for remove_dependency";
+        }
+
+        CompletableFuture<String> future = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> {
+            try {
+                String result = ApplicationManager.getApplication().runWriteAction((Computable<String>)
+                    () -> doRemoveDependency(moduleName, depName));
+                future.complete(result);
+            } catch (Exception e) {
+                future.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
+            }
+        });
+        return future.get(10, TimeUnit.SECONDS);
+    }
+
+    private String doRemoveDependency(String moduleName, String depName) {
+        Module module = ModuleManager.getInstance(project).findModuleByName(moduleName);
+        if (module == null) {
+            return ToolUtils.ERROR_PREFIX + MSG_MODULE_PREFIX + moduleName + MSG_NOT_FOUND;
+        }
+
+        ModifiableRootModel model = ModuleRootManager.getInstance(module).getModifiableModel();
+        try {
+            boolean found = false;
+            for (var entry : model.getOrderEntries()) {
+                if (entry instanceof com.intellij.openapi.roots.LibraryOrderEntry libEntry
+                    && depName.equals(libEntry.getPresentableName())) {
+                    model.removeOrderEntry(entry);
+                    found = true;
+                    break;
+                }
+                if (entry instanceof com.intellij.openapi.roots.ModuleOrderEntry modEntry
+                    && depName.equals(modEntry.getModuleName())) {
+                    model.removeOrderEntry(entry);
+                    found = true;
+                    break;
+                }
+            }
+
+            if (found) {
+                model.commit();
+                return "Removed dependency '" + depName + "' from module '" + moduleName + "'";
+            } else {
+                model.dispose();
+                return ToolUtils.ERROR_PREFIX + "Dependency '" + depName + "' not found in module '" + moduleName + "'";
+            }
+        } catch (Exception e) {
+            if (!model.isDisposed()) {
+                model.dispose();
+            }
+            return ToolUtils.ERROR_PREFIX + e.getMessage();
+        }
+    }
+
+    // ---- SDK management ----
+
+    private static final String PARAM_SDK_NAME = "sdk_name";
+    private static final String PARAM_SDK_TYPE = "sdk_type";
+    private static final String PARAM_HOME_PATH = "home_path";
+
+    private String listSdks() {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+            var jdkTable = com.intellij.openapi.projectRoots.ProjectJdkTable.getInstance();
+            com.intellij.openapi.projectRoots.Sdk[] sdks = jdkTable.getAllJdks();
+
+            StringBuilder sb = new StringBuilder();
+
+            // Show project SDK
+            Sdk projectSdk = ProjectRootManager.getInstance(project).getProjectSdk();
+            sb.append("Project SDK: ");
+            if (projectSdk != null) {
+                sb.append(projectSdk.getName()).append(" (").append(projectSdk.getSdkType().getName()).append(")\n");
+            } else {
+                sb.append("(none)\n");
+            }
+
+            // List all configured SDKs
+            sb.append("\nConfigured SDKs (").append(sdks.length).append("):\n");
+            for (Sdk sdk : sdks) {
+                sb.append("\n• ").append(sdk.getName()).append("\n");
+                sb.append("  Type: ").append(sdk.getSdkType().getName()).append("\n");
+                sb.append("  Home: ").append(sdk.getHomePath() != null ? sdk.getHomePath() : "(not set)").append("\n");
+                String version = sdk.getVersionString();
+                if (version != null) {
+                    sb.append("  Version: ").append(version).append("\n");
+                }
+            }
+
+            // List available SDK types for adding
+            var sdkTypes = com.intellij.openapi.projectRoots.SdkType.EP_NAME.getExtensionList();
+            sb.append("\nAvailable SDK types:\n");
+            for (var sdkType : sdkTypes) {
+                sb.append("  - ").append(sdkType.getName()).append(" (").append(sdkType.getPresentableName()).append(")\n");
+                var entries = sdkType.collectSdkEntries(project);
+                for (var entry : entries) {
+                    sb.append("    suggested: ").append(entry.homePath());
+                    if (entry.versionString() != null) {
+                        sb.append(" (").append(entry.versionString()).append(")");
+                    }
+                    sb.append("\n");
+                }
+            }
+
+            return sb.toString().trim();
+        });
+    }
+
+    private String addSdk(JsonObject args) throws Exception {
+        String sdkTypeName = args.has(PARAM_SDK_TYPE) ? args.get(PARAM_SDK_TYPE).getAsString() : "";
+        String homePath = args.has(PARAM_HOME_PATH) ? args.get(PARAM_HOME_PATH).getAsString() : "";
+
+        if (sdkTypeName.isEmpty()) {
+            return ToolUtils.ERROR_PREFIX + "'sdk_type' parameter is required. Use list_sdks to see available types.";
+        }
+        if (homePath.isEmpty()) {
+            return ToolUtils.ERROR_PREFIX + "'home_path' parameter is required. Use list_sdks to see suggested paths.";
+        }
+
+        // Find SDK type by name (case-insensitive)
+        var sdkTypes = com.intellij.openapi.projectRoots.SdkType.EP_NAME.getExtensionList();
+        com.intellij.openapi.projectRoots.SdkType sdkType = null;
+        for (var type : sdkTypes) {
+            if (type.getName().equalsIgnoreCase(sdkTypeName) || type.getPresentableName().equalsIgnoreCase(sdkTypeName)) {
+                sdkType = type;
+                break;
+            }
+        }
+        if (sdkType == null) {
+            return ToolUtils.ERROR_PREFIX + "SDK type '" + sdkTypeName + "' not found. Use list_sdks to see available types.";
+        }
+
+        // Validate home path
+        String adjustedHome = sdkType.adjustSelectedSdkHome(homePath);
+        if (!sdkType.isValidSdkHome(adjustedHome)) {
+            return ToolUtils.ERROR_PREFIX + "'" + homePath + "' is not a valid home path for SDK type '" + sdkType.getPresentableName() + "'.";
+        }
+
+        // Generate SDK name
+        String sdkName = sdkType.suggestSdkName(null, adjustedHome);
+
+        // Check if an SDK with this name already exists
+        var jdkTable = com.intellij.openapi.projectRoots.ProjectJdkTable.getInstance();
+        if (jdkTable.findJdk(sdkName) != null) {
+            return "SDK '" + sdkName + "' already exists.";
+        }
+
+        // Resolve version outside write action (may run external process)
+        final com.intellij.openapi.projectRoots.SdkType finalSdkType = sdkType;
+        final String finalHome = adjustedHome;
+        final String finalName = sdkName;
+        String version = sdkType.getVersionString(finalHome);
+
+        com.intellij.openapi.application.WriteAction.runAndWait(() -> {
+            Sdk sdk = jdkTable.createSdk(finalName, finalSdkType);
+            var modificator = sdk.getSdkModificator();
+            modificator.setHomePath(finalHome);
+            if (version != null) {
+                modificator.setVersionString(version);
+            }
+            modificator.commitChanges();
+            jdkTable.addJdk(sdk);
+        });
+
+        return "Added SDK '" + finalName + "' (" + sdkType.getPresentableName() + ") at " + adjustedHome;
+    }
+
+    private String removeSdk(JsonObject args) {
+        String sdkName = args.has(PARAM_SDK_NAME) ? args.get(PARAM_SDK_NAME).getAsString() : "";
+        if (sdkName.isEmpty()) {
+            return ToolUtils.ERROR_PREFIX + "'sdk_name' parameter is required. Use list_sdks to see configured SDKs.";
+        }
+
+        var jdkTable = com.intellij.openapi.projectRoots.ProjectJdkTable.getInstance();
+        Sdk sdk = jdkTable.findJdk(sdkName);
+        if (sdk == null) {
+            return ToolUtils.ERROR_PREFIX + "SDK '" + sdkName + "' not found. Use list_sdks to see configured SDKs.";
+        }
+
+        com.intellij.openapi.application.WriteAction.runAndWait(() -> jdkTable.removeJdk(sdk));
+        return "Removed SDK '" + sdkName + "'.";
+    }
+
+    private static com.intellij.openapi.roots.DependencyScope parseDependencyScope(String scopeStr) {
+        return switch (scopeStr.toUpperCase()) {
+            case "COMPILE" -> com.intellij.openapi.roots.DependencyScope.COMPILE;
+            case "TEST" -> com.intellij.openapi.roots.DependencyScope.TEST;
+            case "RUNTIME" -> com.intellij.openapi.roots.DependencyScope.RUNTIME;
+            case "PROVIDED" -> com.intellij.openapi.roots.DependencyScope.PROVIDED;
+            default -> null;
+        };
     }
 }

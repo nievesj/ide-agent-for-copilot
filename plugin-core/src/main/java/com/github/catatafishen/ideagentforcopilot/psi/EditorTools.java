@@ -43,6 +43,7 @@ class EditorTools extends AbstractToolHandler {
         register("get_open_editors", this::getOpenEditors);
         register("list_themes", this::listThemes);
         register("set_theme", this::setTheme);
+        register("search_conversation_history", this::searchConversationHistory);
     }
 
     private String openInEditor(JsonObject args) throws Exception {
@@ -331,6 +332,193 @@ class EditorTools extends AbstractToolHandler {
         return html;
     }
 
+    // ---- Conversation History ----
+
+    private String searchConversationHistory(JsonObject args) {
+        String basePath = project.getBasePath();
+        if (basePath == null) return "Error: project base path unavailable";
+
+        java.io.File agentDir = new java.io.File(basePath, ".agent-work");
+        java.io.File archiveDir = new java.io.File(agentDir, "conversations");
+        java.io.File currentFile = new java.io.File(agentDir, "conversation.json");
+
+        String query = args.has("query") ? args.get("query").getAsString() : null;
+        String file = args.has("file") ? args.get("file").getAsString() : null;
+        int maxChars = args.has("max_chars") ? args.get("max_chars").getAsInt() : 8000;
+
+        // List mode: no file selected and no query
+        if (file == null && query == null) {
+            return listConversations(currentFile, archiveDir);
+        }
+
+        // Read specific conversation
+        if (file != null && query == null) {
+            return readConversation(file, currentFile, archiveDir, maxChars);
+        }
+
+        // Search mode
+        return searchConversations(query, file, currentFile, archiveDir, maxChars);
+    }
+
+    private static String listConversations(java.io.File currentFile, java.io.File archiveDir) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Conversations:\n\n");
+        if (currentFile.exists() && currentFile.length() > 10) {
+            sb.append("• current (").append(formatFileSize(currentFile.length())).append(")\n");
+        }
+        if (archiveDir.exists()) {
+            java.io.File[] archives = archiveDir.listFiles((d, n) -> n.endsWith(".json"));
+            if (archives != null && archives.length > 0) {
+                java.util.Arrays.sort(archives, java.util.Comparator.comparing(java.io.File::getName).reversed());
+                for (java.io.File f : archives) {
+                    String name = f.getName().replace("conversation-", "").replace(".json", "");
+                    sb.append("• ").append(name).append(" (").append(formatFileSize(f.length())).append(")\n");
+                }
+            }
+        }
+        if (sb.length() < 20) {
+            return "No conversation history found.";
+        }
+        sb.append("\nUse 'file' parameter to read a specific conversation (e.g., file='current' or file='2026-03-04T15-30-00').");
+        sb.append("\nUse 'query' parameter to search across all conversations.");
+        return sb.toString();
+    }
+
+    private static String readConversation(String file, java.io.File currentFile,
+                                           java.io.File archiveDir, int maxChars) {
+        java.io.File target = resolveConversationFile(file, currentFile, archiveDir);
+        if (target == null || !target.exists()) {
+            return "Error: Conversation file not found: " + file;
+        }
+        return conversationJsonToText(target, null, maxChars);
+    }
+
+    private static String searchConversations(String query, String file, java.io.File currentFile,
+                                              java.io.File archiveDir, int maxChars) {
+        String lowerQuery = query.toLowerCase(java.util.Locale.ROOT);
+        StringBuilder sb = new StringBuilder();
+
+        // Collect files to search
+        java.util.List<java.io.File> files = new java.util.ArrayList<>();
+        if (file != null) {
+            java.io.File target = resolveConversationFile(file, currentFile, archiveDir);
+            if (target != null && target.exists()) files.add(target);
+        } else {
+            if (currentFile.exists() && currentFile.length() > 10) files.add(currentFile);
+            if (archiveDir.exists()) {
+                java.io.File[] archives = archiveDir.listFiles((d, n) -> n.endsWith(".json"));
+                if (archives != null) {
+                    java.util.Arrays.sort(archives, java.util.Comparator.comparing(java.io.File::getName).reversed());
+                    files.addAll(java.util.Arrays.asList(archives));
+                }
+            }
+        }
+
+        int totalMatches = 0;
+        for (java.io.File f : files) {
+            String label = f.equals(currentFile) ? "current" : f.getName().replace("conversation-", "").replace(".json", "");
+            String result = conversationJsonToText(f, lowerQuery, maxChars - sb.length());
+            if (!result.isEmpty()) {
+                long matchCount = result.lines().filter(l -> l.toLowerCase(java.util.Locale.ROOT).contains(lowerQuery)).count();
+                totalMatches += matchCount;
+                sb.append("── ").append(label).append(" (").append(matchCount).append(" matches) ──\n");
+                sb.append(result).append("\n");
+            }
+            if (sb.length() >= maxChars) break;
+        }
+
+        if (totalMatches == 0) return "No matches found for: " + query;
+        return sb.toString().trim();
+    }
+
+    private static java.io.File resolveConversationFile(String name, java.io.File currentFile, java.io.File archiveDir) {
+        if ("current".equalsIgnoreCase(name)) return currentFile;
+        java.io.File direct = new java.io.File(archiveDir, "conversation-" + name + ".json");
+        if (direct.exists()) return direct;
+        // Fuzzy match: find archive containing the name
+        if (archiveDir.exists()) {
+            java.io.File[] archives = archiveDir.listFiles((d, n) -> n.contains(name) && n.endsWith(".json"));
+            if (archives != null && archives.length > 0) return archives[0];
+        }
+        return null;
+    }
+
+    /**
+     * Reads a conversation JSON file and converts to text.
+     * If searchQuery is non-null, only includes entries matching the query (case-insensitive).
+     */
+    private static String conversationJsonToText(java.io.File file, String searchQuery, int maxChars) {
+        try {
+            String json = java.nio.file.Files.readString(file.toPath());
+            var arr = com.google.gson.JsonParser.parseString(json).getAsJsonArray();
+            StringBuilder sb = new StringBuilder();
+
+            for (var el : arr) {
+                if (!el.isJsonObject()) continue;
+                var obj = el.getAsJsonObject();
+                String type = obj.has("type") ? obj.get("type").getAsString() : "";
+                String line = formatConversationEntry(obj, type);
+                if (line == null || line.isEmpty()) continue;
+
+                if (searchQuery != null && !line.toLowerCase(java.util.Locale.ROOT).contains(searchQuery)) {
+                    continue;
+                }
+                sb.append(line).append("\n");
+                if (sb.length() >= maxChars) {
+                    sb.append("...[truncated at ").append(maxChars).append(" chars]\n");
+                    break;
+                }
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "Error reading " + file.getName() + ": " + e.getMessage();
+        }
+    }
+
+    private static String formatConversationEntry(JsonObject obj, String type) {
+        return switch (type) {
+            case "prompt" -> {
+                String text = obj.has("text") ? obj.get("text").getAsString() : "";
+                String ts = obj.has("ts") ? " [" + obj.get("ts").getAsString() + "]" : "";
+                yield ">>> " + text + ts;
+            }
+            case "text" -> {
+                String raw = obj.has("raw") ? obj.get("raw").getAsString() : "";
+                yield raw.isEmpty() ? null : raw.trim();
+            }
+            case "thinking" -> {
+                String raw = obj.has("raw") ? obj.get("raw").getAsString() : "";
+                yield raw.isEmpty() ? null : "[thinking] " + raw.trim();
+            }
+            case "tool" -> {
+                String title = obj.has(JSON_TITLE) ? obj.get(JSON_TITLE).getAsString() : "tool";
+                String toolArgs = obj.has("args") ? obj.get("args").getAsString() : "";
+                yield "Tool: " + title + (toolArgs.isEmpty() ? "" : " " + toolArgs);
+            }
+            case "subagent" -> {
+                String agentType = obj.has("agentType") ? obj.get("agentType").getAsString() : "";
+                String desc = obj.has("description") ? obj.get("description").getAsString() : "";
+                yield "SubAgent: " + agentType + " — " + desc;
+            }
+            case "context" -> "Context files attached";
+            case "status" -> {
+                String msg = obj.has("message") ? obj.get("message").getAsString() : "";
+                yield msg.isEmpty() ? null : "Status: " + msg;
+            }
+            case "separator" -> {
+                String ts = obj.has("timestamp") ? obj.get("timestamp").getAsString() : "";
+                yield "--- Session " + ts + " ---";
+            }
+            default -> null;
+        };
+    }
+
+    private static String formatFileSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return (bytes / 1024) + " KB";
+        return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
+    }
+
     /**
      * Returns the currently active (focused) file in the editor.
      */
@@ -393,6 +581,10 @@ class EditorTools extends AbstractToolHandler {
                     return;
                 }
 
+                // 1b. Open the scratch in the editor so the user can follow along
+                com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+                    .openFile(scratchFile, false);
+
                 // 2. Find appropriate configuration type for this file extension
                 String extension = scratchFile.getExtension();
                 var configType = findScratchConfigType(extension);
@@ -415,9 +607,28 @@ class EditorTools extends AbstractToolHandler {
                 var config = settings.getConfiguration();
 
                 // 4. Set script/file path via reflection
-                boolean pathSet = setScriptPath(config, scratchFile.getPath());
+                boolean pathSet;
+                boolean needsModule = false;
+                if (config instanceof com.intellij.execution.scratch.JavaScratchConfiguration scratchConfig) {
+                    scratchConfig.setScratchFileUrl(scratchFile.getUrl());
+                    // Main class name must match the public class in the scratch file
+                    String className = scratchFile.getNameWithoutExtension();
+                    scratchConfig.setMainClassName(className);
+                    pathSet = true;
+                    needsModule = true;
+                } else {
+                    pathSet = setScriptPath(config, scratchFile.getPath());
+                }
 
-                // 5. Set classpath module
+                // 4b. For Python configs, set the SDK home from the global SDK table
+                if ("py".equalsIgnoreCase(extension)) {
+                    trySetPythonSdkHome(config);
+                }
+
+                // 4c. Set working directory (needed by Node.js and other script runners)
+                trySetWorkingDirectory(config, scratchFile.getParent().getPath());
+
+                // 5. Set classpath module (auto-detect for Java/Kotlin if not specified)
                 String moduleStatus = "";
                 if (!moduleName.isEmpty()) {
                     var module = com.intellij.openapi.module.ModuleManager.getInstance(project)
@@ -427,6 +638,12 @@ class EditorTools extends AbstractToolHandler {
                         moduleStatus = "\nClasspath: " + moduleName;
                     } else {
                         moduleStatus = "\nWarning: Module '" + moduleName + "' not found";
+                    }
+                } else if (needsModule) {
+                    var modules = com.intellij.openapi.module.ModuleManager.getInstance(project).getModules();
+                    if (modules.length > 0) {
+                        trySetModule(config, modules[0]);
+                        moduleStatus = "\nClasspath: " + modules[0].getName() + " (auto-detected)";
                     }
                 }
 
@@ -440,6 +657,7 @@ class EditorTools extends AbstractToolHandler {
 
                 // 7. Execute
                 settings.setTemporary(true);
+                settings.setEditBeforeRun(false);
                 runManager.addConfiguration(settings);
                 runManager.setSelectedConfiguration(settings);
 
@@ -516,18 +734,31 @@ class EditorTools extends AbstractToolHandler {
     private com.intellij.execution.configurations.ConfigurationType findScratchConfigType(String extension) {
         if (extension == null) return null;
 
+        // Java scratch files have a dedicated config type
+        if ("java".equalsIgnoreCase(extension)) {
+            return com.intellij.execution.scratch.JavaScratchConfigurationType.getInstance();
+        }
+
+        // Map extensions to config type IDs or display-name search terms
+        // Use exact IDs (prefixed with "id:") when available to avoid ambiguous matches
         String searchTerm = switch (extension.toLowerCase()) {
             case "kts" -> "kotlin script";
-            case "kt" -> "kotlin";
-            case "java" -> "application";
             case "groovy", "gvy" -> "groovy";
-            case "py" -> "python";
+            case "py" -> "id:PythonConfigurationType";
             case "scala" -> "scala";
+            case "js", "mjs", "ts", "mts" -> "id:NodeJSConfigurationType";
             default -> extension;
         };
 
-        for (var ct : com.intellij.execution.configurations.ConfigurationType
-            .CONFIGURATION_TYPE_EP.getExtensionList()) {
+        // For exact ID lookups, use ConfigurationTypeUtil directly
+        if (searchTerm.startsWith("id:")) {
+            return com.intellij.execution.configurations.ConfigurationTypeUtil
+                .findConfigurationType(searchTerm.substring(3));
+        }
+
+        // For display-name fuzzy matching, iterate all config types
+        var configTypes = com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensions();
+        for (var ct : configTypes) {
             String displayName = ct.getDisplayName().toLowerCase();
             String id = ct.getId().toLowerCase();
             if (displayName.contains(searchTerm) || id.contains(searchTerm.replace(" ", ""))) {
@@ -538,10 +769,9 @@ class EditorTools extends AbstractToolHandler {
     }
 
     private String listAvailableConfigTypes() {
-        var types = com.intellij.execution.configurations.ConfigurationType
-            .CONFIGURATION_TYPE_EP.getExtensionList();
+        var configTypes = com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensions();
         StringBuilder sb = new StringBuilder();
-        for (var ct : types) {
+        for (var ct : configTypes) {
             if (!sb.isEmpty()) sb.append(", ");
             sb.append(ct.getDisplayName());
         }
@@ -550,8 +780,8 @@ class EditorTools extends AbstractToolHandler {
 
     @SuppressWarnings("java:S3011") // reflection needed for cross-plugin config API
     private boolean setScriptPath(com.intellij.execution.configurations.RunConfiguration config, String path) {
-        for (String method : java.util.List.of("setFilePath", "setScriptPath", "setScriptFile",
-            "setMainClassName")) {
+        for (String method : java.util.List.of("setupFilePath", "setFilePath", "setScriptName", "setScriptPath",
+            "setScriptFile", "setMainScriptFilePath", "setMainClassName")) {
             try {
                 config.getClass().getMethod(method, String.class).invoke(config, path);
                 return true;
@@ -574,6 +804,19 @@ class EditorTools extends AbstractToolHandler {
     }
 
     @SuppressWarnings("java:S3011") // reflection needed for cross-plugin config API
+    private void trySetWorkingDirectory(com.intellij.execution.configurations.RunConfiguration config,
+                                        String workingDir) {
+        for (String method : java.util.List.of("setWorkingDirectory", "setWorkDir", "setWorkingDir")) {
+            try {
+                config.getClass().getMethod(method, String.class).invoke(config, workingDir);
+                return;
+            } catch (Exception ignored) {
+                // Try next method name
+            }
+        }
+    }
+
+    @SuppressWarnings("java:S3011") // reflection needed for cross-plugin config API
     private boolean trySetInteractiveMode(com.intellij.execution.configurations.RunConfiguration config,
                                           boolean interactive) {
         for (String method : java.util.List.of("setInteractiveMode", "setIsInteractive",
@@ -586,6 +829,23 @@ class EditorTools extends AbstractToolHandler {
             }
         }
         return false;
+    }
+
+    @SuppressWarnings("java:S3011") // reflection needed for cross-plugin config API
+    private void trySetPythonSdkHome(com.intellij.execution.configurations.RunConfiguration config) {
+        // Find a Python SDK in the global SDK table and set it on the config via reflection
+        var sdkTable = com.intellij.openapi.projectRoots.ProjectJdkTable.getInstance();
+        for (var sdk : sdkTable.getAllJdks()) {
+            if ("Python SDK".equals(sdk.getSdkType().getName())) {
+                try {
+                    config.getClass().getMethod("setSdkHome", String.class)
+                        .invoke(config, sdk.getHomePath());
+                    return;
+                } catch (Exception ignored) {
+                    // Config type may not support setSdkHome
+                }
+            }
+        }
     }
 
     // ---- End Scratch File Helpers ----

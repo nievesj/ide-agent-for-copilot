@@ -63,7 +63,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private var modelsStatusText: String? = MSG_LOADING
     private lateinit var controlsToolbar: ActionToolbar
     private lateinit var promptTextArea: EditorTextField
-    private lateinit var loadingSpinner: AsyncProcessIcon
     private var currentPromptThread: Thread? = null
     private var isSending = false
     private lateinit var processingTimerPanel: ProcessingTimerPanel
@@ -91,6 +90,12 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     // Per-turn tracking
     private var turnToolCallCount = 0
     private var turnModelId = ""
+
+    // Throttled incremental save during streaming (avoid data loss on crash)
+    private val saveIntervalMs = 30_000L
+
+    @Volatile
+    private var lastIncrementalSaveMs = 0L
 
     private var conversationSummaryInjected = false
 
@@ -531,8 +536,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         panel.add(splitter, BorderLayout.CENTER)
 
         // Fixed footer: controls + usage (not resized by splitter)
-        loadingSpinner = AsyncProcessIcon("loading-models")
-        loadingSpinner.preferredSize = JBUI.size(16, 16)
         val fixedFooter = createFixedFooter()
         panel.add(fixedFooter, BorderLayout.SOUTH)
 
@@ -1418,6 +1421,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             }
         }
         promptThread?.interrupt()
+        consolePanel.cancelAllRunning()
         consolePanel.addErrorEntry("Stopped by user")
         setResponseStatus("Stopped", loading = false)
         addTimelineEvent(EventType.ERROR, "Prompt cancelled by user")
@@ -1460,6 +1464,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
     private fun handlePromptCompletion(prompt: String) {
         com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).flushPendingAutoFormat()
+        com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).clearFileAccessTracking()
         consolePanel.finishResponse(turnToolCallCount, turnModelId, getModelMultiplier(turnModelId))
         notifyIfUnfocused(turnToolCallCount)
         setResponseStatus("Done", loading = false)
@@ -1478,83 +1483,140 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         SwingUtilities.invokeLater {
             consolePanel.component.revalidate()
             consolePanel.component.repaint()
+            if (com.github.catatafishen.ideagentforcopilot.services.CopilotSettings.getFollowAgentFiles()) {
+                promptTextArea.requestFocusInWindow()
+            }
         }
     }
 
     private fun executePrompt(prompt: String) {
         try {
-            // Block prompts while signed out — banner must be visible for sign-in
-            if (authService.pendingAuthError != null) {
-                SwingUtilities.invokeLater {
-                    consolePanel.addErrorEntry("Not signed in to Copilot. Use the Sign In button in the banner above.")
-                    copilotBanner?.triggerCheck()
-                }
-                return
-            }
+            if (isBlockedByAuth()) return
 
             val service = CopilotService.getInstance(project)
             val client = service.getClient()
             val sessionId = ensureSessionCreated(client)
+            wirePermissionListener(client)
 
-            // Wire permission request listener so ASK-mode tools show a bubble in chat
-            client.setPermissionRequestListener { req ->
-                ApplicationManager.getApplication().invokeLater {
-                    consolePanel.showPermissionRequest(
-                        req.reqId.toString(), req.displayName, req.description
-                    ) { allowed -> req.respond(allowed) }
-                    notifyPermissionRequestIfUnfocused(req.displayName)
-                }
-            }
+            addTimelineEvent(EventType.MESSAGE_SENT, "Prompt: " + prompt.take(80))
 
-            addTimelineEvent(
-                EventType.MESSAGE_SENT,
-                "Prompt: ${prompt.take(80)}${if (prompt.length > 80) "..." else ""}"
-            )
-
-            val selectedModelObj =
-                if (selectedModelIndex >= 0 && selectedModelIndex < loadedModels.size) loadedModels[selectedModelIndex] else null
-            val modelId = selectedModelObj?.id ?: ""
-            turnToolCallCount = 0
-            activeSubAgentId = null
-            turnModelId = modelId
-
-            SwingUtilities.invokeLater {
-                consolePanel.setCurrentModel(modelId)
-                consolePanel.setPromptStats(modelId, getModelMultiplier(modelId))
-            }
+            val modelId = prepareModelAndTurnState()
 
             val references = buildContextReferences()
             val effectivePrompt = buildEffectivePrompt(prompt)
-
-            if (references.isNotEmpty()) {
-                val contextFiles = (0 until contextListModel.size()).map { i ->
-                    val item = contextListModel.getElementAt(i)
-                    Pair(item.name, item.path)
-                }
-                consolePanel.addContextFilesEntry(contextFiles)
-            }
+            addContextEntries(references)
             SwingUtilities.invokeLater { contextListModel.clear() }
 
-            var receivedContent = false
-            client.sendPrompt(
-                sessionId, effectivePrompt, modelId,
-                references.ifEmpty { null },
-                { chunk ->
-                    if (!receivedContent) {
-                        receivedContent = true
-                        setResponseStatus("Responding...")
-                    }
-                    appendResponse(chunk)
-                },
-                { update -> handlePromptStreamingUpdate(update, receivedContent) },
-                null // premium requests tracked via billing API, not per-turn
-            )
+            dispatchPromptWithRetry(client, sessionId, effectivePrompt, modelId, references)
 
             handlePromptCompletion(prompt)
         } catch (e: Exception) {
             handlePromptError(e)
         } finally {
             setSendingState(false)
+        }
+    }
+
+    private fun dispatchPromptWithRetry(
+        client: CopilotAcpClient,
+        initialSessionId: String,
+        effectivePrompt: String,
+        modelId: String,
+        references: List<CopilotAcpClient.ResourceReference>
+    ) {
+        var receivedContent = false
+        val refs = references.ifEmpty { null }
+        val onChunk = createStreamingChunkHandler { receivedContent = true }
+        val onUpdate = java.util.function.Consumer<com.google.gson.JsonObject> { update ->
+            handlePromptStreamingUpdate(update, receivedContent)
+        }
+        var sessionId = initialSessionId
+        val sendPromptCall: () -> Unit = {
+            client.sendPrompt(sessionId, effectivePrompt, modelId, refs, onChunk, onUpdate, null)
+        }
+        sessionId = sendWithSessionRetry(client, sessionId, sendPromptCall) { receivedContent = false }
+    }
+
+    private fun isBlockedByAuth(): Boolean {
+        if (authService.pendingAuthError == null) return false
+        SwingUtilities.invokeLater {
+            consolePanel.addErrorEntry("Not signed in to Copilot. Use the Sign In button in the banner above.")
+            copilotBanner?.triggerCheck()
+        }
+        return true
+    }
+
+    private fun wirePermissionListener(client: CopilotAcpClient) {
+        client.setPermissionRequestListener { req ->
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel.showPermissionRequest(
+                    req.reqId.toString(), req.displayName, req.description
+                ) { allowed -> req.respond(allowed) }
+                notifyPermissionRequestIfUnfocused(req.displayName)
+            }
+        }
+    }
+
+    private fun prepareModelAndTurnState(): String {
+        val selectedModelObj =
+            if (selectedModelIndex >= 0 && selectedModelIndex < loadedModels.size) loadedModels[selectedModelIndex] else null
+        val modelId = selectedModelObj?.id ?: ""
+        turnToolCallCount = 0
+        activeSubAgentId = null
+        turnModelId = modelId
+        SwingUtilities.invokeLater {
+            consolePanel.setCurrentModel(modelId)
+            consolePanel.setPromptStats(modelId, getModelMultiplier(modelId))
+        }
+        return modelId
+    }
+
+    private fun addContextEntries(references: List<CopilotAcpClient.ResourceReference>) {
+        if (references.isNotEmpty()) {
+            val contextFiles = (0 until contextListModel.size()).map { i ->
+                val item = contextListModel.getElementAt(i)
+                Pair(item.name, item.path)
+            }
+            consolePanel.addContextFilesEntry(contextFiles)
+        }
+    }
+
+    private fun createStreamingChunkHandler(onFirstChunk: () -> Unit): java.util.function.Consumer<String> {
+        var received = false
+        return java.util.function.Consumer { chunk ->
+            if (!received) {
+                received = true
+                onFirstChunk()
+                setResponseStatus("Responding...")
+            }
+            appendResponse(chunk)
+        }
+    }
+
+    /**
+     * Attempts to call [sendCall]. If it fails with a "not found" session error,
+     * invalidates the current session, creates a fresh one, resets state via [onRetry],
+     * and retries once. Returns the (possibly new) session ID.
+     */
+    private fun sendWithSessionRetry(
+        client: CopilotAcpClient,
+        initialSessionId: String,
+        sendCall: () -> Unit,
+        onRetry: () -> Unit
+    ): String {
+        try {
+            sendCall()
+            return initialSessionId
+        } catch (e: com.github.catatafishen.ideagentforcopilot.bridge.CopilotException) {
+            if (e.message != null && e.message!!.contains("not found", ignoreCase = true)) {
+                LOG.info("Session expired ('not found'), creating new session and retrying")
+                currentSessionId = null
+                val newSessionId = ensureSessionCreated(client)
+                onRetry()
+                sendCall()
+                return newSessionId
+            }
+            throw e
         }
     }
 
@@ -1572,12 +1634,38 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         return references
     }
 
-    /** Send a quick-reply as if the user typed it. Called from the JS bridge on EDT. */
+    /** Send a quick-reply directly without touching the user's input field. */
     private fun sendQuickReply(text: String) {
         if (isSending) return
         consolePanel.disableQuickReplies()
-        promptTextArea.text = text
-        onSendStopClicked()
+        sendPromptDirectly(text)
+    }
+
+    /** Send a prompt string directly, bypassing the text area (used for quick-replies). */
+    private fun sendPromptDirectly(prompt: String) {
+        val trimmed = prompt.trim()
+        if (trimmed.isEmpty()) return
+        setSendingState(true)
+        setResponseStatus(MSG_THINKING)
+
+        if (currentSessionId == null && consolePanel.hasContent()) {
+            val ts = java.text.SimpleDateFormat("MMM d, yyyy h:mm a").format(java.util.Date())
+            consolePanel.addSessionSeparator(ts)
+        }
+
+        val ctxFiles = if (contextListModel.size() > 0) {
+            (0 until contextListModel.size()).map { i ->
+                val item = contextListModel.getElementAt(i)
+                Triple(item.name, item.path, if (item.isSelection) item.startLine else 0)
+            }
+        } else null
+        consolePanel.addPromptEntry(trimmed, ctxFiles)
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            currentPromptThread = Thread.currentThread()
+            executePrompt(trimmed)
+            currentPromptThread = null
+        }
     }
 
     /**
@@ -1774,6 +1862,9 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 consolePanel.updateToolCall(toolCallId, "failed", error)
             }
         }
+        if (status == "completed" || status == "failed") {
+            saveConversationThrottled()
+        }
     }
 
     private fun extractContentText(element: com.google.gson.JsonElement): String? {
@@ -1924,11 +2015,24 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     private fun saveConversation() {
+        lastIncrementalSaveMs = System.currentTimeMillis()
         com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 conversationFile().writeText(consolePanel.serializeEntries())
             } catch (_: Exception) { /* best-effort */
             }
+        }
+    }
+
+    /**
+     * Saves conversation if at least [saveIntervalMs] elapsed since the last save.
+     * Called after each tool-call completion during streaming so that long-running turns
+     * are periodically persisted and survive IDE crashes.
+     */
+    private fun saveConversationThrottled() {
+        val now = System.currentTimeMillis()
+        if (now - lastIncrementalSaveMs >= saveIntervalMs) {
+            saveConversation()
         }
     }
 
@@ -2066,7 +2170,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
     private fun loadModelsAsync(onSuccess: (List<CopilotAcpClient.Model>) -> Unit) {
         SwingUtilities.invokeLater {
-            loadingSpinner.isVisible = true
             modelsStatusText = MSG_LOADING
             selectedModelIndex = -1
         }
@@ -2076,7 +2179,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 try {
                     val models = CopilotService.getInstance(project).getClient().listModels().toList()
                     SwingUtilities.invokeLater {
-                        loadingSpinner.isVisible = false
                         modelsStatusText = null
                         restoreModelSelection(models)
                         onSuccess(models)
@@ -2091,8 +2193,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             val errorMsg = lastError?.message ?: MSG_UNKNOWN_ERROR
             LOG.warn("Failed to load models: $errorMsg")
             SwingUtilities.invokeLater {
-                loadingSpinner.suspend()
-                loadingSpinner.isVisible = false
                 modelsStatusText = "Unavailable"
                 if (authService.isAuthenticationError(errorMsg)) {
                     authService.markAuthError(errorMsg)

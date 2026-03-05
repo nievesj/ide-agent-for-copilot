@@ -18,7 +18,8 @@ internal object MarkdownRenderer {
         var inCode: Boolean = false,
         var inTable: Boolean = false,
         var firstTR: Boolean = true,
-        var inList: Boolean = false
+        var inList: Boolean = false,
+        var inBlockquote: Boolean = false
     )
 
     fun markdownToHtml(
@@ -34,7 +35,7 @@ internal object MarkdownRenderer {
         for (line in lines) {
             val t = line.trim()
             when {
-                t.startsWith("```") -> handleCodeFence(sb, state)
+                t.startsWith("```") -> handleCodeFence(sb, state, t)
                 state.inCode -> sb.append(escapeHtml(line)).append("\n")
                 processBlockElement(sb, state, t, resolveFileReference, resolveFilePath, isGitCommit) -> { /* handled by helper */
                 }
@@ -51,12 +52,18 @@ internal object MarkdownRenderer {
         return sb.toString()
     }
 
-    private fun handleCodeFence(sb: StringBuilder, state: MarkdownState) {
+    private fun handleCodeFence(sb: StringBuilder, state: MarkdownState, fenceLine: String) {
         if (state.inCode) {
             sb.append("</code></pre>"); state.inCode = false
         } else {
             closeListAndTable(sb, state)
-            sb.append("<pre><code>"); state.inCode = true
+            val lang = fenceLine.trim().removePrefix("```").trim().lowercase()
+            if (lang.isNotEmpty()) {
+                sb.append("<pre><code data-lang=\"").append(escapeHtml(lang)).append("\">")
+            } else {
+                sb.append("<pre><code>")
+            }
+            state.inCode = true
         }
     }
 
@@ -66,17 +73,47 @@ internal object MarkdownRenderer {
         resolveFilePath: (String) -> String?,
         isGitCommit: (String) -> Boolean
     ): Boolean {
+        if (handleHorizontalRule(sb, state, t)) return true
         val hm = Regex("^(#{1,4})\\s+(.+)").find(t)
         if (hm != null) {
-            closeListAndTable(sb, state)
+            closeAllInlineBlocks(sb, state)
             val lv = hm.groupValues[1].length + 1
             sb.append("<h$lv>").append(formatInline(hm.groupValues[2], resolveFileReference, resolveFilePath, isGitCommit))
                 .append("</h$lv>")
             return true
         }
+        if (handleBlockquote(sb, state, t, resolveFileReference, resolveFilePath, isGitCommit)) return true
         if (handleTableRow(sb, state, t, resolveFileReference, resolveFilePath, isGitCommit)) return true
         if (handleListItem(sb, state, t, resolveFileReference, resolveFilePath, isGitCommit)) return true
+        if (state.inBlockquote) { sb.append("</blockquote>"); state.inBlockquote = false }
         return false
+    }
+
+    private fun handleHorizontalRule(sb: StringBuilder, state: MarkdownState, t: String): Boolean {
+        if (t.matches(Regex("^-{3,}$")) || t.matches(Regex("^\\*{3,}$")) || t.matches(Regex("^_{3,}$"))) {
+            closeAllInlineBlocks(sb, state)
+            sb.append("<hr>")
+            return true
+        }
+        return false
+    }
+
+    private fun handleBlockquote(
+        sb: StringBuilder, state: MarkdownState, t: String,
+        resolveFileReference: (String) -> Pair<String, Int?>?,
+        resolveFilePath: (String) -> String?,
+        isGitCommit: (String) -> Boolean
+    ): Boolean {
+        if (!t.startsWith("> ") && t != ">") return false
+        closeListAndTable(sb, state)
+        if (!state.inBlockquote) {
+            sb.append("<blockquote>"); state.inBlockquote = true
+        }
+        val content = t.removePrefix("> ").removePrefix(">").trim()
+        if (content.isNotEmpty()) {
+            sb.append("<p>").append(formatInline(content, resolveFileReference, resolveFilePath, isGitCommit)).append("</p>")
+        }
+        return true
     }
 
     private fun handleTableRow(
@@ -128,6 +165,11 @@ internal object MarkdownRenderer {
         return true
     }
 
+    private fun closeAllInlineBlocks(sb: StringBuilder, state: MarkdownState) {
+        closeListAndTable(sb, state)
+        if (state.inBlockquote) { sb.append("</blockquote>"); state.inBlockquote = false }
+    }
+
     private fun closeListAndTable(sb: StringBuilder, state: MarkdownState) {
         if (state.inList) {
             sb.append("</ul>"); state.inList = false
@@ -141,6 +183,7 @@ internal object MarkdownRenderer {
         if (state.inCode) sb.append("</code></pre>")
         if (state.inTable) sb.append(HTML_TABLE_CLOSE)
         if (state.inList) sb.append("</ul>")
+        if (state.inBlockquote) sb.append("</blockquote>")
     }
 
     private fun formatInline(

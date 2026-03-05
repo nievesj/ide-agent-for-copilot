@@ -202,7 +202,9 @@ final class GitToolHandler {
         if (args.has(PARAM_BRANCH)) {
             gitArgs.add(2, args.get(PARAM_BRANCH).getAsString());
         }
-        return runGit(gitArgs.toArray(new String[0]));
+        String result = runGit(gitArgs.toArray(new String[0]));
+        showFirstCommitInLog(result);
+        return result;
     }
 
     String gitBlame(JsonObject args) throws Exception {
@@ -240,7 +242,9 @@ final class GitToolHandler {
         gitArgs.add("-m");
         gitArgs.add(args.get(PARAM_MESSAGE).getAsString());
 
-        return runGit(gitArgs.toArray(new String[0]));
+        String result = runGit(gitArgs.toArray(new String[0]));
+        showNewCommitInLog();
+        return result;
     }
 
     String gitStage(JsonObject args) throws Exception {
@@ -648,7 +652,108 @@ final class GitToolHandler {
             gitArgs.add("--");
             gitArgs.add(args.get("path").getAsString());
         }
-        return runGit(gitArgs.toArray(new String[0]));
+        String result = runGit(gitArgs.toArray(new String[0]));
+        showFirstCommitInLog(result);
+        return result;
+    }
+
+    // ---- IDE follow-along helpers ----
+
+    private static final java.util.regex.Pattern FULL_HASH_PATTERN =
+        java.util.regex.Pattern.compile("\\b[0-9a-f]{40}\\b");
+    private static final java.util.regex.Pattern COMMIT_LINE_PATTERN =
+        java.util.regex.Pattern.compile("^commit ([0-9a-f]{40})$", java.util.regex.Pattern.MULTILINE);
+
+    /**
+     * Opens the Git Log tool window and navigates to the newly created commit (HEAD).
+     * <p>
+     * Commits already go through IntelliJ's git4idea layer (Git.runCommand via
+     * GitLineHandler in IdeGitSupport), which is the correct programmatic API.
+     * IntelliJ's higher-level commit APIs (GitCheckinEnvironment, ChangeListManager)
+     * are UI-coupled and not designed for headless/programmatic commits.
+     * <p>
+     * The Git Log tool window is opened immediately. Then we poll for the commit
+     * to appear in the log's index (up to 5 attempts at 200ms intervals). The VCS
+     * Log indexes new commits asynchronously via file watchers — even though runGit
+     * already calls refreshVcsState(), the log's internal DataPack may not have
+     * processed the new commit yet. If polling exhausts all attempts, we accept
+     * that the tool window is already open and visible — good enough.
+     */
+    private static final int COMMIT_POLL_ATTEMPTS = 5;
+    private static final long COMMIT_POLL_INTERVAL_MS = 200;
+
+    private void showNewCommitInLog() {
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            try {
+                String fullHash = runGit("rev-parse", "HEAD").trim();
+                if (fullHash.length() != 40) return;
+
+                var vcsHash = com.intellij.vcs.log.impl.HashImpl.build(fullHash);
+
+                // Open the Git Log tool window immediately
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
+                    var tw = twm.getToolWindow("Version Control");
+                    if (tw != null) tw.activate(null);
+                });
+
+                // Poll for the commit to appear in the log index
+                pollForCommitInLog(vcsHash);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (Exception ignored) {
+                // best-effort — fall back silently
+            }
+        });
+    }
+
+    /**
+     * Polls for a commit to appear in the VCS Log index, then navigates to it.
+     * Gives up silently after exhausting all attempts — the Git Log is already open.
+     */
+    private void pollForCommitInLog(com.intellij.vcs.log.Hash vcsHash) throws InterruptedException {
+        for (int attempt = 0; attempt < COMMIT_POLL_ATTEMPTS; attempt++) {
+            Thread.sleep(COMMIT_POLL_INTERVAL_MS);
+            boolean[] found = {false};
+            ApplicationManager.getApplication().invokeAndWait(() -> {
+                try {
+                    com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, vcsHash);
+                    found[0] = true;
+                } catch (Exception ignored) {
+                    // commit not yet indexed — retry
+                }
+            });
+            if (found[0]) return;
+        }
+    }
+
+    /**
+     * Extracts the first full commit hash from a git-log result and navigates
+     * to it in the VCS Log tab, so the user can follow what the agent is reading.
+     */
+    private void showFirstCommitInLog(String gitOutput) {
+        if (gitOutput == null || gitOutput.isEmpty()) return;
+        // Try "commit <hash>" line first (medium/full format), then any 40-char hex
+        String hash = null;
+        var m = COMMIT_LINE_PATTERN.matcher(gitOutput);
+        if (m.find()) {
+            hash = m.group(1);
+        } else {
+            var m2 = FULL_HASH_PATTERN.matcher(gitOutput);
+            if (m2.find()) {
+                hash = m2.group();
+            }
+        }
+        if (hash == null) return;
+        String finalHash = hash;
+        ApplicationManager.getApplication().invokeLater(() -> {
+            try {
+                var vcsHash = com.intellij.vcs.log.impl.HashImpl.build(finalHash);
+                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, vcsHash);
+            } catch (Exception ignored) {
+                // best-effort UI follow-along
+            }
+        });
     }
 
     /**
@@ -686,7 +791,9 @@ final class GitToolHandler {
             Map.entry("tag", git4idea.commands.GitCommand.TAG)
         );
 
-        /** Returns command output, or null to signal fallback to ProcessBuilder. */
+        /**
+         * Returns command output, or null to signal fallback to ProcessBuilder.
+         */
         static String run(Project project, String[] args) {
             if (args.length == 0) return null;
 

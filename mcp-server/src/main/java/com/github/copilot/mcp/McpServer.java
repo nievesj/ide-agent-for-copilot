@@ -704,9 +704,17 @@ public class McpServer {
             Map.of(),
             List.of()));
 
-        addIfEnabled.accept(buildTool("run_scratch_file", "Run Scratch File",
+        addIfEnabled.accept(buildTool("run_scratch_file",
+            "Run Scratch File: executes a scratch file in IntelliJ. "
+                + "Supported languages: Kotlin Script (.kts) works reliably, use interactive=true for REPL mode. "
+                + "Java (.java) requires the filename (without .java) to EXACTLY match the class name, case-sensitive "
+                + "(e.g. 'MyApp.java' must contain 'class MyApp'). "
+                + "Groovy (.groovy/.gvy) works reliably. "
+                + "JavaScript (.js) works reliably via Node.js. "
+                + "TypeScript (.ts) requires Node.js 22.6+ or tsx/ts-node; plain Node.js 20 cannot run .ts files. "
+                + "Python (.py) requires the Python plugin installed in the IDE.",
             Map.of(
-                "name", Map.of("type", "string", "description", "Scratch file name with extension (e.g., 'test.kts', 'script.py')"),
+                "name", Map.of("type", "string", "description", "Scratch file name with extension (e.g., 'test.kts', 'MyApp.java', 'hello.js')"),
                 "module", Map.of("type", "string", "description", "Optional: module name for classpath (e.g., 'plugin-core')"),
                 "interactive", Map.of("type", "boolean", "description", "Optional: enable interactive/REPL mode (Kotlin scripts)")
             ),
@@ -829,8 +837,32 @@ public class McpServer {
             ),
             List.of("path", "type")));
 
+        addIfEnabled.accept(buildTool("edit_project_structure", "Edit Project Structure: view and modify module dependencies, libraries, and project structure. Supports actions: list_modules (overview of all modules), list_dependencies (detailed deps for a module), add_dependency (add a JAR or module dependency), remove_dependency (remove a dependency), list_sdks (list all configured SDKs and available SDK types with suggested paths), add_sdk (add an SDK by type and home path), remove_sdk (remove an SDK by name).",
+            Map.of(
+                "action", Map.of("type", "string", "description", "Action: 'list_modules', 'list_dependencies', 'add_dependency', 'remove_dependency', 'list_sdks', 'add_sdk', 'remove_sdk'"),
+                "module", Map.of("type", "string", "description", "Module name (required for list_dependencies, add_dependency, remove_dependency)"),
+                "dependency_name", Map.of("type", "string", "description", "Name of the dependency to add or remove. For module deps, the module name. For library deps, the library display name"),
+                "dependency_type", Map.of("type", "string", "description", "Type of dependency to add: 'library' (default) or 'module'"),
+                "scope", Map.of("type", "string", "description", "Dependency scope: 'COMPILE' (default), 'TEST', 'RUNTIME', 'PROVIDED'"),
+                "jar_path", Map.of("type", "string", "description", "Path to JAR file (absolute or project-relative). Required when adding a library dependency"),
+                "sdk_type", Map.of("type", "string", "description", "SDK type name for add_sdk (e.g., 'Python SDK', 'JavaSDK'). Use list_sdks to see available types"),
+                "sdk_name", Map.of("type", "string", "description", "SDK name for remove_sdk. Use list_sdks to see configured SDK names"),
+                "home_path", Map.of("type", "string", "description", "Home path for add_sdk. Use list_sdks to see suggested paths for each SDK type")
+            ),
+            List.of("action")));
+
         addIfEnabled.accept(buildTool("get_chat_html", "Get Chat HTML: retrieves the live DOM HTML from the JCEF chat panel for debugging. Returns the full page HTML including all rendered messages and components.",
             Map.of(),
+            List.of()));
+
+        addIfEnabled.accept(buildTool("search_conversation_history", "Search Conversation History: list, read, and search past conversation sessions. "
+                + "Call with no parameters to list all conversations. Use 'file' to read a specific conversation (e.g., 'current' or an archive timestamp). "
+                + "Use 'query' to search across all conversations for matching text. Combine 'query' and 'file' to search within a specific conversation.",
+            Map.of(
+                "query", Map.of("type", "string", "description", "Text to search for across conversations (case-insensitive)"),
+                "file", Map.of("type", "string", "description", "Conversation to read: 'current' for the active session, or an archive timestamp (e.g., '2026-03-04T15-30-00')"),
+                "max_chars", Map.of("type", "integer", "description", "Maximum characters to return (default: 8000)")
+            ),
             List.of()));
 
         result.add("tools", tools);
