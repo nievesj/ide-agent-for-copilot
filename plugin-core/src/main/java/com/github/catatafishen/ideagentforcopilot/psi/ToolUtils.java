@@ -207,7 +207,7 @@ public final class ToolUtils {
 
     /**
      * Detect if a shell command is an abuse pattern that should use a dedicated IntelliJ tool.
-     * Shared between the ACP permission flow (CopilotAcpClient) and the MCP tool execution
+     * Shared between the ACP permission flow (AcpClient) and the MCP tool execution
      * flow (InfrastructureTools) to ensure consistent blocking regardless of call path.
      *
      * @param command the shell command string (will be lowercased and trimmed)

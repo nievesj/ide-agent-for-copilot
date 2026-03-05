@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class CopilotFreeModelIntegrationTest {
 
-    private CopilotAcpClient client;
+    private AcpClient client;
     private String sessionId;
     private String freeModelId;
 
@@ -53,17 +53,17 @@ class CopilotFreeModelIntegrationTest {
     @BeforeEach
     void setUp() throws Exception {
         Assumptions.assumeTrue(copilotAvailable(), "Copilot CLI not available");
-        client = new CopilotAcpClient(null);
+        client = new AcpClient(new CopilotAgentConfig(), null);
         client.start();
         sessionId = client.createSession();
 
-        List<CopilotAcpClient.Model> models = client.listModels();
+        List<AcpClient.Model> models = client.listModels();
         // Select free model (0x) or cheapest available
         freeModelId = models.stream()
             .filter(m -> "0x".equals(m.getUsage()))
             .findFirst()
             .or(() -> models.stream().filter(m -> "0.33x".equals(m.getUsage())).findFirst())
-            .map(CopilotAcpClient.Model::getId)
+            .map(AcpClient.Model::getId)
             .orElse(null);
 
         Assumptions.assumeTrue(freeModelId != null,
@@ -78,8 +78,8 @@ class CopilotFreeModelIntegrationTest {
     @Test
     @Order(1)
     void testFreeModelExists() throws Exception {
-        List<CopilotAcpClient.Model> models = client.listModels();
-        CopilotAcpClient.Model freeModel = models.stream()
+        List<AcpClient.Model> models = client.listModels();
+        AcpClient.Model freeModel = models.stream()
             .filter(m -> m.getId().equals(freeModelId))
             .findFirst().orElse(null);
 
@@ -144,7 +144,7 @@ class CopilotFreeModelIntegrationTest {
         assertFalse(client.isHealthy());
 
         // Create new client
-        client = new CopilotAcpClient(null);
+        client = new AcpClient(new CopilotAgentConfig(), null);
         client.start();
         assertTrue(client.isHealthy());
 
@@ -152,11 +152,11 @@ class CopilotFreeModelIntegrationTest {
         assertNotNull(sessionId);
 
         // Re-resolve free model
-        List<CopilotAcpClient.Model> models = client.listModels();
+        List<AcpClient.Model> models = client.listModels();
         freeModelId = models.stream()
             .filter(m -> "0x".equals(m.getUsage()))
             .findFirst()
-            .map(CopilotAcpClient.Model::getId)
+            .map(AcpClient.Model::getId)
             .orElse(null);
         Assumptions.assumeTrue(freeModelId != null);
 
@@ -168,12 +168,12 @@ class CopilotFreeModelIntegrationTest {
     @Test
     @Order(6)
     void testMultipleModelsAvailable() throws Exception {
-        List<CopilotAcpClient.Model> models = client.listModels();
+        List<AcpClient.Model> models = client.listModels();
 
         assertTrue(models.size() >= 2, "Should have multiple models available");
 
         // All models should have required fields
-        for (CopilotAcpClient.Model model : models) {
+        for (AcpClient.Model model : models) {
             assertNotNull(model.getId(), "Model id required");
             assertFalse(model.getId().isEmpty(), "Model id should not be empty");
             assertNotNull(model.getName(), "Model name required");

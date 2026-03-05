@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for CopilotAcpClient.
+ * Tests for AcpClient.
  * <p>
  * Tests are split into:
  * - Unit tests using a mock ACP process (always run)
@@ -46,7 +46,7 @@ class CopilotAcpClientTest {
 
     @Test
     void testModelDto() {
-        CopilotAcpClient.Model model = new CopilotAcpClient.Model();
+        AcpClient.Model model = new AcpClient.Model();
         model.setId("gpt-4.1");
         model.setName("GPT-4.1");
         model.setDescription("Fast model");
@@ -60,7 +60,7 @@ class CopilotAcpClientTest {
 
     @Test
     void testAuthMethodDto() {
-        CopilotAcpClient.AuthMethod auth = new CopilotAcpClient.AuthMethod();
+        AcpClient.AuthMethod auth = new AcpClient.AuthMethod();
         auth.setId("copilot-login");
         auth.setName("Log in with Copilot CLI");
         auth.setCommand("copilot.exe");
@@ -74,14 +74,14 @@ class CopilotAcpClientTest {
 
     @Test
     void testClientIsNotHealthyBeforeStart() {
-        try (CopilotAcpClient client = new CopilotAcpClient(null)) {
+        try (AcpClient client = new AcpClient(new CopilotAgentConfig(), null)) {
             assertFalse(client.isHealthy(), "Client should not be healthy before start");
         }
     }
 
     @Test
     void testCloseIdempotent() {
-        try (CopilotAcpClient client = new CopilotAcpClient(null)) {
+        try (AcpClient client = new AcpClient(new CopilotAgentConfig(), null)) {
             // Should not throw even if never started
             assertDoesNotThrow(client::close);
             assertDoesNotThrow(client::close);
@@ -105,12 +105,12 @@ class CopilotAcpClientTest {
     @Tag("integration")
     class IntegrationTests {
 
-        private CopilotAcpClient client;
+        private AcpClient client;
 
         @BeforeEach
         void setUp() throws Exception {
             Assumptions.assumeTrue(copilotAvailable(), "Copilot CLI not available, skipping integration tests");
-            client = new CopilotAcpClient(null);
+            client = new AcpClient(new CopilotAgentConfig(), null);
             client.start();
         }
 
@@ -135,12 +135,12 @@ class CopilotAcpClientTest {
 
         @Test
         void testListModels() throws CopilotException {
-            List<CopilotAcpClient.Model> models = client.listModels();
+            List<AcpClient.Model> models = client.listModels();
             assertNotNull(models);
             assertFalse(models.isEmpty(), "Should return at least one model");
 
             // Verify model structure
-            CopilotAcpClient.Model first = models.getFirst();
+            AcpClient.Model first = models.getFirst();
             assertNotNull(first.getId(), "Model should have id");
             assertNotNull(first.getName(), "Model should have name");
             assertFalse(first.getId().isEmpty());
@@ -148,8 +148,8 @@ class CopilotAcpClientTest {
 
         @Test
         void testListModelsContainsKnownModels() throws CopilotException {
-            List<CopilotAcpClient.Model> models = client.listModels();
-            List<String> modelIds = models.stream().map(CopilotAcpClient.Model::getId).toList();
+            List<AcpClient.Model> models = client.listModels();
+            List<String> modelIds = models.stream().map(AcpClient.Model::getId).toList();
 
             // At least some of these should be present
             boolean hasGpt = modelIds.stream().anyMatch(id -> id.startsWith("gpt-"));
@@ -159,7 +159,7 @@ class CopilotAcpClientTest {
 
         @Test
         void testGetAuthMethod() {
-            CopilotAcpClient.AuthMethod auth = client.getAuthMethod();
+            AcpClient.AuthMethod auth = client.getAuthMethod();
             // Auth method should always be present from initialize
             assertNotNull(auth, "Auth method should not be null");
             assertNotNull(auth.getId());
@@ -182,12 +182,12 @@ class CopilotAcpClientTest {
         @Test
         void testSendPromptWithModelSelection() throws CopilotException {
             String sessionId = client.createSession();
-            List<CopilotAcpClient.Model> models = client.listModels();
+            List<AcpClient.Model> models = client.listModels();
             // Pick the cheapest model
             String cheapModel = models.stream()
                 .filter(m -> "0x".equals(m.getUsage()) || "0.33x".equals(m.getUsage()))
                 .findFirst()
-                .map(CopilotAcpClient.Model::getId)
+                .map(AcpClient.Model::getId)
                 .orElse(models.getLast().getId());
 
             StringBuilder response = new StringBuilder();
@@ -218,7 +218,7 @@ class CopilotAcpClientTest {
             assertFalse(client.isHealthy());
 
             // Create a new client
-            client = new CopilotAcpClient(null);
+            client = new AcpClient(new CopilotAgentConfig(), null);
             client.start();
             assertTrue(client.isHealthy());
         }

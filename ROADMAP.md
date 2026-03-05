@@ -56,6 +56,31 @@ intelligence, formatting, and file operations.
 
 ## 🎯 Future Work
 
+### Multi-Agent Support
+
+The ACP client has been refactored to support multiple agent backends via the `AgentConfig` strategy interface.
+Currently only Copilot CLI is implemented (`CopilotAgentConfig`), but the architecture is ready for additional agents.
+
+**Priority agents for integration (by popularity/maturity):**
+
+1. **Claude Code** (Anthropic) — Highly popular CLI agent with strong coding capabilities
+2. **Codex CLI** (OpenAI) — Widely used, backed by OpenAI's latest models
+3. **Gemini CLI** (Google) — Multimodal capabilities, growing ecosystem
+4. **Auggie CLI** (Augment Code) — Enterprise-focused, context-aware coding agent
+5. **goose** (Block) — Open-source, extensible agent framework
+
+**Implementation steps per agent:**
+
+- [ ] Create `<Agent>AgentConfig` implementing `AgentConfig` (binary discovery, auth, process builder)
+- [ ] Add agent selection UI (Settings tab or Tool Window dropdown)
+- [ ] Agent-specific instructions/context management
+- [ ] Test suite per agent backend
+
+**Architecture:**
+- `AgentConfig` — strategy interface for agent-specific concerns
+- `CopilotAgentConfig` — Copilot CLI implementation (binary discovery, auth, model metadata)
+- `AcpClient` — generic JSON-RPC 2.0 protocol layer, agent-agnostic
+
 ### UI Improvements
 
 - [ ] Markdown rendering in response area
@@ -78,4 +103,4 @@ intelligence, formatting, and file operations.
 
 ---
 
-*Last Updated: 2026-02-13*
+*Last Updated: 2026-03-05*
