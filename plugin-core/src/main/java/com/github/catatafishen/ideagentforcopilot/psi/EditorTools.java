@@ -428,7 +428,12 @@ class EditorTools extends AbstractToolHandler {
                     pathSet = setScriptPath(config, scratchFile.getPath());
                 }
 
-                // 4b. Set working directory (needed by Node.js and other script runners)
+                // 4b. For Python configs, set the SDK home from the global SDK table
+                if ("py".equalsIgnoreCase(extension)) {
+                    trySetPythonSdkHome(config);
+                }
+
+                // 4c. Set working directory (needed by Node.js and other script runners)
                 trySetWorkingDirectory(config, scratchFile.getParent().getPath());
 
                 // 5. Set classpath module (auto-detect for Java/Kotlin if not specified)
@@ -582,8 +587,8 @@ class EditorTools extends AbstractToolHandler {
 
     @SuppressWarnings("java:S3011") // reflection needed for cross-plugin config API
     private boolean setScriptPath(com.intellij.execution.configurations.RunConfiguration config, String path) {
-        for (String method : java.util.List.of("setupFilePath", "setFilePath", "setScriptPath", "setScriptFile",
-            "setMainScriptFilePath", "setMainClassName")) {
+        for (String method : java.util.List.of("setupFilePath", "setFilePath", "setScriptName", "setScriptPath",
+            "setScriptFile", "setMainScriptFilePath", "setMainClassName")) {
             try {
                 config.getClass().getMethod(method, String.class).invoke(config, path);
                 return true;
@@ -631,6 +636,23 @@ class EditorTools extends AbstractToolHandler {
             }
         }
         return false;
+    }
+
+    @SuppressWarnings("java:S3011") // reflection needed for cross-plugin config API
+    private void trySetPythonSdkHome(com.intellij.execution.configurations.RunConfiguration config) {
+        // Find a Python SDK in the global SDK table and set it on the config via reflection
+        var sdkTable = com.intellij.openapi.projectRoots.ProjectJdkTable.getInstance();
+        for (var sdk : sdkTable.getAllJdks()) {
+            if ("Python SDK".equals(sdk.getSdkType().getName())) {
+                try {
+                    config.getClass().getMethod("setSdkHome", String.class)
+                        .invoke(config, sdk.getHomePath());
+                    return;
+                } catch (Exception ignored) {
+                    // Config type may not support setSdkHome
+                }
+            }
+        }
     }
 
     // ---- End Scratch File Helpers ----
