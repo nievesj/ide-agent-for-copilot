@@ -92,6 +92,12 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private var turnToolCallCount = 0
     private var turnModelId = ""
 
+    // Throttled incremental save during streaming (avoid data loss on crash)
+    private val saveIntervalMs = 30_000L
+
+    @Volatile
+    private var lastIncrementalSaveMs = 0L
+
     private var conversationSummaryInjected = false
 
     init {
@@ -1828,6 +1834,9 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 consolePanel.updateToolCall(toolCallId, "failed", error)
             }
         }
+        if (status == "completed" || status == "failed") {
+            saveConversationThrottled()
+        }
     }
 
     private fun extractContentText(element: com.google.gson.JsonElement): String? {
@@ -1978,11 +1987,24 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     private fun saveConversation() {
+        lastIncrementalSaveMs = System.currentTimeMillis()
         com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 conversationFile().writeText(consolePanel.serializeEntries())
             } catch (_: Exception) { /* best-effort */
             }
+        }
+    }
+
+    /**
+     * Saves conversation if at least [saveIntervalMs] elapsed since the last save.
+     * Called after each tool-call completion during streaming so that long-running turns
+     * are periodically persisted and survive IDE crashes.
+     */
+    private fun saveConversationThrottled() {
+        val now = System.currentTimeMillis()
+        if (now - lastIncrementalSaveMs >= saveIntervalMs) {
+            saveConversation()
         }
     }
 
