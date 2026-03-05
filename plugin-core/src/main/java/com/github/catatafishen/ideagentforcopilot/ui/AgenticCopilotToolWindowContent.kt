@@ -1629,12 +1629,38 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         return references
     }
 
-    /** Send a quick-reply as if the user typed it. Called from the JS bridge on EDT. */
+    /** Send a quick-reply directly without touching the user's input field. */
     private fun sendQuickReply(text: String) {
         if (isSending) return
         consolePanel.disableQuickReplies()
-        promptTextArea.text = text
-        onSendStopClicked()
+        sendPromptDirectly(text)
+    }
+
+    /** Send a prompt string directly, bypassing the text area (used for quick-replies). */
+    private fun sendPromptDirectly(prompt: String) {
+        val trimmed = prompt.trim()
+        if (trimmed.isEmpty()) return
+        setSendingState(true)
+        setResponseStatus(MSG_THINKING)
+
+        if (currentSessionId == null && consolePanel.hasContent()) {
+            val ts = java.text.SimpleDateFormat("MMM d, yyyy h:mm a").format(java.util.Date())
+            consolePanel.addSessionSeparator(ts)
+        }
+
+        val ctxFiles = if (contextListModel.size() > 0) {
+            (0 until contextListModel.size()).map { i ->
+                val item = contextListModel.getElementAt(i)
+                Triple(item.name, item.path, if (item.isSelection) item.startLine else 0)
+            }
+        } else null
+        consolePanel.addPromptEntry(trimmed, ctxFiles)
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            currentPromptThread = Thread.currentThread()
+            executePrompt(trimmed)
+            currentPromptThread = null
+        }
     }
 
     /**
