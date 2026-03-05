@@ -300,8 +300,10 @@ class InfrastructureTools extends AbstractToolHandler {
                 && inner != console) {
                 return innerConsole;
             }
-        } catch (Exception ignored) {
+        } catch (NoSuchMethodException ignored) {
             // Not a wrapper with getConsole()
+        } catch (Exception e) {
+            LOG.debug("getConsole() unwrap failed", e);
         }
         return console;
     }
@@ -450,6 +452,16 @@ class InfrastructureTools extends AbstractToolHandler {
             consoleView.flushDeferredText();
             return;
         }
+        // For terminal consoles, call flushImmediately()
+        try {
+            var flushMethod = console.getClass().getMethod("flushImmediately");
+            flushMethod.invoke(console);
+            return;
+        } catch (NoSuchMethodException ignored) {
+            // Not a terminal console
+        } catch (Exception e) {
+            LOG.debug("flushImmediately() failed", e);
+        }
         // For wrapped consoles (e.g. test runners), try to get the inner console
         try {
             var getConsole = console.getClass().getMethod(METHOD_GET_CONSOLE);
@@ -466,7 +478,7 @@ class InfrastructureTools extends AbstractToolHandler {
      * Extract plain text from a ConsoleView via getText() or editor document.
      */
     private String extractPlainConsoleText(Object console) {
-        // Try getText()
+        // Try getText() directly on console (works for ConsoleViewImpl)
         try {
             var getTextMethod = console.getClass().getMethod("getText");
             String text = (String) getTextMethod.invoke(console);
@@ -475,6 +487,21 @@ class InfrastructureTools extends AbstractToolHandler {
             // Method not available in this version
         } catch (Exception e) {
             LOG.warn("getText() failed", e);
+        }
+
+        // Try terminal widget getText() (for TerminalExecutionConsole used by Node.js, etc.)
+        try {
+            var getTerminalWidget = console.getClass().getMethod("getTerminalWidget");
+            var widget = getTerminalWidget.invoke(console);
+            if (widget != null) {
+                var getText = widget.getClass().getMethod("getText");
+                String text = (String) getText.invoke(widget);
+                if (text != null && !text.isEmpty()) return text;
+            }
+        } catch (NoSuchMethodException ignored) {
+            // Not a terminal console
+        } catch (Exception e) {
+            LOG.warn("Terminal widget getText() failed", e);
         }
 
         // Try editor → document

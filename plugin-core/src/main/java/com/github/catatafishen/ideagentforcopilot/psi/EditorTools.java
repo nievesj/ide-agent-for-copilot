@@ -560,28 +560,28 @@ class EditorTools extends AbstractToolHandler {
             default -> extension;
         };
 
-        for (var ct : com.intellij.execution.configurations.ConfigurationType
-            .CONFIGURATION_TYPE_EP.getExtensionList()) {
-            if (searchTerm.startsWith("id:")) {
-                if (ct.getId().equals(searchTerm.substring(3))) {
-                    return ct;
-                }
-            } else {
-                String displayName = ct.getDisplayName().toLowerCase();
-                String id = ct.getId().toLowerCase();
-                if (displayName.contains(searchTerm) || id.contains(searchTerm.replace(" ", ""))) {
-                    return ct;
-                }
+        // For exact ID lookups, use ConfigurationTypeUtil directly
+        if (searchTerm.startsWith("id:")) {
+            return com.intellij.execution.configurations.ConfigurationTypeUtil
+                .findConfigurationType(searchTerm.substring(3));
+        }
+
+        // For display-name fuzzy matching, iterate all config types
+        var configTypes = com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensions();
+        for (var ct : configTypes) {
+            String displayName = ct.getDisplayName().toLowerCase();
+            String id = ct.getId().toLowerCase();
+            if (displayName.contains(searchTerm) || id.contains(searchTerm.replace(" ", ""))) {
+                return ct;
             }
         }
         return null;
     }
 
     private String listAvailableConfigTypes() {
-        var types = com.intellij.execution.configurations.ConfigurationType
-            .CONFIGURATION_TYPE_EP.getExtensionList();
+        var configTypes = com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensions();
         StringBuilder sb = new StringBuilder();
-        for (var ct : types) {
+        for (var ct : configTypes) {
             if (!sb.isEmpty()) sb.append(", ");
             sb.append(ct.getDisplayName());
         }
@@ -604,15 +604,21 @@ class EditorTools extends AbstractToolHandler {
 
     @SuppressWarnings("java:S3011") // reflection needed for cross-plugin config API
     private boolean trySetMainClassName(com.intellij.execution.configurations.RunConfiguration config, String className) {
-        for (String method : java.util.List.of("setMainClassName", "setRunClass")) {
+        var log = com.intellij.openapi.diagnostic.Logger.getInstance(EditorTools.class);
+        log.info("trySetMainClassName: config class = " + config.getClass().getName() + ", className = " + className);
+        boolean anySuccess = false;
+        // KotlinRunConfiguration has both setMainClassName and setRunClass as separate fields.
+        // The runner checks getRunClass(), so we must call both to ensure the right field is set.
+        for (String method : java.util.List.of("setRunClass", "setMainClassName")) {
             try {
                 config.getClass().getMethod(method, String.class).invoke(config, className);
-                return true;
-            } catch (Exception ignored) {
-                // Try next method name
+                log.info("trySetMainClassName: SUCCESS via " + method);
+                anySuccess = true;
+            } catch (Exception e) {
+                log.info("trySetMainClassName: " + method + " failed: " + e.getMessage());
             }
         }
-        return false;
+        return anySuccess;
     }
 
     @SuppressWarnings("java:S3011") // reflection needed for cross-plugin config API
