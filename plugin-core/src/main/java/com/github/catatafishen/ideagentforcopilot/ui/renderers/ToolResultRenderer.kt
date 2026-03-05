@@ -19,17 +19,26 @@ internal fun interface ToolResultRenderer {
 internal object ToolRenderers {
 
     private val registry: Map<String, ToolResultRenderer> = mapOf(
+        // Git
         "git_commit" to GitCommitRenderer,
         "git_status" to GitStatusRenderer,
         "git_diff" to GitDiffRenderer,
         "git_log" to GitLogRenderer,
+        "git_show" to GitShowRenderer,
+        "git_blame" to GitBlameRenderer,
+        // Build & test
         "build_project" to BuildResultRenderer,
+        "run_tests" to TestResultRenderer,
+        // Code quality
         "run_inspections" to InspectionResultRenderer,
         "get_compilation_errors" to InspectionResultRenderer,
         "get_highlights" to InspectionResultRenderer,
+        "get_problems" to InspectionResultRenderer,
+        // Search & navigation
         "search_text" to SearchResultRenderer,
         "search_symbols" to SearchResultRenderer,
         "find_references" to SearchResultRenderer,
+        "get_file_outline" to FileOutlineRenderer,
     )
 
     fun get(toolName: String): ToolResultRenderer? = registry[toolName]
