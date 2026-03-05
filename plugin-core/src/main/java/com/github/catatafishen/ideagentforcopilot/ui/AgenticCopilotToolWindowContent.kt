@@ -1464,6 +1464,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
     private fun handlePromptCompletion(prompt: String) {
         com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).flushPendingAutoFormat()
+        com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).clearFileAccessTracking()
         consolePanel.finishResponse(turnToolCallCount, turnModelId, getModelMultiplier(turnModelId))
         notifyIfUnfocused(turnToolCallCount)
         setResponseStatus("Done", loading = false)

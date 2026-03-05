@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit;
  * Tracks which files the agent has read/written during the current session.
  * Used by {@link AgentFileDecorator} to annotate files in the Project View.
  * <p>
- * Background tints persist until {@link #clear()} (end of turn).
+ * Background tints persist until {@link #clear(Project)} (end of turn).
  * Active labels ("Agent reading" / "Agent editing") auto-expire after 2.5 seconds.
  */
 final class FileAccessTracker {
@@ -73,9 +73,10 @@ final class FileAccessTracker {
         return vf != null ? activeLabels.get(vf.getPath()) : null;
     }
 
-    static void clear() {
+    static void clear(Project project) {
         accessMap.clear();
         activeLabels.clear();
+        refreshProjectView(project);
     }
 
     private static AccessType merge(AccessType existing, AccessType incoming) {

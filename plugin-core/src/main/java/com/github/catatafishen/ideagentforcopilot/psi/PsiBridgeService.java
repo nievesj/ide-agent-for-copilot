@@ -108,6 +108,13 @@ public final class PsiBridgeService implements Disposable {
         fileTools.flushPendingAutoFormat();
     }
 
+    /**
+     * Clears file access tracking (background tints in Project View) at end of turn.
+     */
+    public void clearFileAccessTracking() {
+        FileAccessTracker.clear(project);
+    }
+
     public synchronized void start() {
         if (httpServer != null) return;
         try {
