@@ -1510,14 +1510,18 @@ permission-request {
 
 /* ── Inspection / Compilation Results ────────────────────── */
 
-.inspection-header {
+/* Shared result-card header layout */
+.inspection-header, .search-header, .blame-header {
     display: flex;
     align-items: center;
     gap: 6px;
     padding: 8px 12px;
-    font-weight: 600;
     font-size: 0.92em;
 }
+
+.inspection-header { font-weight: 600; }
+.search-header { font-weight: 600; background: var(--fg-a05); }
+.blame-header { background: var(--fg-a05); }
 
 .inspection-success {
     background: var(--success-bg);
@@ -1534,28 +1538,32 @@ permission-request {
     color: var(--warning);
 }
 
-.inspection-icon {
+.inspection-icon, .search-icon {
     font-size: 1.1em;
 }
 
-.inspection-count {
+.inspection-count, .search-count {
     font-size: 1.1em;
     font-weight: 700;
 }
 
-.inspection-label {
+.search-count {
+    color: var(--link);
+}
+
+.inspection-label, .search-label {
     opacity: 0.8;
 }
 
-.inspection-files {
+.inspection-files, .search-files {
     padding: 4px 0;
 }
 
-.inspection-file {
+.inspection-file, .search-file {
     border-top: 1px solid var(--fg-a05);
 }
 
-.inspection-file-header {
+.inspection-file-header, .search-file-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1563,7 +1571,7 @@ permission-request {
     background: var(--fg-a05);
 }
 
-.inspection-file-count {
+.inspection-file-count, .search-file-count {
     font-size: 0.8em;
     color: var(--fg-a08);
     background: var(--fg-a05);
@@ -1631,58 +1639,8 @@ permission-request {
 
 /* ── Search Results ──────────────────────────────────────── */
 
-.search-header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
-    font-weight: 600;
-    font-size: 0.92em;
-    background: var(--fg-a05);
-}
-
 .search-empty {
     color: var(--fg-a08);
-}
-
-.search-icon {
-    font-size: 1.1em;
-}
-
-.search-count {
-    font-size: 1.1em;
-    font-weight: 700;
-    color: var(--link);
-}
-
-.search-label {
-    opacity: 0.8;
-}
-
-.search-files {
-    padding: 4px 0;
-}
-
-.search-file {
-    border-top: 1px solid var(--fg-a05);
-}
-
-.search-file-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 12px;
-    background: var(--fg-a05);
-}
-
-.search-file-count {
-    font-size: 0.8em;
-    color: var(--fg-a08);
-    background: var(--fg-a05);
-    border-radius: 8px;
-    padding: 1px 6px;
-    min-width: 18px;
-    text-align: center;
 }
 
 .search-file-matches {
@@ -1769,15 +1727,6 @@ permission-request {
 .outline-badge-field { background: var(--fg-a05); color: var(--fg-a08); }
 
 /* ── Git Blame ───────────────────────────────────────────── */
-
-.blame-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    background: var(--fg-a05);
-    font-size: 0.92em;
-}
 
 .blame-count { font-weight: 600; }
 .blame-authors { color: var(--fg-a08); }
