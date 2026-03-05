@@ -836,7 +836,7 @@ class FileTools extends AbstractToolHandler {
         int undone = 0;
         for (int i = 0; i < count; i++) {
             if (!undoManager.isUndoAvailable(fileEditor)) break;
-            String actionName = undoManager.getUndoActionNameAndDescription(fileEditor).first;
+            String actionName = PlatformApiCompat.getUndoActionName(undoManager, fileEditor);
             undoManager.undo(fileEditor);
             undone++;
             if (!actions.isEmpty()) actions.append(", ");

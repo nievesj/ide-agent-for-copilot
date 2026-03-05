@@ -87,11 +87,9 @@ class ProjectTools extends AbstractToolHandler {
             sb.append("IDE: unavailable\n");
         }
         try {
-            var descriptor = com.intellij.ide.plugins.PluginManagerCore.getPlugin(
-                com.intellij.openapi.extensions.PluginId.getId("com.github.catatafishen.ideagentforcopilot"));
-            if (descriptor != null) {
-                sb.append("Plugin: ").append(descriptor.getName())
-                    .append(" v").append(descriptor.getVersion()).append("\n");
+            String pluginInfo = PlatformApiCompat.getPluginVersionInfo("com.github.catatafishen.ideagentforcopilot");
+            if (pluginInfo != null) {
+                sb.append("Plugin: ").append(pluginInfo).append("\n");
             }
         } catch (Exception e) {
             sb.append("Plugin version: unavailable\n");
@@ -293,22 +291,7 @@ class ProjectTools extends AbstractToolHandler {
 
     private static String addSourceRoot(ContentEntry entry, ModifiableRootModel model,
                                         Module module, VirtualFile vDir, String absolutePath, String type) {
-        boolean isTest = type.startsWith("test_");
-        if (type.contains("resources")) {
-            var rootType = isTest
-                ? org.jetbrains.jps.model.java.JavaResourceRootType.TEST_RESOURCE
-                : org.jetbrains.jps.model.java.JavaResourceRootType.RESOURCE;
-            entry.addSourceFolder(vDir, rootType);
-        } else if ("generated_sources".equals(type)) {
-            var rootType = org.jetbrains.jps.model.java.JavaSourceRootType.SOURCE;
-            var props = org.jetbrains.jps.model.java.JpsJavaExtensionService.getInstance()
-                .createSourceRootProperties("", true);
-            entry.addSourceFolder(vDir, rootType, props);
-        } else if (isTest) {
-            entry.addSourceFolder(vDir, org.jetbrains.jps.model.java.JavaSourceRootType.TEST_SOURCE);
-        } else {
-            entry.addSourceFolder(vDir, org.jetbrains.jps.model.java.JavaSourceRootType.SOURCE);
-        }
+        PlatformApiCompat.addSourceFolder(entry, vDir, type);
         model.commit();
         return "Marked '" + absolutePath + "' as " + type + " in module '" + module.getName() + "'";
     }
@@ -978,19 +961,7 @@ class ProjectTools extends AbstractToolHandler {
             }
 
             // List available SDK types for adding
-            var sdkTypes = com.intellij.openapi.projectRoots.SdkType.EP_NAME.getExtensionList();
-            sb.append("\nAvailable SDK types:\n");
-            for (var sdkType : sdkTypes) {
-                sb.append("  - ").append(sdkType.getName()).append(" (").append(sdkType.getPresentableName()).append(")\n");
-                var entries = sdkType.collectSdkEntries(project);
-                for (var entry : entries) {
-                    sb.append("    suggested: ").append(entry.homePath());
-                    if (entry.versionString() != null) {
-                        sb.append(" (").append(entry.versionString()).append(")");
-                    }
-                    sb.append("\n");
-                }
-            }
+            sb.append(PlatformApiCompat.listSdkTypes(project));
 
             return sb.toString().trim();
         });
@@ -1008,14 +979,7 @@ class ProjectTools extends AbstractToolHandler {
         }
 
         // Find SDK type by name (case-insensitive)
-        var sdkTypes = com.intellij.openapi.projectRoots.SdkType.EP_NAME.getExtensionList();
-        com.intellij.openapi.projectRoots.SdkType sdkType = null;
-        for (var type : sdkTypes) {
-            if (type.getName().equalsIgnoreCase(sdkTypeName) || type.getPresentableName().equalsIgnoreCase(sdkTypeName)) {
-                sdkType = type;
-                break;
-            }
-        }
+        com.intellij.openapi.projectRoots.SdkType sdkType = PlatformApiCompat.findSdkTypeByName(sdkTypeName);
         if (sdkType == null) {
             return ToolUtils.ERROR_PREFIX + "SDK type '" + sdkTypeName + "' not found. Use list_sdks to see available types.";
         }
@@ -1041,7 +1005,7 @@ class ProjectTools extends AbstractToolHandler {
         final String finalName = sdkName;
         String version = sdkType.getVersionString(finalHome);
 
-        com.intellij.openapi.application.WriteAction.runAndWait(() -> {
+        PlatformApiCompat.writeActionRunAndWait(() -> {
             Sdk sdk = jdkTable.createSdk(finalName, finalSdkType);
             var modificator = sdk.getSdkModificator();
             modificator.setHomePath(finalHome);
@@ -1067,7 +1031,11 @@ class ProjectTools extends AbstractToolHandler {
             return ToolUtils.ERROR_PREFIX + "SDK '" + sdkName + "' not found. Use list_sdks to see configured SDKs.";
         }
 
-        com.intellij.openapi.application.WriteAction.runAndWait(() -> jdkTable.removeJdk(sdk));
+        try {
+            PlatformApiCompat.writeActionRunAndWait(() -> jdkTable.removeJdk(sdk));
+        } catch (Exception e) {
+            return ToolUtils.ERROR_PREFIX + "Failed to remove SDK: " + e.getMessage();
+        }
         return "Removed SDK '" + sdkName + "'.";
     }
 

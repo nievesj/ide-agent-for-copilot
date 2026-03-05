@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.services;
 
 import com.github.catatafishen.ideagentforcopilot.bridge.CopilotAcpClient;
+import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
@@ -28,7 +29,7 @@ public final class CopilotService implements Disposable {
 
     @NotNull
     public static CopilotService getInstance(@NotNull Project project) {
-        return project.getService(CopilotService.class);
+        return PlatformApiCompat.getService(project, CopilotService.class);
     }
 
     /**

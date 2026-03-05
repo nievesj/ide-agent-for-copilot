@@ -8,13 +8,13 @@ import com.intellij.execution.executors.DefaultRunExecutor;
 import com.intellij.execution.process.ProcessHandler;
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Handles test-related tool calls: list_tests, run_tests, get_coverage.
@@ -97,14 +98,7 @@ class TestTools extends AbstractToolHandler {
     // ---- JUnit Helper ----
 
     private com.intellij.execution.configurations.ConfigurationType findJUnitConfigurationType() {
-        for (var ct : com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()) {
-            String displayName = ct.getDisplayName().toLowerCase();
-            if (displayName.contains(JUNIT_TYPE_ID)
-                || ct.getId().toLowerCase().contains(JUNIT_TYPE_ID)) {
-                return ct;
-            }
-        }
-        return null;
+        return PlatformApiCompat.findConfigurationTypeBySearch(JUNIT_TYPE_ID);
     }
 
     // ---- Tool Methods ----
@@ -204,7 +198,7 @@ class TestTools extends AbstractToolHandler {
         // Try IntelliJ's CoverageDataManager via reflection
         try {
             Class<?> cdmClass = Class.forName("com.intellij.coverage.CoverageDataManager");
-            Object manager = project.getService(cdmClass);
+            Object manager = PlatformApiCompat.getServiceByRawClass(project, cdmClass);
             if (manager != null) {
                 var getCurrentBundle = cdmClass.getMethod("getCurrentSuitesBundle");
                 Object bundle = getCurrentBundle.invoke(manager);
@@ -266,8 +260,8 @@ class TestTools extends AbstractToolHandler {
 
             // Subscribe to execution events before launching (on any thread)
             CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
-            var connection = project.getMessageBus().connect();
-            connection.subscribe(ExecutionManager.EXECUTION_TOPIC, new com.intellij.execution.ExecutionListener() {
+            AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> { });
+            disconnect.set(PlatformApiCompat.subscribeExecutionListener(project, new com.intellij.execution.ExecutionListener() {
                 @Override
                 public void processStarted(@NotNull String executorId,
                                            @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
@@ -275,7 +269,7 @@ class TestTools extends AbstractToolHandler {
                     if (env.getRunnerAndConfigurationSettings() != null
                         && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
                         handlerFuture.complete(handler);
-                        connection.disconnect();
+                        disconnect.get().run();
                     }
                 }
 
@@ -285,10 +279,10 @@ class TestTools extends AbstractToolHandler {
                     if (env.getRunnerAndConfigurationSettings() != null
                         && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
                         handlerFuture.complete(null);
-                        connection.disconnect();
+                        disconnect.get().run();
                     }
                 }
-            });
+            }));
 
             // Launch on EDT (non-blocking)
             CompletableFuture<String> launchFuture = new CompletableFuture<>();
@@ -305,7 +299,7 @@ class TestTools extends AbstractToolHandler {
 
             String launchError = launchFuture.get(10, TimeUnit.SECONDS);
             if (launchError != null) {
-                connection.disconnect();
+                disconnect.get().run();
                 return "launch_failed".equals(launchError) ? null : launchError;
             }
 
@@ -314,7 +308,7 @@ class TestTools extends AbstractToolHandler {
             try {
                 handler = handlerFuture.get(15, TimeUnit.SECONDS);
             } catch (Exception e) {
-                connection.disconnect();
+                disconnect.get().run();
                 return "Started tests via IntelliJ JUnit runner: " + configName
                     + "\nCould not capture process handle. Check the Run panel for results.";
             }
@@ -380,8 +374,8 @@ class TestTools extends AbstractToolHandler {
             String configName = "Test: " + target + " (" + matchingClasses.size() + " classes)";
 
             CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
-            var connection = project.getMessageBus().connect();
-            connection.subscribe(ExecutionManager.EXECUTION_TOPIC, new com.intellij.execution.ExecutionListener() {
+            AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> { });
+            disconnect.set(PlatformApiCompat.subscribeExecutionListener(project, new com.intellij.execution.ExecutionListener() {
                 @Override
                 public void processStarted(@NotNull String executorId,
                                            @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
@@ -389,7 +383,7 @@ class TestTools extends AbstractToolHandler {
                     if (env.getRunnerAndConfigurationSettings() != null
                         && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
                         handlerFuture.complete(handler);
-                        connection.disconnect();
+                        disconnect.get().run();
                     }
                 }
 
@@ -399,10 +393,10 @@ class TestTools extends AbstractToolHandler {
                     if (env.getRunnerAndConfigurationSettings() != null
                         && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
                         handlerFuture.complete(null);
-                        connection.disconnect();
+                        disconnect.get().run();
                     }
                 }
-            });
+            }));
 
             CompletableFuture<String> launchFuture = new CompletableFuture<>();
             EdtUtil.invokeLater(() -> {
@@ -446,7 +440,7 @@ class TestTools extends AbstractToolHandler {
 
             String launchError = launchFuture.get(10, TimeUnit.SECONDS);
             if (launchError != null) {
-                connection.disconnect();
+                disconnect.get().run();
                 return "launch_failed".equals(launchError) ? null : launchError;
             }
 
@@ -454,7 +448,7 @@ class TestTools extends AbstractToolHandler {
             try {
                 handler = handlerFuture.get(15, TimeUnit.SECONDS);
             } catch (Exception e) {
-                connection.disconnect();
+                disconnect.get().run();
                 return "Started tests via IntelliJ JUnit runner: " + configName
                     + "\nCould not capture process handle. Check the Run panel for results.";
             }
@@ -595,8 +589,8 @@ class TestTools extends AbstractToolHandler {
             String configName = "Gradle Test: " + target;
 
             CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
-            var connection = project.getMessageBus().connect();
-            connection.subscribe(ExecutionManager.EXECUTION_TOPIC, new com.intellij.execution.ExecutionListener() {
+            AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> { });
+            disconnect.set(PlatformApiCompat.subscribeExecutionListener(project, new com.intellij.execution.ExecutionListener() {
                 @Override
                 public void processStarted(@NotNull String executorId,
                                            @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
@@ -604,7 +598,7 @@ class TestTools extends AbstractToolHandler {
                     if (env.getRunnerAndConfigurationSettings() != null
                         && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
                         handlerFuture.complete(handler);
-                        connection.disconnect();
+                        disconnect.get().run();
                     }
                 }
 
@@ -614,10 +608,10 @@ class TestTools extends AbstractToolHandler {
                     if (env.getRunnerAndConfigurationSettings() != null
                         && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
                         handlerFuture.complete(null);
-                        connection.disconnect();
+                        disconnect.get().run();
                     }
                 }
-            });
+            }));
 
             CompletableFuture<String> launchFuture = new CompletableFuture<>();
             EdtUtil.invokeLater(() -> {
@@ -632,7 +626,7 @@ class TestTools extends AbstractToolHandler {
 
             String launchError = launchFuture.get(10, TimeUnit.SECONDS);
             if (launchError != null) {
-                connection.disconnect();
+                disconnect.get().run();
                 if ("launch_failed".equals(launchError)) {
                     return "Error: Failed to create Gradle test run configuration for: " + target;
                 }
@@ -643,7 +637,7 @@ class TestTools extends AbstractToolHandler {
             try {
                 handler = handlerFuture.get(15, TimeUnit.SECONDS);
             } catch (Exception e) {
-                connection.disconnect();
+                disconnect.get().run();
                 return "Started tests via Gradle run configuration: " + configName
                     + "\nCould not capture process handle. Check the Run panel for results.";
             }
@@ -682,13 +676,8 @@ class TestTools extends AbstractToolHandler {
             RunManager runManager = RunManager.getInstance(project);
 
             // Find Gradle configuration type
-            com.intellij.execution.configurations.ConfigurationType gradleType = null;
-            for (var ct : com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()) {
-                if ("GradleRunConfiguration".equals(ct.getId()) || ct.getDisplayName().contains("Gradle")) {
-                    gradleType = ct;
-                    break;
-                }
-            }
+            com.intellij.execution.configurations.ConfigurationType gradleType =
+                PlatformApiCompat.findConfigurationTypeBySearch("Gradle");
 
             if (gradleType == null) {
                 return "Error: Gradle run configuration type not available";

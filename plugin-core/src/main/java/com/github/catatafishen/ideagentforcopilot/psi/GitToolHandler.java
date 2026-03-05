@@ -12,7 +12,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -688,8 +687,6 @@ final class GitToolHandler {
                 String fullHash = runGit("rev-parse", "HEAD").trim();
                 if (fullHash.length() != 40) return;
 
-                var vcsHash = com.intellij.vcs.log.impl.HashImpl.build(fullHash);
-
                 // Open the Git Log tool window immediately
                 ApplicationManager.getApplication().invokeLater(() -> {
                     var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
@@ -698,7 +695,7 @@ final class GitToolHandler {
                 });
 
                 // Poll for the commit to appear in the log index
-                pollForCommitInLog(vcsHash);
+                pollForCommitInLog(fullHash);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             } catch (Exception ignored) {
@@ -711,13 +708,13 @@ final class GitToolHandler {
      * Polls for a commit to appear in the VCS Log index, then navigates to it.
      * Gives up silently after exhausting all attempts — the Git Log is already open.
      */
-    private void pollForCommitInLog(com.intellij.vcs.log.Hash vcsHash) throws InterruptedException {
+    private void pollForCommitInLog(String fullHash) throws InterruptedException {
         for (int attempt = 0; attempt < COMMIT_POLL_ATTEMPTS; attempt++) {
             Thread.sleep(COMMIT_POLL_INTERVAL_MS);
             boolean[] found = {false};
             ApplicationManager.getApplication().invokeAndWait(() -> {
                 try {
-                    com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, vcsHash);
+                    PlatformApiCompat.showRevisionInLog(project, fullHash);
                     found[0] = true;
                 } catch (Exception ignored) {
                     // commit not yet indexed — retry
@@ -748,8 +745,7 @@ final class GitToolHandler {
         String finalHash = hash;
         ApplicationManager.getApplication().invokeLater(() -> {
             try {
-                var vcsHash = com.intellij.vcs.log.impl.HashImpl.build(finalHash);
-                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, vcsHash);
+                PlatformApiCompat.showRevisionInLog(project, finalHash);
             } catch (Exception ignored) {
                 // best-effort UI follow-along
             }
@@ -757,79 +753,14 @@ final class GitToolHandler {
     }
 
     /**
-     * Runs git commands through IntelliJ's Git4Idea infrastructure (GitLineHandler).
-     * <p>
-     * Isolated in a static inner class so git4idea class loading is deferred until first use.
+     * Delegates to {@link PlatformApiCompat#runIdeGitCommand} which isolates all Git4Idea API
+     * calls that produce false-positive errors in the IDE editor.
      * If Git4Idea is disabled, the outer class catches {@link NoClassDefFoundError} and falls
      * back to ProcessBuilder.
      */
     private static final class IdeGitSupport {
-        private static final Map<String, git4idea.commands.GitCommand> COMMAND_MAP = Map.ofEntries(
-            Map.entry("add", git4idea.commands.GitCommand.ADD),
-            Map.entry("blame", git4idea.commands.GitCommand.BLAME),
-            Map.entry("branch", git4idea.commands.GitCommand.BRANCH),
-            Map.entry("checkout", git4idea.commands.GitCommand.CHECKOUT),
-            Map.entry("cherry-pick", git4idea.commands.GitCommand.CHERRY_PICK),
-            Map.entry("commit", git4idea.commands.GitCommand.COMMIT),
-            Map.entry("config", git4idea.commands.GitCommand.CONFIG),
-            Map.entry("diff", git4idea.commands.GitCommand.DIFF),
-            Map.entry("fetch", git4idea.commands.GitCommand.FETCH),
-            Map.entry("log", git4idea.commands.GitCommand.LOG),
-            Map.entry("merge", git4idea.commands.GitCommand.MERGE),
-            Map.entry("pull", git4idea.commands.GitCommand.PULL),
-            Map.entry("push", git4idea.commands.GitCommand.PUSH),
-            Map.entry("rebase", git4idea.commands.GitCommand.REBASE),
-            Map.entry("remote", git4idea.commands.GitCommand.REMOTE),
-            Map.entry("reset", git4idea.commands.GitCommand.RESET),
-            Map.entry("restore", git4idea.commands.GitCommand.RESTORE),
-            Map.entry("rev-parse", git4idea.commands.GitCommand.REV_PARSE),
-            Map.entry("revert", git4idea.commands.GitCommand.REVERT),
-            Map.entry("show", git4idea.commands.GitCommand.SHOW),
-            Map.entry("stash", git4idea.commands.GitCommand.STASH),
-            Map.entry("status", git4idea.commands.GitCommand.STATUS),
-            Map.entry("switch", git4idea.commands.GitCommand.CHECKOUT),
-            Map.entry("tag", git4idea.commands.GitCommand.TAG)
-        );
-
-        /**
-         * Returns command output, or null to signal fallback to ProcessBuilder.
-         */
         static String run(Project project, String[] args) {
-            if (args.length == 0) return null;
-
-            git4idea.commands.GitCommand command = COMMAND_MAP.get(args[0]);
-            if (command == null) return null;
-
-            List<git4idea.repo.GitRepository> repos =
-                git4idea.repo.GitRepositoryManager.getInstance(project).getRepositories();
-            if (repos.isEmpty()) return null;
-
-            // Find the repo matching the project base path
-            git4idea.repo.GitRepository repo = repos.getFirst();
-            String basePath = project.getBasePath();
-            if (basePath != null && repos.size() > 1) {
-                for (git4idea.repo.GitRepository r : repos) {
-                    if (r.getRoot().getPath().equals(basePath)) {
-                        repo = r;
-                        break;
-                    }
-                }
-            }
-
-            git4idea.commands.GitLineHandler handler =
-                new git4idea.commands.GitLineHandler(project, repo.getRoot(), command);
-            handler.setSilent(true);
-            handler.setStdoutSuppressed(true);
-            if (args.length > 1) {
-                handler.addParameters(Arrays.asList(args).subList(1, args.length));
-            }
-
-            git4idea.commands.GitCommandResult result =
-                git4idea.commands.Git.getInstance().runCommand(handler);
-            if (result.success()) {
-                return result.getOutputAsJoinedString();
-            }
-            return "Error (exit " + result.getExitCode() + "): " + result.getErrorOutputAsJoinedString();
+            return PlatformApiCompat.runIdeGitCommand(project, args);
         }
     }
 }

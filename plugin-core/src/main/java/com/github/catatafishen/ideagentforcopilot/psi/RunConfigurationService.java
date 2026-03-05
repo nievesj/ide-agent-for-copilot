@@ -7,11 +7,11 @@ import com.intellij.execution.configurations.RunConfiguration;
 import com.intellij.execution.executors.DefaultRunExecutor;
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -124,14 +124,10 @@ public final class RunConfigurationService {
                 RunManager runManager = RunManager.getInstance(project);
 
                 // Find the configuration type
-                var configType = findConfigurationType(type);
+                var configType = PlatformApiCompat.findConfigurationType(type);
                 if (configType == null) {
-                    List<String> available = new ArrayList<>();
-                    for (var ct : com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()) {
-                        available.add(ct.getDisplayName());
-                    }
                     resultFuture.complete("Unknown configuration type: '" + type
-                        + "'. Available types: " + String.join(", ", available));
+                        + "'. Available types: " + String.join(", ", PlatformApiCompat.listConfigurationTypeNames()));
                     return;
                 }
 
@@ -298,14 +294,7 @@ public final class RunConfigurationService {
     }
 
     private com.intellij.execution.configurations.ConfigurationType findConfigurationType(String type) {
-        for (var ct : com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()) {
-            String displayName = ct.getDisplayName().toLowerCase();
-            if (displayName.equals(type) || displayName.contains(type)
-                || ct.getId().toLowerCase().contains(type)) {
-                return ct;
-            }
-        }
-        return null;
+        return PlatformApiCompat.findConfigurationType(type);
     }
 
     private void applyConfigProperties(RunConfiguration config, JsonObject args) {

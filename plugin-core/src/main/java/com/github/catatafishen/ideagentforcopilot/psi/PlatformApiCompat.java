@@ -38,6 +38,35 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Checks whether a plugin with the given ID is installed.
+     *
+     * <p><b>Why extracted:</b> {@code PluginManagerCore.isPluginInstalled(PluginId)} has a different
+     * method signature between IDE versions — in some builds the parameter is annotated with
+     * a {@code @NotNull} from a different annotations JAR, causing the IDE daemon to report
+     * "cannot be applied to (PluginId)" even though the types are identical. The Gradle build
+     * compiles without errors.</p>
+     */
+    static boolean isPluginInstalled(@NotNull String pluginId) {
+        return com.intellij.ide.plugins.PluginManagerCore.isPluginInstalled(
+            com.intellij.openapi.extensions.PluginId.getId(pluginId));
+    }
+
+    /**
+     * Retrieves the name of the next undo action for a given file editor.
+     *
+     * <p><b>Why extracted:</b> {@code UndoManager.getUndoActionNameAndDescription()} returns
+     * {@code Pair<String, String>}, but the IDE daemon sometimes fails to resolve the
+     * {@code .first} field on the returned {@code Pair} due to generic type annotation
+     * differences ({@code @ActionText String} vs plain {@code String}) between the dev IDE
+     * and the target SDK. The Gradle build compiles without errors.</p>
+     */
+    static @Nullable String getUndoActionName(
+        @NotNull com.intellij.openapi.command.undo.UndoManager undoManager,
+        @Nullable com.intellij.openapi.fileEditor.FileEditor fileEditor) {
+        return undoManager.getUndoActionNameAndDescription(fileEditor).first;
+    }
+
+    /**
      * Collects text from editor notification banners (e.g., "Some directories are not excluded").
      *
      * <p><b>Why extracted:</b> Three API calls on this path produce false-positive errors in the IDE:</p>
@@ -119,6 +148,17 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Typed version of Project.getService for use in non-reflective code.
+     * <p>
+     * False positive: same as {@link #getServiceByRawClass} — the IDE daemon resolves
+     * {@code Project.getService(Class<T>)} against its own platform JAR where the generic
+     * bounds differ. Gradle compiles cleanly.
+     */
+    public static <T> @NotNull T getService(@NotNull Project project, @NotNull Class<T> serviceClass) {
+        return project.getService(serviceClass);
+    }
+
+    /**
      * Creates a JCEF load handler that calls the given callback when the main frame finishes loading.
      *
      * <p><b>Why extracted:</b> {@code CefLoadHandlerAdapter} provides default implementations for all
@@ -176,5 +216,294 @@ public final class PlatformApiCompat {
                 .getMessageBus().connect(parentDisposable);
         conn.subscribe(com.intellij.ide.ui.LafManagerListener.TOPIC,
                 (com.intellij.ide.ui.LafManagerListener) source -> onLafChanged.run());
+    }
+
+    /**
+     * Navigates the VCS Log tool window to a specific commit by its full SHA hash.
+     *
+     * <p><b>Why extracted:</b> {@code com.intellij.vcs.log.Hash} and
+     * {@code com.intellij.vcs.log.impl.HashImpl} are resolved against the dev IDE's VCS plugin JAR,
+     * which may have different class metadata or {@code @NotNull} annotations than the target SDK.
+     * The IDE daemon reports "Unknown class: com.intellij.vcs.log.Hash" and cascading resolution
+     * failures on {@code showRevisionInMainLog}. The Gradle build compiles without errors.</p>
+     */
+    static void showRevisionInLog(@NotNull Project project, @NotNull String fullHash) {
+        var vcsHash = com.intellij.vcs.log.impl.HashImpl.build(fullHash);
+        com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, vcsHash);
+    }
+
+    /**
+     * Runs a git command through IntelliJ's Git4Idea infrastructure (GitLineHandler).
+     * Returns command output, or null to signal that the caller should fall back to ProcessBuilder.
+     *
+     * <p><b>Why extracted:</b> Multiple Git4Idea APIs produce false-positive errors:</p>
+     * <ul>
+     *   <li>{@code GitRepositoryManager.getRepositories()} — returns {@code @NotNull List} which the
+     *       IDE reports as incompatible with {@code List<GitRepository>} due to annotation differences.</li>
+     *   <li>{@code GitRepository.getRoot()} — cannot resolve due to cascading type failure.</li>
+     *   <li>{@code GitLineHandler.setSilent()}, {@code setStdoutSuppressed()}, {@code addParameters()} —
+     *       cannot resolve because the handler type is inferred from the unresolved repo root.</li>
+     *   <li>{@code Git.getInstance().runCommand()} — cascading from above.</li>
+     * </ul>
+     *
+     * <p>All methods exist and work correctly at runtime. The Gradle build compiles without errors.
+     * Isolated in this class so Git4Idea class loading is deferred until first use; if Git4Idea
+     * is disabled, the caller catches {@code NoClassDefFoundError} and falls back.</p>
+     */
+    static @Nullable String runIdeGitCommand(@NotNull Project project, @NotNull String[] args) {
+        if (args.length == 0) return null;
+
+        git4idea.commands.GitCommand command = IDE_GIT_COMMAND_MAP.get(args[0]);
+        if (command == null) return null;
+
+        java.util.List<git4idea.repo.GitRepository> repos =
+            git4idea.repo.GitRepositoryManager.getInstance(project).getRepositories();
+        if (repos.isEmpty()) return null;
+
+        git4idea.repo.GitRepository repo = repos.getFirst();
+        String basePath = project.getBasePath();
+        if (basePath != null && repos.size() > 1) {
+            for (git4idea.repo.GitRepository r : repos) {
+                if (r.getRoot().getPath().equals(basePath)) {
+                    repo = r;
+                    break;
+                }
+            }
+        }
+
+        git4idea.commands.GitLineHandler handler =
+            new git4idea.commands.GitLineHandler(project, repo.getRoot(), command);
+        handler.setSilent(true);
+        handler.setStdoutSuppressed(true);
+        if (args.length > 1) {
+            handler.addParameters(java.util.Arrays.asList(args).subList(1, args.length));
+        }
+
+        git4idea.commands.GitCommandResult result =
+            git4idea.commands.Git.getInstance().runCommand(handler);
+        if (result.success()) {
+            return result.getOutputAsJoinedString();
+        }
+        return "Error (exit " + result.getExitCode() + "): " + result.getErrorOutputAsJoinedString();
+    }
+
+    private static final java.util.Map<String, git4idea.commands.GitCommand> IDE_GIT_COMMAND_MAP = java.util.Map.ofEntries(
+        java.util.Map.entry("add", git4idea.commands.GitCommand.ADD),
+        java.util.Map.entry("blame", git4idea.commands.GitCommand.BLAME),
+        java.util.Map.entry("branch", git4idea.commands.GitCommand.BRANCH),
+        java.util.Map.entry("checkout", git4idea.commands.GitCommand.CHECKOUT),
+        java.util.Map.entry("cherry-pick", git4idea.commands.GitCommand.CHERRY_PICK),
+        java.util.Map.entry("commit", git4idea.commands.GitCommand.COMMIT),
+        java.util.Map.entry("config", git4idea.commands.GitCommand.CONFIG),
+        java.util.Map.entry("diff", git4idea.commands.GitCommand.DIFF),
+        java.util.Map.entry("fetch", git4idea.commands.GitCommand.FETCH),
+        java.util.Map.entry("log", git4idea.commands.GitCommand.LOG),
+        java.util.Map.entry("merge", git4idea.commands.GitCommand.MERGE),
+        java.util.Map.entry("pull", git4idea.commands.GitCommand.PULL),
+        java.util.Map.entry("push", git4idea.commands.GitCommand.PUSH),
+        java.util.Map.entry("rebase", git4idea.commands.GitCommand.REBASE),
+        java.util.Map.entry("remote", git4idea.commands.GitCommand.REMOTE),
+        java.util.Map.entry("reset", git4idea.commands.GitCommand.RESET),
+        java.util.Map.entry("restore", git4idea.commands.GitCommand.RESTORE),
+        java.util.Map.entry("rev-parse", git4idea.commands.GitCommand.REV_PARSE),
+        java.util.Map.entry("revert", git4idea.commands.GitCommand.REVERT),
+        java.util.Map.entry("show", git4idea.commands.GitCommand.SHOW),
+        java.util.Map.entry("stash", git4idea.commands.GitCommand.STASH),
+        java.util.Map.entry("status", git4idea.commands.GitCommand.STATUS),
+        java.util.Map.entry("switch", git4idea.commands.GitCommand.CHECKOUT),
+        java.util.Map.entry("tag", git4idea.commands.GitCommand.TAG)
+    );
+
+    /**
+     * Returns the plugin name and version string for our plugin, or null if unavailable.
+     *
+     * <p><b>Why extracted:</b> {@code PluginManagerCore.getPlugin(PluginId)} has the same
+     * annotation mismatch as {@code isPluginInstalled} — the parameter type differs between
+     * IDE versions. Cascading: {@code descriptor.getName()} and {@code descriptor.getVersion()}
+     * fail because the return type of {@code getPlugin} is unresolved.</p>
+     */
+    static @Nullable String getPluginVersionInfo(@NotNull String pluginId) {
+        var descriptor = com.intellij.ide.plugins.PluginManagerCore.getPlugin(
+            com.intellij.openapi.extensions.PluginId.getId(pluginId));
+        if (descriptor == null) return null;
+        return descriptor.getName() + " v" + descriptor.getVersion();
+    }
+
+    /**
+     * Adds a source folder to a content entry with the given type.
+     *
+     * <p><b>Why extracted:</b> {@code ContentEntry.addSourceFolder(VirtualFile, JpsModuleSourceRootType)}
+     * cannot be resolved because the JPS model classes ({@code JavaSourceRootType},
+     * {@code JavaResourceRootType}, {@code JavaSourceRootProperties}) are bundled in a separate
+     * JAR whose version differs between the dev IDE and target SDK. The Gradle build resolves
+     * them correctly from the configured platform dependency.</p>
+     */
+    static void addSourceFolder(@NotNull com.intellij.openapi.roots.ContentEntry entry,
+                                @NotNull com.intellij.openapi.vfs.VirtualFile dir,
+                                @NotNull String type) {
+        boolean isTest = type.startsWith("test_");
+        if (type.contains("resources")) {
+            var rootType = isTest
+                ? org.jetbrains.jps.model.java.JavaResourceRootType.TEST_RESOURCE
+                : org.jetbrains.jps.model.java.JavaResourceRootType.RESOURCE;
+            entry.addSourceFolder(dir, rootType);
+        } else if ("generated_sources".equals(type)) {
+            var rootType = org.jetbrains.jps.model.java.JavaSourceRootType.SOURCE;
+            var props = org.jetbrains.jps.model.java.JpsJavaExtensionService.getInstance()
+                .createSourceRootProperties("", true);
+            entry.addSourceFolder(dir, rootType, props);
+        } else if (isTest) {
+            entry.addSourceFolder(dir, org.jetbrains.jps.model.java.JavaSourceRootType.TEST_SOURCE);
+        } else {
+            entry.addSourceFolder(dir, org.jetbrains.jps.model.java.JavaSourceRootType.SOURCE);
+        }
+    }
+
+    /**
+     * Lists available SDK types with their suggested entries.
+     *
+     * <p><b>Why extracted:</b> {@code SdkType.EP_NAME.getExtensionList()} cannot be resolved
+     * because the extension point's generic type differs between IDE versions. Cascading:
+     * {@code sdkType.getName()}, {@code getPresentableName()}, {@code collectSdkEntries()},
+     * and the returned entry's {@code homePath()}/{@code versionString()} all fail.
+     * The Gradle build compiles without errors.</p>
+     */
+    static @NotNull String listSdkTypes(@NotNull Project project) {
+        var sb = new StringBuilder();
+        var sdkTypes = com.intellij.openapi.projectRoots.SdkType.EP_NAME.getExtensionList();
+        sb.append("\nAvailable SDK types:\n");
+        for (var sdkType : sdkTypes) {
+            sb.append("  - ").append(sdkType.getName()).append(" (").append(sdkType.getPresentableName()).append(")\n");
+            var entries = sdkType.collectSdkEntries(project);
+            for (var entry : entries) {
+                sb.append("    suggested: ").append(entry.homePath());
+                if (entry.versionString() != null) {
+                    sb.append(" (").append(entry.versionString()).append(")");
+                }
+                sb.append("\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Finds an SdkType by name (case-insensitive), or null if not found.
+     *
+     * <p><b>Why extracted:</b> Same {@code SdkType.EP_NAME.getExtensionList()} resolution issue
+     * as {@link #listSdkTypes}.</p>
+     */
+    static @Nullable com.intellij.openapi.projectRoots.SdkType findSdkTypeByName(@NotNull String name) {
+        var sdkTypes = com.intellij.openapi.projectRoots.SdkType.EP_NAME.getExtensionList();
+        for (var type : sdkTypes) {
+            if (type.getName().equalsIgnoreCase(name) || type.getPresentableName().equalsIgnoreCase(name)) {
+                return type;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Executes a {@link Runnable} inside a {@code WriteAction.runAndWait} block.
+     *
+     * <p><b>Why extracted:</b> {@code WriteAction.runAndWait(ThrowableRunnable)} is not recognized
+     * as accepting a functional interface lambda by the IDE daemon, because the
+     * {@code @NotNull ThrowableRunnable<E>} annotation layout differs between versions. The IDE
+     * reports "ThrowableRunnable is not a functional interface". Wrapping the call here avoids
+     * the false positive in calling code.</p>
+     */
+    @SuppressWarnings("unchecked")
+    static void writeActionRunAndWait(@NotNull Runnable action) throws Exception {
+        com.intellij.openapi.application.WriteAction.runAndWait(
+            (com.intellij.util.ThrowableRunnable<Exception>) action::run);
+    }
+
+    /**
+     * Returns all registered configuration type display names.
+     *
+     * <p><b>Why extracted:</b> {@code ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()}
+     * cannot be resolved because the extension point generic differs between IDE versions.
+     * Cascading: {@code getDisplayName()} fails on the unresolved type.</p>
+     */
+    static @NotNull java.util.List<String> listConfigurationTypeNames() {
+        var result = new java.util.ArrayList<String>();
+        for (var ct : com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()) {
+            result.add(ct.getDisplayName());
+        }
+        return result;
+    }
+
+    /**
+     * Finds a ConfigurationType by display name or ID (case-insensitive partial match).
+     *
+     * <p><b>Why extracted:</b> Same {@code CONFIGURATION_TYPE_EP.getExtensionList()} resolution
+     * issue as {@link #listConfigurationTypeNames}. Additionally, {@code ct.getId()} cannot
+     * be resolved due to the cascading type failure.</p>
+     */
+    static @Nullable com.intellij.execution.configurations.ConfigurationType findConfigurationType(@NotNull String type) {
+        for (var ct : com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()) {
+            String displayName = ct.getDisplayName().toLowerCase();
+            if (displayName.equals(type) || displayName.contains(type)
+                || ct.getId().toLowerCase().contains(type)) {
+                return ct;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Returns the classloader for a plugin by its ID, or null if the plugin is not installed.
+     *
+     * <p><b>Why extracted:</b> Same {@code PluginManagerCore.getPlugin(PluginId)} annotation
+     * mismatch as {@link #getPluginVersionInfo}. Additionally, {@code descriptor.getPluginClassLoader()}
+     * cannot be resolved because the return type of {@code getPlugin} is unresolved.</p>
+     */
+    static @Nullable ClassLoader getPluginClassLoader(@NotNull String pluginId) {
+        var descriptor = com.intellij.ide.plugins.PluginManagerCore.getPlugin(
+            com.intellij.openapi.extensions.PluginId.getId(pluginId));
+        return descriptor != null ? descriptor.getPluginClassLoader() : null;
+    }
+
+    /**
+     * Searches for a ConfigurationType by flexible matching on ID and display name.
+     * <p>
+     * False positive: {@code ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()} fails
+     * because the IDE resolves the extension point generic differently than the target SDK.
+     * Methods on the returned objects ({@code getId()}, {@code getDisplayName()}) cascade-fail.
+     * Gradle compiles cleanly.
+     *
+     * @param idOrNameSubstring case-insensitive substring to match against ID or display name
+     * @return the matching ConfigurationType, or null if not found
+     */
+    static com.intellij.execution.configurations.ConfigurationType findConfigurationTypeBySearch(
+            String idOrNameSubstring) {
+        String lowerSearch = idOrNameSubstring.toLowerCase();
+        for (var ct : com.intellij.execution.configurations.ConfigurationType
+                .CONFIGURATION_TYPE_EP.getExtensionList()) {
+            if (ct.getId().toLowerCase().contains(lowerSearch)
+                || ct.getDisplayName().toLowerCase().contains(lowerSearch)) {
+                return ct;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Subscribes an ExecutionListener to the project message bus and returns a disconnect handle.
+     * <p>
+     * False positive: {@code project.getMessageBus().connect()} fails because the IDE resolves
+     * MessageBus from its own platform JAR where the generic bounds on {@code connect()} differ
+     * from the target SDK. The returned connection's {@code subscribe()} and {@code disconnect()}
+     * cascade-fail for the same reason. Gradle compiles cleanly.
+     *
+     * @param project  the project to subscribe on
+     * @param listener the execution listener
+     * @return a Runnable that disconnects the subscription when called
+     */
+    static Runnable subscribeExecutionListener(
+            com.intellij.openapi.project.Project project,
+            com.intellij.execution.ExecutionListener listener) {
+        var connection = project.getMessageBus().connect();
+        connection.subscribe(com.intellij.execution.ExecutionManager.EXECUTION_TOPIC, listener);
+        return connection::disconnect;
     }
 }

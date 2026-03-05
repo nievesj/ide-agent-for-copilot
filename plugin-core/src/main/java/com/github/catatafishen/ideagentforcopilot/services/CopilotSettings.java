@@ -25,6 +25,7 @@ public final class CopilotSettings {
     public static void setActiveAgentLabel(@Nullable String label) {
         activeAgentLabel = label;
     }
+
     private static final String KEY_SESSION_MODE = "copilot.sessionMode";
     private static final String KEY_MONTHLY_REQUESTS = "copilot.monthlyRequests";
     private static final String KEY_MONTHLY_COST = "copilot.monthlyCost";

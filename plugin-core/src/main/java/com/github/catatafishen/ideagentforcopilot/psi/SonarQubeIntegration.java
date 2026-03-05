@@ -1,10 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
-import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 
@@ -43,8 +41,7 @@ final class SonarQubeIntegration {
     }
 
     private static ClassLoader getSonarLintClassLoader() {
-        var descriptor = PluginManagerCore.getPlugin(PluginId.getId(SONAR_PLUGIN_ID));
-        return descriptor != null ? descriptor.getPluginClassLoader() : null;
+        return PlatformApiCompat.getPluginClassLoader(SONAR_PLUGIN_ID);
     }
 
     private static Class<?> loadSonarClass(String className) throws ClassNotFoundException {
@@ -54,13 +51,13 @@ final class SonarQubeIntegration {
     }
 
     static boolean isInstalled() {
-        return PluginManagerCore.isPluginInstalled(PluginId.getId(SONAR_PLUGIN_ID));
+        return PlatformApiCompat.isPluginInstalled(SONAR_PLUGIN_ID);
     }
 
     private boolean isAnalysisRunning() {
         try {
             Class<?> trackerClass = loadSonarClass("org.sonarlint.intellij.analysis.RunningAnalysesTracker");
-            Object tracker = project.getService(trackerClass);
+            Object tracker = PlatformApiCompat.getServiceByRawClass(project, trackerClass);
             if (tracker != null) {
                 Method isEmptyMethod = trackerClass.getMethod("isEmpty");
                 return !(boolean) isEmptyMethod.invoke(tracker);
@@ -151,7 +148,7 @@ final class SonarQubeIntegration {
     private List<String> waitForNewResults(String basePath, CompletableFuture<Boolean> triggerResult) {
         try {
             Class<?> trackerClass = loadSonarClass("org.sonarlint.intellij.analysis.RunningAnalysesTracker");
-            Object tracker = project.getService(trackerClass);
+            Object tracker = PlatformApiCompat.getServiceByRawClass(project, trackerClass);
             Method isEmptyMethod = trackerClass.getMethod("isEmpty");
 
             if (tracker != null) {
@@ -290,7 +287,7 @@ final class SonarQubeIntegration {
         List<String> results = new ArrayList<>();
         try {
             Class<?> reportTabManagerClass = loadSonarClass("org.sonarlint.intellij.ui.report.ReportTabManager");
-            Object reportTabManager = project.getService(reportTabManagerClass);
+            Object reportTabManager = PlatformApiCompat.getServiceByRawClass(project, reportTabManagerClass);
             if (reportTabManager == null) {
                 LOG.info("ReportTabManager service not available");
                 return results;
@@ -407,7 +404,7 @@ final class SonarQubeIntegration {
         List<String> results = new ArrayList<>();
         try {
             Class<?> submitterClass = loadSonarClass("org.sonarlint.intellij.analysis.AnalysisSubmitter");
-            Object submitter = project.getService(submitterClass);
+            Object submitter = PlatformApiCompat.getServiceByRawClass(project, submitterClass);
             if (submitter == null) return results;
 
             Field holderField = submitterClass.getDeclaredField("onTheFlyFindingsHolder");
