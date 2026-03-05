@@ -13,7 +13,7 @@ formatting, test execution, git operations, and file operations.
 ### What Works
 
 - Multi-turn conversation with GitHub Copilot agent
-- 69 IntelliJ-native MCP tools (symbol search, file outline, references, test runner, code formatting, git,
+- 80 IntelliJ-native MCP tools (symbol search, file outline, references, test runner, code formatting, git,
   infrastructure, terminal, etc.)
 - Built-in file operations redirected through IntelliJ Document API (undo support, no external file conflicts)
 - Auto-format (optimize imports + reformat code) after every write
@@ -28,7 +28,7 @@ formatting, test execution, git operations, and file operations.
 ┌──────────────────────────────────────────────────────────────┐
 │                 IntelliJ IDEA Plugin (Java 21)               │
 │  ┌────────────────┐  ┌──────────────────────────────────────┐│
-│  │   Tool Window   │  │          CopilotAcpClient            ││
+│  │   Tool Window   │  │          AcpClient                   ││
 │  │    (Swing)      │  │  - JSON-RPC 2.0 over stdin/stdout   ││
 │  │                 │  │  - Permission handler (deny edits)   ││
 │  │  - Chat console │  │  - Retry with MCP tool instruction   ││
@@ -40,7 +40,7 @@ formatting, test execution, git operations, and file operations.
 │  ┌──────────────────┐    ┌───────────────────────┐            │
 │  │ PsiBridgeService │◄───│  Copilot CLI (--acp)  │            │
 │  │  (HTTP server)   │    │                       │            │
-│  │  69 MCP tools    │    │  - Agent reasoning    │            │
+│  │  80 MCP tools    │    │  - Agent reasoning    │            │
 │  │  - read/write    │    │  - Tool selection     │            │
 │  │  - format        │    │  - Permission reqs    │            │
 │  │  - search        │    └───────────┬───────────┘            │
@@ -72,28 +72,28 @@ intellij-copilot-plugin/
 │   └── src/main/java/com/github/catatafishen/ideagentforcopilot/
 │       ├── ui/           # Tool Window (Swing)
 │       ├── services/     # CopilotService, CopilotSettings
-│       ├── bridge/       # CopilotAcpClient (ACP protocol)
-│       └── psi/          # PsiBridgeService (69 MCP tools)
+│       ├── bridge/       # AcpClient (ACP protocol)
+│       └── psi/          # PsiBridgeService (80 MCP tools)
 ├── mcp-server/           # MCP stdio server (bundled JAR)
 │   └── src/main/java/com/github/copilot/mcp/
 │       └── McpServer.java
 └── integration-tests/    # (placeholder)
 ```
 
-## MCP Tools (69 tools)
+## MCP Tools (80 tools)
 
 | Category            | Tools                                                                                                                                                                                                                   |
 |---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Code Navigation** | `search_symbols`, `get_file_outline`, `get_class_outline`, `find_references`, `list_project_files`, `search_text`                                                                                                       |
-| **File I/O**        | `intellij_read_file`, `intellij_write_file`, `create_file`, `delete_file`, `undo`, `reload_from_disk`                                                                                                                   |
-| **Code Quality**    | `get_problems`, `get_highlights`, `run_inspections`, `apply_quickfix`, `suppress_inspection`, `optimize_imports`, `format_code`, `add_to_dictionary`, `get_compilation_errors`, `run_qodana`, `run_sonarqube_analysis`* |
-| **Refactoring**     | `refactor`, `go_to_declaration`, `get_type_hierarchy`, `get_documentation`                                                                                                                                              |
-| **Testing**         | `list_tests`, `run_tests`, `get_coverage`                                                                                                                                                                               |
-| **Project**         | `get_project_info`, `build_project`, `get_indexing_status`, `download_sources`, `mark_directory`, `list_run_configurations`, `run_configuration`, `create_run_configuration`, `edit_run_configuration`                  |
-| **Git**             | `git_status`, `git_diff`, `git_log`, `git_blame`, `git_commit`, `git_stage`, `git_unstage`, `git_branch`, `git_stash`, `git_show`, `git_push`, `git_remote`                                                             |
-| **Infrastructure**  | `http_request`, `run_command`, `read_ide_log`, `get_notifications`, `read_run_output`                                                                                                                                   |
-| **Terminal**        | `run_in_terminal`, `write_terminal_input`, `read_terminal_output`                                                                                                                                                       |
-| **Editor**          | `open_in_editor`, `show_diff`, `create_scratch_file`, `list_scratch_files`, `get_active_file`, `get_open_editors`, `get_chat_html`, `list_themes`, `set_theme`                                                          |
+| **Code Navigation** | `search_symbols`, `get_file_outline`, `get_class_outline`, `find_references`, `list_project_files`, `search_text`                                                                                                                                                             |
+| **File I/O**        | `intellij_read_file`, `intellij_write_file`, `create_file`, `delete_file`, `undo`, `reload_from_disk`                                                                                                                                                                         |
+| **Code Quality**    | `get_problems`, `get_highlights`, `run_inspections`, `apply_quickfix`, `suppress_inspection`, `optimize_imports`, `format_code`, `add_to_dictionary`, `get_compilation_errors`, `run_qodana`, `run_sonarqube_analysis`*                                                        |
+| **Refactoring**     | `refactor`, `go_to_declaration`, `get_type_hierarchy`, `get_documentation`                                                                                                                                                                                                     |
+| **Testing**         | `list_tests`, `run_tests`, `get_coverage`                                                                                                                                                                                                                                      |
+| **Project**         | `get_project_info`, `build_project`, `get_indexing_status`, `download_sources`, `mark_directory`, `edit_project_structure`, `list_run_configurations`, `run_configuration`, `create_run_configuration`, `edit_run_configuration`, `delete_run_configuration`                    |
+| **Git**             | `git_status`, `git_diff`, `git_log`, `git_blame`, `git_commit`, `git_stage`, `git_unstage`, `git_branch`, `git_stash`, `git_revert`, `git_show`, `git_push`, `git_remote`, `git_fetch`, `git_pull`, `git_merge`, `git_rebase`, `git_cherry_pick`, `git_tag`, `git_reset`     |
+| **Infrastructure**  | `http_request`, `run_command`, `read_ide_log`, `get_notifications`, `read_run_output`                                                                                                                                                                                          |
+| **Terminal**        | `run_in_terminal`, `write_terminal_input`, `read_terminal_output`                                                                                                                                                                                                              |
+| **Editor**          | `open_in_editor`, `show_diff`, `create_scratch_file`, `list_scratch_files`, `run_scratch_file`, `get_active_file`, `get_open_editors`, `search_conversation_history`, `get_chat_html`, `list_themes`, `set_theme`                                                              |
 
 *\* `run_sonarqube_analysis` only available when SonarLint plugin is installed.*
 

@@ -90,16 +90,12 @@ Currently only Copilot CLI is implemented (`CopilotAgentConfig`), but the archit
 
 ### Agent Capabilities
 
-- [ ] Terminal support (ACP terminal capability)
 - [ ] Redirect built-in file reads through IntelliJ (read from editor buffer)
-- [ ] Git integration (commit, branch, diff tools)
 
 ### Quality
 
 - [ ] Cross-platform testing (macOS, Linux)
 - [ ] E2E integration tests with mock Copilot agent
-- [ ] Dynamic plugin reload support
-- [ ] CI/CD pipeline
 
 ---
 
