@@ -29,6 +29,7 @@ internal object ToolRenderers {
         "git_branch" to GitBranchRenderer,
         "git_tag" to GitTagRenderer,
         "git_stash" to GitStashRenderer,
+        "git_stage" to GitStageRenderer,
         // Build & test
         "build_project" to BuildResultRenderer,
         "run_tests" to TestResultRenderer,

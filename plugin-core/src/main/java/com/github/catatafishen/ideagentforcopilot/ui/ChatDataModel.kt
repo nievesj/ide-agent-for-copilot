@@ -154,7 +154,7 @@ internal val TOOL_DISPLAY_INFO = mapOf(
     "get_highlights" to ToolInfo("Get Highlights", "Get cached editor highlights for open files"),
     "run_inspections" to ToolInfo("Run Inspections", "Run the full IntelliJ inspection engine on the project"),
     "get_compilation_errors" to ToolInfo(
-        "Compilation Errors",
+        "Check Compilation",
         "Fast compilation error check using cached daemon results"
     ),
     "apply_quickfix" to ToolInfo("Apply Quick Fix", "Apply an IntelliJ quick-fix to resolve an issue"),

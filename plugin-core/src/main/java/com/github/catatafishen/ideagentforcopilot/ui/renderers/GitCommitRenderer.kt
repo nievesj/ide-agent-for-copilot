@@ -69,21 +69,22 @@ internal object GitCommitRenderer : ToolResultRenderer {
 
         return when {
             createMatch != null -> {
-                val path = esc(createMatch.groupValues[1].trim())
-                "<div class='git-file-entry'><span class='git-file-badge git-file-add'>A</span> <span class='git-file-path'>$path</span></div>"
+                val raw = createMatch.groupValues[1].trim()
+                val path = esc(raw)
+                "<div class='git-file-entry'><span class='git-file-badge git-file-add'>A</span> <a href='openfile://$path' class='git-file-path'>$path</a></div>"
             }
             deleteMatch != null -> {
-                val path = esc(deleteMatch.groupValues[1].trim())
+                val raw = deleteMatch.groupValues[1].trim()
+                val path = esc(raw)
                 "<div class='git-file-entry'><span class='git-file-badge git-file-del'>D</span> <span class='git-file-path'>$path</span></div>"
             }
             renameMatch != null -> {
-                val from = esc(renameMatch.groupValues[1].trim())
                 val to = esc(renameMatch.groupValues[2].trim())
-                "<div class='git-file-entry'><span class='git-file-badge git-file-rename'>R</span> <span class='git-file-path'>$from → $to</span></div>"
+                "<div class='git-file-entry'><span class='git-file-badge git-file-rename'>R</span> <a href='openfile://$to' class='git-file-path'>${esc(renameMatch.groupValues[1].trim())} → $to</a></div>"
             }
             else -> {
                 val path = esc(line.trim())
-                "<div class='git-file-entry'><span class='git-file-badge git-file-mod'>M</span> <span class='git-file-path'>$path</span></div>"
+                "<div class='git-file-entry'><span class='git-file-badge git-file-mod'>M</span> <a href='openfile://$path' class='git-file-path'>$path</a></div>"
             }
         }
     }

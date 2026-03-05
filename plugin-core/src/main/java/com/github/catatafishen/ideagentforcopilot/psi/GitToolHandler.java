@@ -254,19 +254,41 @@ final class GitToolHandler {
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("add");
 
+        boolean stageAll = false;
+        List<String> stagedPaths = new ArrayList<>();
+
         if (args.has("all") && args.get("all").getAsBoolean()) {
             gitArgs.add(GIT_FLAG_ALL);
+            stageAll = true;
         } else if (args.has(JSON_PATHS)) {
             for (var elem : args.getAsJsonArray(JSON_PATHS)) {
-                gitArgs.add(elem.getAsString());
+                String p = elem.getAsString();
+                gitArgs.add(p);
+                stagedPaths.add(p);
             }
         } else if (args.has("path")) {
-            gitArgs.add(args.get("path").getAsString());
+            String p = args.get("path").getAsString();
+            gitArgs.add(p);
+            stagedPaths.add(p);
         } else {
             return "Error: 'path', 'paths', or 'all' parameter is required";
         }
 
-        return runGit(gitArgs.toArray(new String[0]));
+        String result = runGit(gitArgs.toArray(new String[0]));
+
+        // On success, git add produces no output — provide descriptive result
+        if (result.isEmpty() || result.isBlank()) {
+            if (stageAll) {
+                String cached = runGit("diff", "--cached", "--name-status");
+                if (cached.isBlank()) return "✓ Nothing to stage";
+                return "✓ Staged all changes:\n" + cached.trim();
+            }
+            var sb = new StringBuilder("✓ Staged ");
+            sb.append(stagedPaths.size()).append(stagedPaths.size() == 1 ? " file" : " files").append(":\n");
+            for (String p : stagedPaths) sb.append(p).append('\n');
+            return sb.toString().trim();
+        }
+        return result;
     }
 
     String gitUnstage(JsonObject args) throws Exception {
