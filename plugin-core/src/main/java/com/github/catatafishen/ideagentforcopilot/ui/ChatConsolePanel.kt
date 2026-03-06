@@ -10,6 +10,7 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
@@ -315,11 +316,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun updateToolCall(id: String, status: String, details: String?) {
         val did = domId(id)
-        val baseName = toolCallNames[did]
         toolCallEntries[did]?.let { it.result = details; it.status = status }
-        val resultHtml = renderToolResult(baseName, status, details)
         val failed = if (status == "failed") "failed" else "completed"
-        executeJs("(function(){ChatController.updateToolCall('$did','$failed',$resultHtml);})()")
+        executeJs("ChatController.updateToolCall('$did','$failed','$failed')")
         toolJustCompleted = true
     }
 
@@ -340,15 +339,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     /** Update a sub-agent internal tool call (no segment break). */
     override fun updateSubAgentToolCall(toolId: String, status: String, details: String?) {
         val did = domId(toolId)
-        val resultHtml = if (!details.isNullOrBlank()) {
-            val encoded =
-                b64("<div class='tool-result-label'>Output:</div><pre class='tool-output'><code>${esc(details)}</code></pre>")
-            "b64('$encoded')"
-        } else {
-            if (status == "completed") "'Completed'" else "'<span style=\"color:var(--error)\">✖ Failed</span>'"
-        }
         val failed = if (status == "failed") "failed" else "completed"
-        executeJs("(function(){ChatController.updateToolCall('$did','$failed',$resultHtml);})()")
+        executeJs("ChatController.updateToolCall('$did','$failed','$failed')")
     }
 
     override fun addSubAgentEntry(
@@ -659,11 +651,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 toolCallEntries[did] = EntryData.ToolCall(title, args, kind, result, status)
                 val hasCustomRenderer = ToolRenderers.hasRenderer(baseName)
                 val paramsJson = if (!args.isNullOrBlank() && !hasCustomRenderer) escJs(args) else ""
-                val resultHtml = renderToolResult(baseName, status, result)
                 executeJs(
                     "ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','${
                         escJs(kind)
-                    }');ChatController.updateToolCall('$did','$status',$resultHtml)"
+                    }');ChatController.updateToolCall('$did','$status','$status')"
                 )
             }
 
@@ -806,13 +797,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                                 val status = e["status"]?.asString ?: "completed"
                                 toolCallNames[id] = baseName
                                 toolCallEntries[id] = EntryData.ToolCall(title, args, kind, result, status)
-                                val resultHtml = renderToolResultHtml(baseName, status, result)
                                 metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(kind)}' data-chip-for='$id'></tool-chip>")
                                 detailsContent.append("<tool-section id='$id' title='${esc(label)}'")
                                 if (args != null && !ToolRenderers.hasRenderer(baseName)) detailsContent.append(
                                     " params='${esc(args)}'"
                                 )
-                                detailsContent.append("><div class='tool-params'></div><div class='tool-result'>$resultHtml</div></tool-section>")
+                                detailsContent.append("><div class='tool-params'></div><div class='tool-result'>$status</div></tool-section>")
                             }
 
                             "text" -> {
@@ -1069,29 +1059,22 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         null
     }
 
-    // ── Custom tool result renderers ─────────────────────────────
+    // ── Tool result panel rendering ─────────────────────────────
 
     /**
-     * Dispatch to a custom renderer or fall back to the default pre/code block.
-     * Returns a JS expression that evaluates to an HTML string.
+     * Creates a Swing component for the tool result, dispatching to a custom renderer
+     * or falling back to a monospace code panel.
      */
-    private fun renderToolResult(baseName: String?, status: String, details: String?): String {
-        val html = renderToolResultHtml(baseName, status, details)
-        return if (details.isNullOrBlank()) "'$html'" else "b64('${b64(html)}')"
-    }
-
-    /** Returns raw HTML for a tool result, applying custom renderers when available. */
-    private fun renderToolResultHtml(baseName: String?, status: String?, details: String?): String {
+    private fun renderToolResultPanel(baseName: String?, status: String?, details: String?): JComponent {
         if (details.isNullOrBlank()) {
-            return if (status != "failed") "Completed"
-            else "<span style=\"color:var(--error)\">✖ Failed</span>"
+            return JBLabel(if (status != "failed") "Completed" else "✖ Failed")
         }
         if (status != "failed" && baseName != null) {
             val renderer = ToolRenderers.get(baseName)
-            val custom = renderer?.render(details)
-            if (custom != null) return custom
+            val panel = renderer?.render(details)
+            if (panel != null) return panel
         }
-        return "<pre class='tool-output'><code>${esc(details)}</code></pre>"
+        return ToolRenderers.codePanel(details)
     }
 
     // ── Helpers ────────────────────────────────────────────────────
@@ -1305,12 +1288,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val baseName = toolCallNames[toolDomId]
         val chipTitle = toolChipTitle(baseName, entry?.arguments)
         val kind = entry?.kind ?: "other"
-        val resultHtml = renderToolResultHtml(baseName, entry?.status, entry?.result)
-        val paramsHtml = if (!entry?.arguments.isNullOrBlank()) {
-            "<pre class='tool-params-code'><code>${esc(prettyJson(entry!!.arguments!!))}</code></pre>"
+        val resultPanel = renderToolResultPanel(baseName, entry?.status, entry?.result)
+        val paramsPanel = if (!entry?.arguments.isNullOrBlank()) {
+            ToolRenderers.codePanel(prettyJson(entry.arguments))
         } else null
         SwingUtilities.invokeLater {
-            ToolCallPopup.show(project, chipTitle, kind, paramsHtml, resultHtml)
+            ToolCallPopup.show(project, chipTitle, kind, paramsPanel, resultPanel)
         }
     }
 
