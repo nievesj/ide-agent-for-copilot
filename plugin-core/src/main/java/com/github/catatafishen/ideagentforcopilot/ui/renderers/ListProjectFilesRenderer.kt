@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders list_project_files output as a compact file listing grouped by directory,
@@ -19,7 +20,7 @@ internal object ListProjectFilesRenderer : ToolResultRenderer {
     private val COUNT_HEADER = Regex("""^(\d+)\s+files?:?\s*$""")
     private val FILE_ENTRY = Regex("""^(.+?)\s+\[([^\]]+)]$""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.size < 2) return null
 
@@ -56,7 +57,7 @@ internal object ListProjectFilesRenderer : ToolResultRenderer {
             }
         }
         sb.append("</div></div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 
     private data class FileEntry(val dir: String, val name: String, val tags: List<String>)

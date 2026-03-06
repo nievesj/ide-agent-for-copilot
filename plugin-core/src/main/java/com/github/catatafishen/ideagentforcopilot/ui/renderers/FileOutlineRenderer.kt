@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders file outline results as a structured list with type badges
@@ -20,7 +21,7 @@ internal object FileOutlineRenderer : ToolResultRenderer {
     private val ENTRY_PATTERN = Regex("""^\s*(\d+):\s+(\w+)\s+(.+)$""")
     private val HEADER_PATTERN = Regex("""^Outline of (.+):$""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
@@ -51,7 +52,7 @@ internal object FileOutlineRenderer : ToolResultRenderer {
             sb.append("</div>")
         }
         sb.append("</div></div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 
     private fun typeBadge(type: String): Pair<String, String> = when (type.lowercase()) {

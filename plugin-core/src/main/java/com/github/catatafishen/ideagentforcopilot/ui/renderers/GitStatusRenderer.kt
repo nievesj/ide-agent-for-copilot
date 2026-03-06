@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders git status output as a structured card with branch header,
@@ -15,7 +16,7 @@ internal object GitStatusRenderer : ToolResultRenderer {
         val conflicted: List<String>,
     )
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
@@ -39,7 +40,7 @@ internal object GitStatusRenderer : ToolResultRenderer {
         }
 
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 
     private fun appendBranchHeader(sb: StringBuilder, lines: List<String>) {

@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders get_type_hierarchy output as a visual class hierarchy tree
@@ -26,7 +27,7 @@ internal object TypeHierarchyRenderer : ToolResultRenderer {
     private val TYPE_ENTRY = Regex("""^\s+(class|interface|enum|annotation)\s+(\S+)(?:\s+\[(.+)])?""")
     private val NONE_FOUND = Regex("""^\s+\(none found""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
@@ -91,7 +92,7 @@ internal object TypeHierarchyRenderer : ToolResultRenderer {
         }
 
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 
     private data class TypeEntry(val kind: String, val name: String, val location: String?)

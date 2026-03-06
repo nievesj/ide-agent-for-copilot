@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders search results (text search, symbol search, find references) as
@@ -19,13 +20,13 @@ internal object SearchResultRenderer : ToolResultRenderer {
     private val COUNT_HEADER = Regex("""^(\d+)\s+(matches|results?|references?|symbols?)\b""", RegexOption.IGNORE_CASE)
     private val NO_MATCHES = Regex("""^No\s+(matches|results|references|symbols)\s+found""", RegexOption.IGNORE_CASE)
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
         // "No matches found" case
         if (NO_MATCHES.containsMatchIn(lines.first())) {
-            return renderEmpty(lines.first())
+            return ToolRenderers.htmlPanel(renderEmpty(lines.first()))
         }
 
         val results = mutableListOf<SearchResult>()
@@ -63,7 +64,7 @@ internal object SearchResultRenderer : ToolResultRenderer {
         appendHeader(sb, headerLine, results.size)
         appendGroupedResults(sb, results)
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 
     private data class SearchResult(

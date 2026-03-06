@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders git stage results as a card with staged file list and clickable paths.
@@ -15,7 +16,7 @@ internal object GitStageRenderer : ToolResultRenderer {
 
     private val SUCCESS_PATTERN = Regex("""^✓\s+(.+)""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
@@ -35,7 +36,7 @@ internal object GitStageRenderer : ToolResultRenderer {
         }
 
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 
     private fun renderFileEntry(line: String): String {

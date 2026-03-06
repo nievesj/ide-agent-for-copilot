@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders go_to_declaration output as a compact card with the file path,
@@ -25,7 +26,7 @@ internal object GoToDeclarationRenderer : ToolResultRenderer {
     private val LINE_NUM = Regex("""^\s*Line:\s+(\d+)""")
     private val CONTEXT_LINE = Regex("""^\s*(→\s*)?(\d+):\s*(.*)$""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
@@ -83,6 +84,6 @@ internal object GoToDeclarationRenderer : ToolResultRenderer {
         }
 
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 }

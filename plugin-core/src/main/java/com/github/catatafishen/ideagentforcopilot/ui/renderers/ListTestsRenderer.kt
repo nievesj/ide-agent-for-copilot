@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders list_tests output as grouped test classes with method counts.
@@ -17,15 +18,15 @@ internal object ListTestsRenderer : ToolResultRenderer {
     private val ENTRY_PATTERN = Regex("""^(\S+)\.(\S+)\s+\((.+?):(\d+)\)$""")
     private val COUNT_HEADER = Regex("""^(\d+)\s+tests?:""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
         if (lines.first() == "No tests found") {
-            return "<div class='search-result'><div class='search-header search-empty'>" +
+            return ToolRenderers.htmlPanel("<div class='search-result'><div class='search-header search-empty'>" +
                     "<span class='search-icon'>∅</span>" +
                     "<span class='search-status'>No tests found</span>" +
-                    "</div></div>"
+                    "</div></div>")
         }
 
         val entries = lines.mapNotNull { ENTRY_PATTERN.find(it.trim()) }
@@ -65,6 +66,6 @@ internal object ListTestsRenderer : ToolResultRenderer {
             sb.append("</div></div>")
         }
         sb.append("</div></div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 }

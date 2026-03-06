@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders run_command output with a status header (success/fail),
@@ -26,7 +27,7 @@ internal object RunCommandRenderer : ToolResultRenderer {
     private val TIMEOUT_HEADER = Regex("""^Command timed out after (\d+) seconds""")
     private val PAGINATION_NOTE = Regex("""\(showing last \d+ chars.*\)""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
@@ -75,6 +76,6 @@ internal object RunCommandRenderer : ToolResultRenderer {
         }
 
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 }

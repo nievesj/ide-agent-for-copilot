@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders replace_symbol_body / insert_before_symbol / insert_after_symbol
@@ -20,15 +21,15 @@ internal object ReplaceSymbolRenderer : ToolResultRenderer {
         """^Inserted (\d+) lines? (before|after) (.+?) in (.+)$"""
     )
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val text = output.trimEnd()
         val firstLine = text.lines().first()
 
         val replacedMatch = REPLACED.find(firstLine)
-        if (replacedMatch != null) return renderReplaced(replacedMatch)
+        if (replacedMatch != null) return ToolRenderers.htmlPanel(renderReplaced(replacedMatch))
 
         val insertedMatch = INSERTED.find(firstLine)
-        if (insertedMatch != null) return renderInserted(insertedMatch)
+        if (insertedMatch != null) return ToolRenderers.htmlPanel(renderInserted(insertedMatch))
 
         return null
     }

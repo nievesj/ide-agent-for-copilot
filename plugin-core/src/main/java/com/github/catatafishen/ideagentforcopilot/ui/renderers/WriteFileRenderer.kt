@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders intellij_write_file output as a status card with edit summary
@@ -22,17 +23,17 @@ internal object WriteFileRenderer : ToolResultRenderer {
     private val CONTEXT_LINE = Regex("""^(\d+): (.*)$""")
     private val SYNTAX_WARNING = Regex("""⚠.*$""", RegexOption.DOT_MATCHES_ALL)
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val text = output.trimEnd()
         if (text.isEmpty()) return null
 
         val firstLine = text.lines().first()
 
         return when {
-            WRITTEN.containsMatchIn(firstLine) -> renderWritten(text, firstLine)
-            CREATED.containsMatchIn(firstLine) -> renderCreated(firstLine)
-            EDITED_LINES.containsMatchIn(firstLine) -> renderEdited(text, firstLine)
-            EDITED_CHARS.containsMatchIn(firstLine) -> renderEdited(text, firstLine)
+            WRITTEN.containsMatchIn(firstLine) -> ToolRenderers.htmlPanel(renderWritten(text, firstLine))
+            CREATED.containsMatchIn(firstLine) -> ToolRenderers.htmlPanel(renderCreated(firstLine))
+            EDITED_LINES.containsMatchIn(firstLine) -> ToolRenderers.htmlPanel(renderEdited(text, firstLine))
+            EDITED_CHARS.containsMatchIn(firstLine) -> ToolRenderers.htmlPanel(renderEdited(text, firstLine))
             else -> null
         }
     }

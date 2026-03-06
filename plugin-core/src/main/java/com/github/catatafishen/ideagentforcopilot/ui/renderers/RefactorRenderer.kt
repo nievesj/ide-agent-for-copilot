@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders refactor results (rename, safe_delete, extract_method, inline)
@@ -33,7 +34,7 @@ internal object RefactorRenderer : ToolResultRenderer {
     private val FILE_LINE = Regex("""^\s*File:\s+(.+)$""")
     private val USAGE_LINE = Regex("""^\s+(.+?):(\d+)""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
@@ -60,7 +61,7 @@ internal object RefactorRenderer : ToolResultRenderer {
         }
 
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 
     private fun renderRename(sb: StringBuilder, match: MatchResult, lines: List<String>) {

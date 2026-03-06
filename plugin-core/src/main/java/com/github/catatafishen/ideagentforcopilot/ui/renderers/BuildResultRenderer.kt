@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders build results as a status card with success/fail indicator,
@@ -8,7 +9,7 @@ import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
  */
 internal object BuildResultRenderer : ToolResultRenderer {
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
@@ -19,7 +20,7 @@ internal object BuildResultRenderer : ToolResultRenderer {
         appendHeader(sb, firstLine, status)
         appendMessages(sb, lines.drop(1))
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 
     private enum class Status(val css: String, val icon: String, val label: String) {

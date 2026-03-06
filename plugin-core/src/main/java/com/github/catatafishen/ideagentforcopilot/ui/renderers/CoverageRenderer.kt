@@ -1,5 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
+import javax.swing.JComponent
+
 /**
  * Renderer for get_coverage output.
  * Input: "ClassName: 85.2% covered (42 / 49 lines)" per line, or error message.
@@ -8,7 +10,7 @@ internal object CoverageRenderer : ToolResultRenderer {
 
     private val COVERAGE_LINE = Regex("""^(.+?):\s+([\d.]+)%\s+covered\s+\((\d+)\s*/\s*(\d+)\s+lines\)""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.lines()
         val entries = lines.mapNotNull { COVERAGE_LINE.find(it.trim()) }
         if (entries.isEmpty()) return null
@@ -54,6 +56,6 @@ internal object CoverageRenderer : ToolResultRenderer {
         }
         sb.append("</div>")
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 }

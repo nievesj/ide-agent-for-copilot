@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders git blame output as a compact table with author coloring,
@@ -18,7 +19,7 @@ internal object GitBlameRenderer : ToolResultRenderer {
         """^([a-f0-9]+)\s+\((.+?)\s+(\d{4}-\d{2}-\d{2})\s+[\d:]+\s+[+-]\d{4}\s+(\d+)\)\s?(.*)$"""
     )
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         val entries = lines.mapNotNull { parseBlameLine(it) }
         if (entries.size < 2) return null
@@ -50,7 +51,7 @@ internal object GitBlameRenderer : ToolResultRenderer {
             prevAuthor = entry.author
         }
         sb.append("</div></div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 
     private data class BlameEntry(

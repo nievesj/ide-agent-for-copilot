@@ -1,5 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
+import javax.swing.JComponent
+
 /**
  * Renderer for git_stash output.
  * Input (list): "stash@{0}: WIP on main: 1234567 Commit message" per line.
@@ -9,7 +11,7 @@ internal object GitStashRenderer : ToolResultRenderer {
 
     private val STASH_LINE = Regex("""^stash@\{(\d+)}:\s*(.*?)(?::\s+([0-9a-f]+)\s+(.*))?$""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.lines().map { it.trim() }.filter { it.isNotEmpty() }
         val stashes = lines.mapNotNull { STASH_LINE.find(it) }
 
@@ -50,6 +52,6 @@ internal object GitStashRenderer : ToolResultRenderer {
         }
         sb.append("</div>")
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 }

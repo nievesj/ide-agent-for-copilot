@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders intellij_read_file output as a compact code block with line numbers,
@@ -16,11 +17,11 @@ internal object ReadFileRenderer : ToolResultRenderer {
     private const val MAX_DISPLAY_LINES = 80
     private val NUMBERED_LINE = Regex("""^(\d+): (.*)""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         if (output.startsWith("Error") || output.startsWith("File not found")) return null
 
         val raw = output.trimEnd()
-        if (raw.isEmpty()) return "<span class='file-empty'>Empty file</span>"
+        if (raw.isEmpty()) return ToolRenderers.htmlPanel("<span class='file-empty'>Empty file</span>")
 
         val lines = raw.lines()
         val isNumbered = lines.firstOrNull()?.let { NUMBERED_LINE.matches(it) } == true
@@ -67,6 +68,6 @@ internal object ReadFileRenderer : ToolResultRenderer {
         }
 
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 }

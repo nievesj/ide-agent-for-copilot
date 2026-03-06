@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders inspection, compilation error, and highlight results as grouped
@@ -18,13 +19,13 @@ internal object InspectionResultRenderer : ToolResultRenderer {
     private val SUMMARY_PATTERN = Regex("""Found\s+(\d+)\s+(?:total\s+)?(?:problems?|compilation errors?)""")
     private val SUCCESS_PATTERN = Regex("""^[✅✓]\s+No\s+(?:compilation errors|inspection problems)""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
         // Success case (no errors)
         if (SUCCESS_PATTERN.containsMatchIn(lines.first())) {
-            return renderSuccess(lines.first())
+            return ToolRenderers.htmlPanel(renderSuccess(lines.first()))
         }
 
         val findings = mutableListOf<Finding>()
@@ -44,7 +45,7 @@ internal object InspectionResultRenderer : ToolResultRenderer {
         appendSummaryHeader(sb, headerLines, findings.size)
         appendGroupedFindings(sb, findings)
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 
     private data class Finding(

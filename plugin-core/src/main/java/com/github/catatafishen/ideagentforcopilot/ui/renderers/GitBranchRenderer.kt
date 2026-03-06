@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders git branch list output with the current branch highlighted.
@@ -17,7 +18,7 @@ internal object GitBranchRenderer : ToolResultRenderer {
     private val BRANCH_LINE = Regex("""^([* ])\s+(\S+)\s+([a-f0-9]+)\s+(.*)$""")
     private val REMOTE_PREFIX = Regex("""^remotes?/""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         val branches = lines.mapNotNull { parseBranch(it) }
         if (branches.size < 2) return null
@@ -33,7 +34,7 @@ internal object GitBranchRenderer : ToolResultRenderer {
             appendSection(sb, "Remote", remotes)
         }
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 
     private data class Branch(

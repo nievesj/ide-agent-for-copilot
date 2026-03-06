@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders git log output as a structured commit list with clickable hashes,
@@ -8,15 +9,15 @@ import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
  */
 internal object GitLogRenderer : ToolResultRenderer {
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
         val firstLine = lines.first().trim()
         return when {
-            firstLine.startsWith("commit ") -> renderMediumLog(lines)
-            SHORT_PATTERN.matches(firstLine) -> renderShortLog(lines)
-            ONELINE_PATTERN.matches(firstLine) -> renderOnelineLog(lines)
+            firstLine.startsWith("commit ") -> ToolRenderers.htmlPanel(renderMediumLog(lines))
+            SHORT_PATTERN.matches(firstLine) -> ToolRenderers.htmlPanel(renderShortLog(lines))
+            ONELINE_PATTERN.matches(firstLine) -> ToolRenderers.htmlPanel(renderOnelineLog(lines))
             else -> null
         }
     }

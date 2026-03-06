@@ -1,12 +1,14 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
+import javax.swing.JComponent
+
 /**
  * Renderer for git_tag output.
  * Input: one tag per line from `git tag -l`.
  */
 internal object GitTagRenderer : ToolResultRenderer {
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val tags = output.lines().map { it.trim() }.filter { it.isNotEmpty() }
         if (tags.isEmpty()) return null
 
@@ -31,6 +33,6 @@ internal object GitTagRenderer : ToolResultRenderer {
         }
         sb.append("</div>")
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 }

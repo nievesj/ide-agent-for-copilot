@@ -1,5 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
+import javax.swing.JComponent
+
 /**
  * Renderer for list_run_configurations output.
  * Input: "N run configurations:\nName [Type][ (temporary)]"
@@ -9,7 +11,7 @@ internal object RunConfigRenderer : ToolResultRenderer {
     private val CONFIG_LINE = Regex("""^(.+?)\s+\[(.+?)](.*)?$""")
     private val HEADER = Regex("""^(\d+)\s+run\s+configurations?:""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.lines()
         val headerMatch = lines.firstOrNull()?.let { HEADER.find(it.trim()) }
         val configLines = lines.drop(if (headerMatch != null) 1 else 0)
@@ -57,6 +59,6 @@ internal object RunConfigRenderer : ToolResultRenderer {
         }
         sb.append("</div>")
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 }

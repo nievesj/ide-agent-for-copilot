@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.parseDiffStats
+import javax.swing.JComponent
 
 /**
  * Renders unified diff output with syntax-highlighted additions/deletions,
@@ -9,15 +10,15 @@ import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.par
  */
 internal object GitDiffRenderer : ToolResultRenderer {
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
         val lastNonBlank = lines.lastOrNull { it.isNotBlank() } ?: return null
         if (lastNonBlank.matches(Regex("""\s*\d+ files? changed.*"""))) {
-            return renderStatOutput(lines)
+            return ToolRenderers.htmlPanel(renderStatOutput(lines))
         }
-        return renderUnifiedDiff(lines)
+        return ToolRenderers.htmlPanel(renderUnifiedDiff(lines))
     }
 
     // ── Stat-only rendering ───────────────────────────────────

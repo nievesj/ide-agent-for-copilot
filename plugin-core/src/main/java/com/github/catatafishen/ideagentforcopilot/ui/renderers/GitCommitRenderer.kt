@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.parseDiffStats
+import javax.swing.JComponent
 
 /**
  * Renders a git commit result as a rich card with commit metadata,
@@ -9,7 +10,7 @@ import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.par
  */
 internal object GitCommitRenderer : ToolResultRenderer {
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
@@ -59,7 +60,7 @@ internal object GitCommitRenderer : ToolResultRenderer {
         }
 
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 
     private fun renderFileEntry(line: String): String {

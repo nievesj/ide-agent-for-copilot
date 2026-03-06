@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import javax.swing.JComponent
 
 /**
  * Renders get_project_info output as a structured info card with
@@ -20,7 +21,7 @@ import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
  */
 internal object ProjectInfoRenderer : ToolResultRenderer {
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
         if (!lines.first().startsWith("Project:")) return null
@@ -69,6 +70,6 @@ internal object ProjectInfoRenderer : ToolResultRenderer {
         }
         if (inSection) sb.append("</div>")
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 }

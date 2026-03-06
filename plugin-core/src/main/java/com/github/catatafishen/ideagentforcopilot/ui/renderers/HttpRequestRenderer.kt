@@ -1,5 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
+import javax.swing.JComponent
+
 /**
  * Renderer for http_request output.
  * Input: "HTTP {code} {message}\n\n--- Headers ---\n...\n\n--- Body ---\n..."
@@ -8,7 +10,7 @@ internal object HttpRequestRenderer : ToolResultRenderer {
 
     private val STATUS_LINE = Regex("""^HTTP\s+(\d+)\s+(.*)""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val statusMatch = output.lines().firstOrNull()?.let { STATUS_LINE.find(it.trim()) } ?: return null
 
         val code = statusMatch.groupValues[1].toIntOrNull() ?: return null
@@ -77,6 +79,6 @@ internal object HttpRequestRenderer : ToolResultRenderer {
         }
 
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 }

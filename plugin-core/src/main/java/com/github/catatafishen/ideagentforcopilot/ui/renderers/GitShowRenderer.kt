@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.parseDiffStats
+import javax.swing.JComponent
 
 /**
  * Renders git show output as a commit card with metadata and optional diff.
@@ -24,7 +25,7 @@ import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.par
  */
 internal object GitShowRenderer : ToolResultRenderer {
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
         if (!lines.first().startsWith("commit ")) return null
@@ -102,6 +103,6 @@ internal object GitShowRenderer : ToolResultRenderer {
         }
 
         sb.append("</div>")
-        return sb.toString()
+        return ToolRenderers.htmlPanel(sb.toString())
     }
 }
