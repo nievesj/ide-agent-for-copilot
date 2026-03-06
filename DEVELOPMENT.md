@@ -418,3 +418,69 @@ feat!: drop support for IntelliJ 2025.1
 |----------------------|-----------|-----------------------------------------------------------|
 | Pull request opened  | `ci.yml`  | Build, test (MCP + plugin), verify plugin compatibility   |
 | PR merged to master  | `release.yml` | Calculate next semver, tag, build release ZIP, publish GitHub Release |
+
+---
+
+## Removed Features (Internal API Limitations)
+
+### Macro Tool Integration
+
+**Removed in:** commit `49e40b8` (2026-03-06)
+
+The plugin previously included a "Macro Tools" feature that let users expose recorded IntelliJ
+macros as MCP tools. An agent could then replay macros programmatically, with before/after
+diffing and action sequence reporting.
+
+**Why removed:** The feature depended entirely on `com.intellij.ide.actionMacro` — a package
+marked `@ApiStatus.Internal` by JetBrains. The plugin verifier rejects any direct usage of
+these APIs, blocking Marketplace publication.
+
+**Internal APIs that were used (no public replacements exist):**
+
+| Purpose                        | Internal API                                       |
+|--------------------------------|----------------------------------------------------|
+| Get macro manager singleton    | `ActionMacroManager.getInstance()`                 |
+| List all recorded macros       | `ActionMacroManager.getAllMacros()`                 |
+| Check if recording is active   | `ActionMacroManager.isRecording()`                 |
+| Check if playback is active    | `ActionMacroManager.isPlaying()`                   |
+| Play a macro programmatically  | `ActionMacroManager.playMacro(ActionMacro)`        |
+| Get a macro's name             | `ActionMacro.getName()`                            |
+| Inspect action steps           | `ActionMacro.getActions()` → `ActionDescriptor[]`  |
+| Describe each step             | `ActionDescriptor.generateTo(StringBuffer)`        |
+
+**Files that were removed:**
+- `MacroToolHandler.java` — MCP tool handler that replayed macros with diff capture
+- `MacroToolConfigurable.java` — Settings UI for enabling/configuring macro tools
+- `MacroToolRegistrar.java` — Service that synced macro registrations with PsiBridgeService
+- `MacroToolSettings.java` — Persistent state for macro tool configuration
+- `MacroApiBridge.java` — Intermediate reflection bridge (also removed — hiding internal
+  API usage behind reflection is not an acceptable workaround)
+
+**Re-enabling:** If JetBrains publishes a public API for macro discovery and playback, the
+feature can be restored. The removed commit contains the complete implementation. To recover:
+
+```bash
+git show 49e40b8^ -- \
+  plugin-core/src/main/java/com/github/catatafishen/ideagentforcopilot/psi/MacroToolHandler.java \
+  plugin-core/src/main/java/com/github/catatafishen/ideagentforcopilot/settings/MacroToolConfigurable.java \
+  plugin-core/src/main/java/com/github/catatafishen/ideagentforcopilot/services/MacroToolRegistrar.java \
+  plugin-core/src/main/java/com/github/catatafishen/ideagentforcopilot/services/MacroToolSettings.java
+```
+
+**Unofficial builds:** For personal use or distribution outside the JetBrains Marketplace,
+the macro feature can be maintained on a separate branch (e.g. `feat/macro-tools-unofficial`).
+The Marketplace verifier only runs on the official publication pipeline, so unofficial ZIPs
+built from that branch would work fine. The build could be gated with a Gradle property:
+
+```kotlin
+// build.gradle.kts
+val includeInternalMacroTools = findProperty("includeMacroTools")?.toString()?.toBoolean() ?: false
+```
+
+Then conditionally include the source set and plugin.xml registrations so the official
+`./gradlew buildPlugin` stays clean while `./gradlew buildPlugin -PincludeMacroTools=true`
+produces the extended build.
+
+**JetBrains YouTrack:** If you'd like this API made public, file a feature request at
+https://youtrack.jetbrains.com/issues/IJPL requesting public API access for macro
+discovery and playback (`ActionMacroManager`, `ActionMacro`).
