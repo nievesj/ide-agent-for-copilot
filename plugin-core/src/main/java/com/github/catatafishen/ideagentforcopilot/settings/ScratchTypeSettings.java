@@ -1,19 +1,24 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
+import com.intellij.lang.Language;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
+import com.intellij.openapi.fileTypes.LanguageFileType;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Application-level settings for scratch file language-to-extension mappings.
- * Users can add/remove/edit which languages are available when opening
- * code blocks as scratch files from the chat UI.
+ * Application-level settings for extra language alias→extension mappings.
+ * <p>
+ * The primary resolution uses IntelliJ's registered {@link Language} registry
+ * (matching by ID and display name). These custom mappings serve as overrides
+ * for aliases the Language API cannot resolve on its own (e.g. "bash" → "sh",
+ * "golang" → "go", "c++" → "cpp").
  */
 @Service(Service.Level.APP)
 @State(name = "ScratchTypeSettings", storages = @Storage("ideAgentScratchTypes.xml"))
@@ -25,11 +30,6 @@ public final class ScratchTypeSettings implements PersistentStateComponent<Scrat
         return ApplicationManager.getApplication().getService(ScratchTypeSettings.class);
     }
 
-    /**
-     * Returns the full alias→extension map. Each key is a lowercase language
-     * alias (e.g., "kotlin", "kt", "kts") and the value is the file extension
-     * (e.g., "kt").
-     */
     public Map<String, String> getMappings() {
         return myState.mappings;
     }
@@ -39,13 +39,44 @@ public final class ScratchTypeSettings implements PersistentStateComponent<Scrat
     }
 
     /**
-     * Resolves a language name to a file extension using the configured mappings.
-     * Falls back to the input (or "txt" if empty) when no mapping is found.
+     * Resolves a language label (e.g. from a markdown code block) to a file
+     * extension. Tries the IntelliJ Language registry first, then falls back
+     * to custom alias mappings, and finally treats the input itself as an
+     * extension.
      */
     public String resolve(String language) {
-        String ext = myState.mappings.get(language.toLowerCase());
+        if (language == null || language.isEmpty()) return "txt";
+
+        String lower = language.toLowerCase();
+
+        // 1. Try IntelliJ's Language registry (by ID, then by display name)
+        String ext = resolveViaLanguageRegistry(lower);
         if (ext != null) return ext;
-        return language.isEmpty() ? "txt" : language;
+
+        // 2. Try custom alias overrides
+        String mapped = myState.mappings.get(lower);
+        if (mapped != null) return mapped;
+
+        // 3. Fall back to using the input as the extension
+        return lower;
+    }
+
+    /**
+     * Searches IntelliJ's registered languages for one matching the given
+     * label (case-insensitive). Returns the default file extension, or null
+     * if no match is found.
+     */
+    static String resolveViaLanguageRegistry(String label) {
+        for (Language lang : Language.getRegisteredLanguages()) {
+            if (lang.getID().equalsIgnoreCase(label)
+                || lang.getDisplayName().equalsIgnoreCase(label)) {
+                LanguageFileType ft = lang.getAssociatedFileType();
+                if (ft != null && !ft.getDefaultExtension().isEmpty()) {
+                    return ft.getDefaultExtension();
+                }
+            }
+        }
+        return null;
     }
 
     @Override
@@ -63,52 +94,22 @@ public final class ScratchTypeSettings implements PersistentStateComponent<Scrat
     }
 
     /**
-     * Default language-to-extension mappings matching the original hardcoded list.
+     * Only aliases that the Language registry cannot resolve on its own.
+     * Common code-fence labels that don't match any Language ID or display name.
      */
     public static Map<String, String> getDefaults() {
         Map<String, String> m = new LinkedHashMap<>();
-        m.put("java", "java");
-        m.put("kotlin", "kt");
-        m.put("kt", "kt");
-        m.put("kts", "kt");
-        m.put("python", "py");
-        m.put("py", "py");
-        m.put("javascript", "js");
-        m.put("js", "js");
-        m.put("typescript", "ts");
-        m.put("ts", "ts");
-        m.put("tsx", "tsx");
-        m.put("jsx", "jsx");
-        m.put("html", "html");
-        m.put("css", "css");
-        m.put("xml", "xml");
-        m.put("json", "json");
-        m.put("yaml", "yaml");
-        m.put("yml", "yaml");
-        m.put("sql", "sql");
-        m.put("shell", "sh");
         m.put("bash", "sh");
-        m.put("sh", "sh");
         m.put("zsh", "sh");
-        m.put("groovy", "groovy");
-        m.put("scala", "scala");
-        m.put("rust", "rs");
-        m.put("rs", "rs");
-        m.put("go", "go");
+        m.put("shell", "sh");
         m.put("golang", "go");
-        m.put("c", "c");
-        m.put("cpp", "cpp");
         m.put("c++", "cpp");
-        m.put("ruby", "rb");
-        m.put("rb", "rb");
-        m.put("swift", "swift");
-        m.put("php", "php");
-        m.put("r", "r");
-        m.put("markdown", "md");
-        m.put("md", "md");
-        m.put("toml", "toml");
-        m.put("properties", "properties");
-        m.put("gradle", "gradle");
+        m.put("yml", "yaml");
+        m.put("kts", "kts");
+        m.put("jsx", "jsx");
+        m.put("tsx", "tsx");
+        m.put("mjs", "js");
+        m.put("mts", "ts");
         return m;
     }
 }

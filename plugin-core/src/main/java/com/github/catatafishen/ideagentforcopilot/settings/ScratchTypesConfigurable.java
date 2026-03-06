@@ -18,8 +18,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Settings page for configuring scratch file language-to-extension mappings.
- * Appears under Settings > Tools > IDE Agent for Copilot > Scratch File Types.
+ * Settings page for extra language alias→extension mappings used by the
+ * "Open in Scratch" button in chat code blocks. The primary resolution
+ * uses IntelliJ's Language registry; these aliases handle code-fence labels
+ * that don't match any registered language (e.g. "bash" → "sh").
  */
 public final class ScratchTypesConfigurable implements Configurable {
 
@@ -57,8 +59,9 @@ public final class ScratchTypesConfigurable implements Configurable {
 
         JPanel panel = new JPanel(new BorderLayout());
         JBLabel hint = new JBLabel(
-            "<html>Map language aliases to file extensions for the \"Open in Scratch\" button.<br>"
-                + "Multiple aliases can map to the same extension (e.g., <code>kotlin</code> → <code>kt</code>).</html>");
+            "<html>Extra aliases for the \"Open in Scratch\" button in chat code blocks.<br>"
+                + "Languages recognized by IntelliJ are resolved automatically — only add aliases "
+                + "for code-fence labels that aren't matched (e.g. <code>bash</code> → <code>sh</code>).</html>");
         hint.setBorder(JBUI.Borders.empty(0, 0, 8, 0));
         panel.add(hint, BorderLayout.NORTH);
         panel.add(decorated, BorderLayout.CENTER);

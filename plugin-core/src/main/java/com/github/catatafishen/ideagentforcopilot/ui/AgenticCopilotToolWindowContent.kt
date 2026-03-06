@@ -2227,21 +2227,19 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     private fun handleCreateScratch(e: AnActionEvent) {
-        val mappings = com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings.getInstance().mappings
-
-        // Deduplicate: collect unique extensions and pick the best display name
-        // (longest alias, capitalized) for each extension
-        val extToLabel = LinkedHashMap<String, String>()
-        for ((alias, ext) in mappings) {
-            val existing = extToLabel[ext]
-            if (existing == null || alias.length > existing.length) {
-                extToLabel[ext] = alias.replaceFirstChar { it.uppercaseChar() }
+        // Build list from IntelliJ's registered languages that have real file types
+        val languages = com.intellij.lang.Language.getRegisteredLanguages()
+            .filter { lang ->
+                val ft = lang.associatedFileType
+                ft != null && ft.defaultExtension.isNotEmpty() && !ft.isBinary
             }
-        }
+            .sortedBy { it.displayName.lowercase() }
+            .distinctBy { it.associatedFileType!!.defaultExtension }
 
         val group = DefaultActionGroup()
-        for ((ext, label) in extToLabel) {
-            group.add(object : AnAction(label) {
+        for (lang in languages) {
+            val ext = lang.associatedFileType!!.defaultExtension
+            group.add(object : AnAction(lang.displayName) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
                 override fun actionPerformed(e: AnActionEvent) = createAndAttachScratch(ext)
             })

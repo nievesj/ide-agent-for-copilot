@@ -48,7 +48,7 @@ public final class PluginSettingsConfigurable implements Configurable {
                 + "• <b>Tool Permissions</b> — set permission levels (allow/ask/deny) per tool<br>"
                 + "• <b>Tool Registration</b> — enable/disable tools and configure MCP server<br>"
                 + "• <b>Macro Tools</b> — register recorded macros as MCP tools<br>"
-                + "• <b>Scratch File Types</b> — language-to-extension mappings for scratch files<br>"
+                + "• <b>Scratch File Types</b> — extra alias mappings for the \"Open in Scratch\" button<br>"
                 + "• <b>Project Files</b> — file shortcuts in the toolbar dropdown</html>");
         label.setBorder(JBUI.Borders.empty(12));
         panel.add(label, BorderLayout.NORTH);
