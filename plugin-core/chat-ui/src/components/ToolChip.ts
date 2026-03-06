@@ -1,6 +1,5 @@
 import {escHtml} from '../helpers';
 import {toolDisplayName} from '../toolDisplayName';
-import {dismissToolPopup, isToolPopupVisibleFor, showToolPopup} from './ToolPopup';
 
 export default class ToolChip extends HTMLElement {
     static get observedAttributes(): string[] {
@@ -21,12 +20,12 @@ export default class ToolChip extends HTMLElement {
         this._render();
         this.onclick = (e) => {
             e.stopPropagation();
-            this._toggleExpand();
+            this._showPopup();
         };
         this.onkeydown = (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                this._toggleExpand();
+                this._showPopup();
             }
         };
     }
@@ -57,14 +56,13 @@ export default class ToolChip extends HTMLElement {
         }
     }
 
-    private _toggleExpand(): void {
+    private _showPopup(): void {
         this._resolveLink();
         const section = this._linkedSection;
         if (!section) return;
-        if (isToolPopupVisibleFor(this)) {
-            dismissToolPopup();
-        } else {
-            showToolPopup(this, section);
+        const id = section.id || this.dataset.chipFor || '';
+        if (globalThis._bridge?.showToolPopup) {
+            globalThis._bridge.showToolPopup(id);
         }
     }
 

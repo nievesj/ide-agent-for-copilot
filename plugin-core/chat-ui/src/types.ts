@@ -10,6 +10,8 @@ export interface Bridge {
     quickReply(text: string): void;
 
     openScratch(lang: string, content: string): void;
+
+    showToolPopup(id: string): void;
 }
 
 export interface TurnContext {

@@ -8,7 +8,6 @@
 import './types';
 
 import {b64} from './helpers';
-import ToolPopup from './components/ToolPopup';
 import ChatContainer from './components/ChatContainer';
 import ChatMessage from './components/ChatMessage';
 import MessageBubble from './components/MessageBubble';
@@ -36,7 +35,6 @@ customElements.define('message-meta', MessageMeta);
 customElements.define('thinking-block', ThinkingBlock);
 customElements.define('tool-section', ToolSection);
 customElements.define('tool-chip', ToolChip);
-customElements.define('tool-popup', ToolPopup);
 customElements.define('thinking-chip', ThinkingChip);
 customElements.define('subagent-chip', SubagentChip);
 customElements.define('quick-replies', QuickReplies);

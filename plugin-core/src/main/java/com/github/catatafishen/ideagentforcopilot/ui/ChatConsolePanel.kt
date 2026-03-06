@@ -58,6 +58,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private var htmlQueryBridgeJs = ""
     private var permissionResponseBridgeJs = ""
     private var openScratchBridgeJs = ""
+    private var showToolPopupBridgeJs = ""
 
     @Volatile
     private var htmlPageFuture: java.util.concurrent.CompletableFuture<String>? = null
@@ -179,6 +180,11 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             openScratchQuery.addHandler { data -> handleOpenScratch(data); null }
             Disposer.register(this, openScratchQuery)
             openScratchBridgeJs = openScratchQuery.inject("lang + '\\n' + content")
+
+            val showToolPopupQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
+            showToolPopupQuery.addHandler { toolDomId -> handleShowToolPopup(toolDomId); null }
+            Disposer.register(this, showToolPopupQuery)
+            showToolPopupBridgeJs = showToolPopupQuery.inject("id")
 
             add(browser.component, BorderLayout.CENTER)
 
@@ -1290,6 +1296,16 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private fun langToExtension(lang: String): String =
         ScratchTypeSettings.getInstance().resolve(lang)
 
+    private fun handleShowToolPopup(toolDomId: String) {
+        val entry = toolCallEntries[toolDomId]
+        val baseName = toolCallNames[toolDomId]
+        val info = if (baseName != null) TOOL_DISPLAY_INFO[baseName] else null
+        val displayTitle = info?.displayName ?: baseName ?: toolDomId
+        SwingUtilities.invokeLater {
+            ToolCallPopup.show(project, displayTitle, entry?.arguments, entry?.result, entry?.status)
+        }
+    }
+
     private fun buildInitialPage(): String {
         val cssVars = buildCssVars()
         val fileHandler = openFileQuery!!.inject("href")
@@ -1301,7 +1317,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 loadMore: function() { $loadMoreBridgeJs },
                 quickReply: function(text) { $quickReplyBridgeJs },
                 permissionResponse: function(data) { $permissionResponseBridgeJs },
-                openScratch: function(lang, content) { $openScratchBridgeJs }
+                openScratch: function(lang, content) { $openScratchBridgeJs },
+                showToolPopup: function(id) { $showToolPopupBridgeJs }
             };
         """.trimIndent()
         val css = loadResource("/chat/chat.css")
