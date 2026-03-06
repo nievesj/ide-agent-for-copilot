@@ -1066,13 +1066,16 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
      * Creates a Swing component for the tool result, dispatching to a custom renderer
      * or falling back to a monospace code panel.
      */
-    private fun renderToolResultPanel(baseName: String?, status: String?, details: String?): JComponent {
+    private fun renderToolResultPanel(baseName: String?, status: String?, details: String?, arguments: String? = null): JComponent {
         if (details.isNullOrBlank()) {
             return JBLabel(if (status != "failed") "Completed" else "✖ Failed")
         }
         if (status != "failed" && baseName != null) {
             val renderer = ToolRenderers.get(baseName)
-            val panel = renderer?.render(details)
+            val panel = when (renderer) {
+                is ArgumentAwareRenderer -> renderer.render(details, arguments)
+                else -> renderer?.render(details)
+            }
             if (panel != null) return panel
         }
         return ToolRenderers.codePanel(details)
@@ -1289,7 +1292,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val baseName = toolCallNames[toolDomId]
         val chipTitle = toolChipTitle(baseName, entry?.arguments)
         val kind = entry?.kind ?: "other"
-        val resultPanel = renderToolResultPanel(baseName, entry?.status, entry?.result)
+        val resultPanel = renderToolResultPanel(baseName, entry?.status, entry?.result, entry?.arguments)
         val hasCustomRenderer = baseName != null && ToolRenderers.hasRenderer(baseName)
         val paramsPanel = if (!hasCustomRenderer && !entry?.arguments.isNullOrBlank()) {
             ToolRenderers.codePanel(prettyJson(entry.arguments))

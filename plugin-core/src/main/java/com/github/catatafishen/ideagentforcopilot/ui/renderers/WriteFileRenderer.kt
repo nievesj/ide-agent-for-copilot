@@ -1,38 +1,68 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
+import com.google.gson.JsonParser
+import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
+import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Color
 import java.awt.Font
 import javax.swing.JComponent
+import javax.swing.JPanel
+import javax.swing.JTextPane
+import javax.swing.text.StyleConstants
+import javax.swing.text.StyleContext
 
 /**
- * Renders intellij_write_file output as a status card with edit summary
- * and context lines displayed as a code block.
+ * Renders intellij_write_file output as a status card with an inline diff
+ * when old_str/new_str are available in the arguments, otherwise falls back
+ * to context lines.
  */
-internal object WriteFileRenderer : ToolResultRenderer {
+internal object WriteFileRenderer : ArgumentAwareRenderer {
 
     private val WRITTEN = Regex("""^Written:\s+(.+?)\s+\((\d+)\s+chars\)""")
     private val CREATED = Regex("""^Created:\s+(.+)$""")
     private val EDITED_CHARS = Regex("""^Edited:\s+(.+?)\s+\(replaced\s+(\d+)\s+chars\s+with\s+(\d+)\s+chars\)""")
-    private val EDITED_LINES = Regex("""^Edited:\s+(.+?)\s+\(replaced\s+lines\s+(\d+)-(\d+)\s+\((\d+)\s+lines?\)\s+with\s+(\d+)\s+chars\)""")
+    private val EDITED_LINES =
+        Regex("""^Edited:\s+(.+?)\s+\(replaced\s+lines\s+(\d+)-(\d+)\s+\((\d+)\s+lines?\)\s+with\s+(\d+)\s+chars\)""")
     private val CONTEXT_LINE = Regex("""^(\d+): (.*)$""")
     private val SYNTAX_WARNING = Regex("""WARNING:.*$""", RegexOption.DOT_MATCHES_ALL)
     private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
     private val WARN_COLOR = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
 
-    override fun render(output: String): JComponent? {
+    private val ADD_BG = JBColor(Color(0xE6, 0xFF, 0xEC), Color(0x1B, 0x3A, 0x22))
+    private val DEL_BG = JBColor(Color(0xFF, 0xEB, 0xE9), Color(0x3D, 0x1F, 0x1F))
+    private val ADD_FG = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x7E, 0xE7, 0x87))
+    private val DEL_FG = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x85, 0x80))
+
+    override fun render(output: String, arguments: String?): JComponent? {
         val text = output.trimEnd()
         if (text.isEmpty()) return null
         val firstLine = text.lines().first()
 
+        val diff = extractDiff(arguments)
+
         return when {
             WRITTEN.containsMatchIn(firstLine) -> renderWritten(text, firstLine)
             CREATED.containsMatchIn(firstLine) -> renderCreated(firstLine)
-            EDITED_LINES.containsMatchIn(firstLine) -> renderEdited(text, firstLine)
-            EDITED_CHARS.containsMatchIn(firstLine) -> renderEdited(text, firstLine)
+            EDITED_LINES.containsMatchIn(firstLine) -> renderEdited(text, firstLine, diff)
+            EDITED_CHARS.containsMatchIn(firstLine) -> renderEdited(text, firstLine, diff)
             else -> null
+        }
+    }
+
+    private data class DiffContent(val oldStr: String, val newStr: String)
+
+    private fun extractDiff(arguments: String?): DiffContent? {
+        if (arguments.isNullOrBlank()) return null
+        return try {
+            val json = JsonParser.parseString(arguments).asJsonObject
+            val oldStr = json["old_str"]?.asString ?: return null
+            val newStr = json["new_str"]?.asString ?: return null
+            if (oldStr.isBlank() && newStr.isBlank()) null else DiffContent(oldStr, newStr)
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -60,7 +90,7 @@ internal object WriteFileRenderer : ToolResultRenderer {
         return panel
     }
 
-    private fun renderEdited(text: String, firstLine: String): JComponent? {
+    private fun renderEdited(text: String, firstLine: String, diff: DiffContent?): JComponent? {
         val linesMatch = EDITED_LINES.find(firstLine)
         val charsMatch = EDITED_CHARS.find(firstLine)
 
@@ -75,6 +105,7 @@ internal object WriteFileRenderer : ToolResultRenderer {
                 addStatusHeader(panel, "Edited", path.substringAfterLast('/'), path)
                 addDetail(panel, "lines $startLine–$endLine ($lineCount replaced)")
             }
+
             charsMatch != null -> {
                 val path = charsMatch.groupValues[1]
                 val oldChars = charsMatch.groupValues[2]
@@ -82,15 +113,21 @@ internal object WriteFileRenderer : ToolResultRenderer {
                 addStatusHeader(panel, "Edited", path.substringAfterLast('/'), path)
                 addDetail(panel, "$oldChars → $newChars chars")
             }
+
             else -> return null
         }
 
         addSyntaxWarning(panel, text)
-        addContextBlock(panel, text)
+
+        if (diff != null) {
+            addDiffBlock(panel, diff)
+        } else {
+            addContextBlock(panel, text)
+        }
         return panel
     }
 
-    private fun addStatusHeader(panel: javax.swing.JPanel, action: String, fileName: String, fullPath: String) {
+    private fun addStatusHeader(panel: JPanel, action: String, fileName: String, fullPath: String) {
         val headerRow = ToolRenderers.rowPanel()
         headerRow.add(JBLabel(action).apply {
             icon = ToolIcons.SUCCESS
@@ -101,13 +138,13 @@ internal object WriteFileRenderer : ToolResultRenderer {
         panel.add(headerRow)
     }
 
-    private fun addDetail(panel: javax.swing.JPanel, detail: String) {
+    private fun addDetail(panel: JPanel, detail: String) {
         val row = ToolRenderers.rowPanel()
         row.add(ToolRenderers.mutedLabel(detail))
         panel.add(row)
     }
 
-    private fun addSyntaxWarning(panel: javax.swing.JPanel, text: String) {
+    private fun addSyntaxWarning(panel: JPanel, text: String) {
         val warning = SYNTAX_WARNING.find(text)?.value ?: return
         val row = ToolRenderers.rowPanel()
         row.add(JBLabel(warning).apply {
@@ -117,7 +154,48 @@ internal object WriteFileRenderer : ToolResultRenderer {
         panel.add(row)
     }
 
-    private fun addContextBlock(panel: javax.swing.JPanel, text: String) {
+    private fun addDiffBlock(panel: JPanel, diff: DiffContent) {
+        val scheme = EditorColorsManager.getInstance().globalScheme
+        val monoFont = JBUI.Fonts.create("JetBrains Mono", UIUtil.getLabelFont().size)
+        val sc = StyleContext.getDefaultStyleContext()
+
+        val textPane = JTextPane().apply {
+            isEditable = false
+            background = scheme.defaultBackground
+            border = JBUI.Borders.empty(6)
+            alignmentX = JComponent.LEFT_ALIGNMENT
+        }
+
+        val doc = textPane.styledDocument
+
+        val baseStyle = sc.addStyle("base", null).apply {
+            StyleConstants.setFontFamily(this, monoFont.family)
+            StyleConstants.setFontSize(this, monoFont.size)
+            StyleConstants.setForeground(this, scheme.defaultForeground)
+        }
+        val delStyle = sc.addStyle("del", baseStyle).apply {
+            StyleConstants.setForeground(this, DEL_FG)
+            StyleConstants.setBackground(this, DEL_BG)
+        }
+        val addStyle = sc.addStyle("add", baseStyle).apply {
+            StyleConstants.setForeground(this, ADD_FG)
+            StyleConstants.setBackground(this, ADD_BG)
+        }
+
+        val oldLines = diff.oldStr.lines()
+        val newLines = diff.newStr.lines()
+
+        for (line in oldLines) {
+            doc.insertString(doc.length, "- $line\n", delStyle)
+        }
+        for (line in newLines) {
+            doc.insertString(doc.length, "+ $line\n", addStyle)
+        }
+
+        panel.add(textPane)
+    }
+
+    private fun addContextBlock(panel: JPanel, text: String) {
         val contextStart = text.indexOf("Context after edit")
         if (contextStart < 0) return
 

@@ -25,6 +25,15 @@ internal fun interface ToolResultRenderer {
 }
 
 /**
+ * Extended renderer that can access the tool's JSON arguments for richer
+ * rendering (e.g. showing a diff of old_str → new_str for write operations).
+ */
+internal interface ArgumentAwareRenderer : ToolResultRenderer {
+    fun render(output: String, arguments: String?): JComponent?
+    override fun render(output: String): JComponent? = render(output, null)
+}
+
+/**
  * Standard icons for tool-result status indicators.
  */
 internal object ToolIcons {
@@ -94,6 +103,7 @@ internal object ToolRenderers {
         "refactor" to RefactorRenderer,
         // Project & files
         "list_project_files" to ListProjectFilesRenderer,
+        "glob" to GlobRenderer,
         "get_project_info" to ProjectInfoRenderer,
         // Infrastructure
         "run_command" to RunCommandRenderer,
