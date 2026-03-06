@@ -2227,17 +2227,20 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     private fun handleCreateScratch(e: AnActionEvent) {
-        val languages = listOf(
-            "Java" to "java", "Kotlin" to "kt", "Python" to "py",
-            "JavaScript" to "js", "TypeScript" to "ts",
-            "Go" to "go", "Rust" to "rs", "C" to "c", "C++" to "cpp",
-            "Ruby" to "rb", "Shell" to "sh",
-            "HTML" to "html", "CSS" to "css", "SQL" to "sql",
-            "JSON" to "json", "YAML" to "yaml", "XML" to "xml",
-            "Markdown" to "md", "Plain Text" to "txt"
-        )
+        val mappings = com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings.getInstance().mappings
+
+        // Deduplicate: collect unique extensions and pick the best display name
+        // (longest alias, capitalized) for each extension
+        val extToLabel = LinkedHashMap<String, String>()
+        for ((alias, ext) in mappings) {
+            val existing = extToLabel[ext]
+            if (existing == null || alias.length > existing.length) {
+                extToLabel[ext] = alias.replaceFirstChar { it.uppercaseChar() }
+            }
+        }
+
         val group = DefaultActionGroup()
-        for ((label, ext) in languages) {
+        for ((ext, label) in extToLabel) {
             group.add(object : AnAction(label) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
                 override fun actionPerformed(e: AnActionEvent) = createAndAttachScratch(ext)
@@ -2384,7 +2387,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         val isSelection: Boolean
     )
 
-    // TimelineEvent and EventType extracted to DebugPanel.kt
+// TimelineEvent and EventType extracted to DebugPanel.kt
 
     /** Tree node that holds file content and path for the Plans tab. */
     private class FileTreeNode(
