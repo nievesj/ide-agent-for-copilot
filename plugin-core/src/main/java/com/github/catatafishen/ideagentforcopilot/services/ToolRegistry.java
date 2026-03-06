@@ -122,6 +122,7 @@ public final class ToolRegistry {
         new ToolEntry("write_terminal_input", "Write Terminal Input", "Send raw text or keystrokes to a running terminal (e.g. answer prompts, send Ctrl-C)", Category.RUN, false, false, false),
         new ToolEntry("read_run_output", "Read Run Output", "Read output from a recent Run panel tab by name", Category.RUN, false, false, false),
         new ToolEntry("read_terminal_output", "Read Terminal", "Read output from an integrated terminal tab", Category.RUN, false, false, false),
+        new ToolEntry("list_terminals", "List Terminals", "List active terminal tabs", Category.RUN, false, false, false),
 
         // ── Git ───────────────────────────────────────────────────────────────────
         new ToolEntry("git_status", "Git Status", "Show the working tree status (staged, unstaged, untracked files)", Category.GIT, false, false, false),
