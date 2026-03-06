@@ -797,12 +797,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                                 val status = e["status"]?.asString ?: "completed"
                                 toolCallNames[id] = baseName
                                 toolCallEntries[id] = EntryData.ToolCall(title, args, kind, result, status)
-                                metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(kind)}' data-chip-for='$id'></tool-chip>")
-                                detailsContent.append("<tool-section id='$id' title='${esc(label)}'")
-                                if (args != null && !ToolRenderers.hasRenderer(baseName)) detailsContent.append(
-                                    " params='${esc(args)}'"
-                                )
-                                detailsContent.append("><div class='tool-params'></div><div class='tool-result'>$status</div></tool-section>")
+                                val paramsAttr = if (args != null) " data-params='${esc(args)}'" else ""
+                                metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(kind)}' data-chip-for='$id'$paramsAttr></tool-chip>")
                             }
 
                             "text" -> {

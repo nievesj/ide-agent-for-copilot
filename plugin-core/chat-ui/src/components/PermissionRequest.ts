@@ -1,7 +1,6 @@
 /**
  * Permission request actions element — rendered below the question bubble.
  * Contains Allow/Deny buttons, replaced with result text on resolve.
- * The chip + tool-section are created by ChatController (same as regular tool calls).
  */
 export default class PermissionRequest extends HTMLElement {
     private _init = false;

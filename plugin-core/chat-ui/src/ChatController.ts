@@ -149,7 +149,7 @@ const ChatController = {
                 }
             } else if (ctx.textBubble) {
                 ctx.textBubble.remove();
-                if (ctx.msg && !ctx.msg.querySelector('message-bubble, tool-section, thinking-block')) {
+                if (ctx.msg && !ctx.msg.querySelector('message-bubble, tool-chip, thinking-block')) {
                     ctx.msg.remove();
                     ctx.msg = null;
                     ctx.meta = null;
@@ -192,28 +192,18 @@ const ChatController = {
     addToolCall(turnId: string, agentId: string, id: string, title: string, paramsJson?: string, kind?: string): void {
         const ctx = this._ensureMsg(turnId, agentId);
         this._collapseThinkingFor(ctx);
-        const section = document.createElement('tool-section');
-        section.id = id;
-        section.setAttribute('title', title);
-        if (paramsJson) section.setAttribute('params', paramsJson);
-        ctx.details!.appendChild(section);
         const chip = document.createElement('tool-chip');
         chip.setAttribute('label', title);
         chip.setAttribute('status', 'running');
         if (kind) chip.setAttribute('kind', kind);
         (chip as HTMLElement).dataset.chipFor = id;
-        (chip as any).linkSection(section);
+        if (paramsJson) (chip as HTMLElement).dataset.params = paramsJson;
         ctx.meta!.appendChild(chip);
         ctx.meta!.classList.add('show');
         this._container()?.scrollIfNeeded();
     },
 
     updateToolCall(id: string, status: string, resultHtml?: string): void {
-        const section = document.getElementById(id);
-        if (section) {
-            (section as any).result = (typeof resultHtml === 'string') ? resultHtml : 'Completed';
-            if (status === 'failed') section.classList.add('failed');
-        }
         const chip = document.querySelector('[data-chip-for="' + id + '"]');
         if (chip) chip.setAttribute('status', status === 'failed' ? 'failed' : 'complete');
     },
@@ -269,18 +259,11 @@ const ChatController = {
         const msg = document.getElementById('sa-' + subAgentDomId);
         if (!msg) return;
         const meta = msg.querySelector('message-meta');
-        const section = document.createElement('tool-section');
-        section.id = toolDomId;
-        section.setAttribute('title', title);
-        if (paramsJson) section.setAttribute('params', paramsJson);
-        const details = msg.querySelector('turn-details');
-        if (details) details.appendChild(section);
-        else msg.appendChild(section);
         const chip = document.createElement('tool-chip');
         chip.setAttribute('label', title);
         chip.setAttribute('status', 'running');
         chip.dataset.chipFor = toolDomId;
-        (chip as any).linkSection(section);
+        if (paramsJson) chip.dataset.params = paramsJson;
         if (meta) {
             meta.appendChild(chip);
             meta.classList.add('show');
@@ -366,7 +349,6 @@ const ChatController = {
         document.querySelectorAll('thinking-chip[status="running"], thinking-chip[status="thinking"]').forEach(c => c.setAttribute('status', 'complete'));
         document.querySelectorAll('subagent-chip[status="running"]').forEach(c => c.setAttribute('status', 'failed'));
         document.querySelectorAll('message-bubble[streaming]').forEach(b => b.removeAttribute('streaming'));
-        document.querySelectorAll('.tool-running-hint').forEach(h => { h.textContent = 'Cancelled'; });
     },
 
     setPromptStats(model: string, multiplier: string): void {

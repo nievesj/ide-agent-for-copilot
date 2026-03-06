@@ -13,7 +13,6 @@ import ChatMessage from './components/ChatMessage';
 import MessageBubble from './components/MessageBubble';
 import MessageMeta from './components/MessageMeta';
 import ThinkingBlock from './components/ThinkingBlock';
-import ToolSection from './components/ToolSection';
 import ToolChip from './components/ToolChip';
 import ThinkingChip from './components/ThinkingChip';
 import SubagentChip from './components/SubagentChip';
@@ -33,7 +32,6 @@ customElements.define('chat-message', ChatMessage);
 customElements.define('message-bubble', MessageBubble);
 customElements.define('message-meta', MessageMeta);
 customElements.define('thinking-block', ThinkingBlock);
-customElements.define('tool-section', ToolSection);
 customElements.define('tool-chip', ToolChip);
 customElements.define('thinking-chip', ThinkingChip);
 customElements.define('subagent-chip', SubagentChip);
@@ -73,10 +71,8 @@ let lastCursor = '';
 document.addEventListener('mouseover', (e: MouseEvent) => {
     const el = e.target as HTMLElement;
     let c = 'default';
-    if (el.closest('a,.turn-chip,.chip-close,.prompt-ctx-chip,.quick-reply-btn,.code-action-btn,.tool-popup-close')) c = 'pointer';
-    else if (el.closest('.tool-popup-resize')) c = 'nwse-resize';
+    if (el.closest('a,.turn-chip,.chip-close,.prompt-ctx-chip,.quick-reply-btn,.code-action-btn')) c = 'pointer';
     else if (el.closest('.chip-strip')) c = 'grab';
-    else if (el.closest('.tool-popup-header')) c = 'grab';
     else if (el.closest('p,pre,code,li,td,th,.thinking-content,.streaming')) c = 'text';
     if (c !== lastCursor) {
         lastCursor = c;
