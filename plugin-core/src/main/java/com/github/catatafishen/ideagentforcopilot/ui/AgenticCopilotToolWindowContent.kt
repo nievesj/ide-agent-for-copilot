@@ -2227,28 +2227,29 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     private fun handleCreateScratch(e: AnActionEvent) {
-        // Build list from IntelliJ's registered languages that have real file types
-        val languages = com.intellij.lang.Language.getRegisteredLanguages()
-            .filter { lang ->
-                val ft = lang.associatedFileType
-                ft != null && ft.defaultExtension.isNotEmpty() && !ft.isBinary
-            }
-            .sortedBy { it.displayName.lowercase() }
-            .distinctBy { it.associatedFileType!!.defaultExtension }
+        val settings = com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings.getInstance()
+        val enabledLanguages = settings.enabledLanguages
 
-        val group = DefaultActionGroup()
-        for (lang in languages) {
-            val ext = lang.associatedFileType!!.defaultExtension
-            group.add(object : AnAction(lang.displayName) {
-                override fun getActionUpdateThread() = ActionUpdateThread.EDT
-                override fun actionPerformed(e: AnActionEvent) = createAndAttachScratch(ext)
-            })
+        if (enabledLanguages.isEmpty()) {
+            com.intellij.openapi.ui.Messages.showInfoMessage(
+                project,
+                "No languages are enabled. Configure them in Settings → Tools → Scratch File Types.",
+                "No Scratch Languages"
+            )
+            return
         }
-        val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createActionGroupPopup(
-            "Select File Type", group, e.dataContext,
-            com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
-        )
-        popup.showCenteredInCurrentWindow(project)
+
+        com.intellij.ide.scratch.LRUPopupBuilder
+            .languagePopupBuilder(project, "New Scratch File") { lang ->
+                lang.associatedFileType?.icon ?: com.intellij.icons.AllIcons.FileTypes.Any_type
+            }
+            .forValues(enabledLanguages)
+            .onChosen { lang ->
+                val ext = lang.associatedFileType?.defaultExtension ?: return@onChosen
+                createAndAttachScratch(ext)
+            }
+            .buildPopup()
+            .showCenteredInCurrentWindow(project)
     }
 
     private fun createAndAttachScratch(ext: String) {

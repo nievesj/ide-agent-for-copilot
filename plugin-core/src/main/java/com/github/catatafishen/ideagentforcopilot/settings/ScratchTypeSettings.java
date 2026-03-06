@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.intellij.lang.Language;
+import com.intellij.lang.LanguageUtil;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
@@ -10,15 +11,21 @@ import com.intellij.openapi.fileTypes.LanguageFileType;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * Application-level settings for extra language alias→extension mappings.
+ * Application-level settings for scratch file configuration:
+ * <ul>
+ *   <li>Which languages appear in the "New Scratch File" dropdown (enabled language IDs)</li>
+ *   <li>Extra alias→extension mappings for the "Open in Scratch" code-block button</li>
+ * </ul>
  * <p>
- * The primary resolution uses IntelliJ's registered {@link Language} registry
- * (matching by ID and display name). These custom mappings serve as overrides
- * for aliases the Language API cannot resolve on its own (e.g. "bash" → "sh",
- * "golang" → "go", "c++" → "cpp").
+ * The primary language resolution uses IntelliJ's registered {@link Language} registry
+ * (matching by ID and display name). Custom alias mappings serve as overrides for labels
+ * the Language API cannot resolve on its own (e.g. "bash" → "sh", "golang" → "go").
  */
 @Service(Service.Level.APP)
 @State(name = "ScratchTypeSettings", storages = @Storage("ideAgentScratchTypes.xml"))
@@ -29,6 +36,30 @@ public final class ScratchTypeSettings implements PersistentStateComponent<Scrat
     public static ScratchTypeSettings getInstance() {
         return ApplicationManager.getApplication().getService(ScratchTypeSettings.class);
     }
+
+    // ── Enabled languages (for the "New Scratch File" dropdown) ──
+
+    public Set<String> getEnabledLanguageIds() {
+        return myState.enabledLanguageIds;
+    }
+
+    public void setEnabledLanguageIds(Set<String> ids) {
+        myState.enabledLanguageIds = new LinkedHashSet<>(ids);
+    }
+
+    /**
+     * Returns the enabled languages that are actually installed in the IDE,
+     * sorted by display name. Languages whose IDs are in the enabled set but
+     * are not installed are silently excluded.
+     */
+    public List<Language> getEnabledLanguages() {
+        Set<String> enabled = myState.enabledLanguageIds;
+        return LanguageUtil.getFileLanguages().stream()
+            .filter(lang -> enabled.contains(lang.getID()))
+            .toList();
+    }
+
+    // ── Alias mappings (for "Open in Scratch" code-block resolution) ──
 
     public Map<String, String> getMappings() {
         return myState.mappings;
@@ -61,11 +92,6 @@ public final class ScratchTypeSettings implements PersistentStateComponent<Scrat
         return lower;
     }
 
-    /**
-     * Searches IntelliJ's registered languages for one matching the given
-     * label (case-insensitive). Returns the default file extension, or null
-     * if no match is found.
-     */
     static String resolveViaLanguageRegistry(String label) {
         for (Language lang : Language.getRegisteredLanguages()) {
             if (lang.getID().equalsIgnoreCase(label)
@@ -90,7 +116,37 @@ public final class ScratchTypeSettings implements PersistentStateComponent<Scrat
     }
 
     public static class State {
+        public Set<String> enabledLanguageIds = getDefaultEnabledIds();
         public Map<String, String> mappings = getDefaults();
+    }
+
+    /**
+     * A curated set of commonly used language IDs shown in the dropdown by default.
+     * Languages not installed in the current IDE are silently excluded at runtime.
+     */
+    public static Set<String> getDefaultEnabledIds() {
+        LinkedHashSet<String> ids = new LinkedHashSet<>();
+        ids.add("JAVA");
+        ids.add("kotlin");
+        ids.add("Groovy");
+        ids.add("Python");
+        ids.add("JavaScript");
+        ids.add("TypeScript");
+        ids.add("TypeScript JSX");
+        ids.add("Shell Script");
+        ids.add("SQL");
+        ids.add("JSON");
+        ids.add("XML");
+        ids.add("yaml");
+        ids.add("TOML");
+        ids.add("Properties");
+        ids.add("HTML");
+        ids.add("CSS");
+        ids.add("Markdown");
+        ids.add("TEXT");
+        ids.add("go");
+        ids.add("Rust");
+        return ids;
     }
 
     /**
