@@ -31,7 +31,7 @@
     <ul>
         <li>Set the HTTP port in <b>Settings → Tools → IDE MCP Server</b></li>
         <li>Enable/disable individual tools with checkboxes</li>
-        <li>Start/stop the server from the tool window</li>
+        <li>Start/stop the server from the toolbar or settings</li>
         <li>Copy the MCP client configuration JSON with one click</li>
     </ul>
 
@@ -71,19 +71,26 @@
     <projectService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService"/>
 
-    <!-- Settings: IDE MCP Server (parent group) -->
+    <!-- Settings: MCP Server (parent group) -->
     <projectConfigurable
       parentId="tools"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.PluginSettingsConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.settings"
-      displayName="IDE Agent for Copilot"/>
+      instance="com.github.catatafishen.idemcpserver.settings.McpServerConfigurable"
+      id="com.github.catatafishen.idemcpserver"
+      displayName="MCP Server"/>
 
-    <!-- Settings: Tool Registration -->
+    <!-- Settings: MCP Server → General -->
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ToolRegistrationConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.toolRegistration"
-      displayName="Tool Registration"/>
+      parentId="com.github.catatafishen.idemcpserver"
+      instance="com.github.catatafishen.idemcpserver.settings.McpServerGeneralConfigurable"
+      id="com.github.catatafishen.idemcpserver.general"
+      displayName="General"/>
+
+    <!-- Settings: MCP Server → Tools -->
+    <projectConfigurable
+      parentId="com.github.catatafishen.idemcpserver"
+      instance="com.github.catatafishen.idemcpserver.settings.McpToolsConfigurable"
+      id="com.github.catatafishen.idemcpserver.tools"
+      displayName="Tools"/>
 
     <!-- Project service: MCP HTTP server -->
     <projectService
@@ -92,6 +99,7 @@
     <!-- Persistent settings state (shared from plugin-core) -->
     <projectService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings"/>
+
 
     <!-- Start PSI Bridge + MCP server on project open -->
     <postStartupActivity
