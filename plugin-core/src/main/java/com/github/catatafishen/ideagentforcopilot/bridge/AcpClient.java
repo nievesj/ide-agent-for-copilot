@@ -1296,8 +1296,9 @@ public class AcpClient implements Closeable {
                 case "test" -> "⚠ Don't use run_command for tests (including build/check/verify which " +
                     "implicitly run tests). Use 'intellij-code-tools-run_tests' instead. " +
                     "Provides structured results, coverage, and failure details.";
-                case "sed" -> "⚠ Don't use sed. Use 'intellij-code-tools-intellij_write_file' instead. " +
-                    "It provides proper file editing with undo/redo and live editor buffer access.";
+                case "sed" -> "⚠ Don't use sed. Use 'intellij-code-tools-edit_text' for surgical edits " +
+                    "or 'intellij-code-tools-replace_symbol_body' for replacing whole methods/classes. " +
+                    "They provide proper undo/redo and live editor buffer access.";
                 case "cat" ->
                     "⚠ Don't use cat/head/tail/less/more. Use 'intellij-code-tools-intellij_read_file' instead. " +
                         "It reads from the live editor buffer, not stale disk files.";
@@ -1318,7 +1319,7 @@ public class AcpClient implements Closeable {
         } else if ("bash".equals(deniedKind) || "execute".equals(deniedKind)) {
             instruction = "⚠ Don't use bash/shell execution — it reads/writes disk directly, bypassing IntelliJ editor buffers. " +
                 "Use 'intellij-code-tools-run_command' for shell commands (flushes buffers first). " +
-                "For file operations use intellij_read_file, intellij_write_file, search_text, etc. " +
+                "For file operations use intellij_read_file, edit_text, replace_symbol_body, search_text, etc. " +
                 "For git use dedicated git tools: git_status, git_diff, git_log, git_commit, git_stage, " +
                 "git_push, git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset.";
         } else {

@@ -18,16 +18,18 @@
 
   4. EDITING TOOL SELECTION — choose the right tool for the edit scope: \
      **Symbol-based tools** (`replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`): \
-       - PREFER for replacing entire method/class/field bodies or inserting new members. \
+       - You MUST use these for replacing entire method/class/field bodies or inserting new members. \
        - PSI-aware: finds symbols by name, no line numbers or exact text matching needed. \
        - Resilient to formatting changes between read and write. \
        - Use `replace_symbol_body` when rewriting a method. Use `insert_after_symbol` to add a new method after an existing one. \
-     **Text-based tools** (`intellij_write_file` with `old_str`/`new_str`): \
-       - Use for surgical edits WITHIN a method body (a few lines, a single expression). \
+     **`edit_text`** (surgical find-and-replace with `old_str`/`new_str`): \
+       - Use ONLY for small edits within a method body (a few lines, a single expression). \
        - Use for non-symbol content: imports, comments, annotations, XML/config files. \
        - Requires exact text match — read the file first to get the precise string. \
-     **Line-range replace** (`intellij_write_file` with `start_line`/`end_line`/`new_str`): \
-       - Last resort. Use only when old_str matching fails (e.g., duplicate text) and no symbol applies.
+       - NEVER use `edit_text` to replace an entire method — use `replace_symbol_body` instead. \
+     **`intellij_write_file`** (full file write with `content`): \
+       - Use ONLY when writing an entire file from scratch or replacing all content. \
+       - Creates the file if it doesn't exist.
 
   5. BEFORE EDITING UNFAMILIAR FILES: If you get old_str match failures, \
      call format_code first to normalize whitespace, then re-read.
@@ -35,7 +37,7 @@
   6. GIT: Use built-in git tools (git_status, git_diff, git_log, git_commit, etc.). \
      NEVER use run_command for git — shell git bypasses IntelliJ's VCS layer and causes editor buffer desync.
 
-  7. GrazieInspection (grammar) does NOT support apply_quickfix → use intellij_write_file instead.
+  7. GrazieInspection (grammar) does NOT support apply_quickfix → use edit_text instead.
 
   8. VERIFICATION HIERARCHY (use the lightest tool that suffices): \
      a) Auto-highlights in write response → after EACH edit. Instant. Catches most errors. \

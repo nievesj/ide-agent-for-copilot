@@ -532,7 +532,7 @@ public final class PsiBridgeService implements Disposable {
     }
 
     private static boolean isSuccessfulWrite(String toolName, String result) {
-        return ("write_file".equals(toolName) || "intellij_write_file".equals(toolName))
+        return ("write_file".equals(toolName) || "intellij_write_file".equals(toolName) || "edit_text".equals(toolName))
             && (result.startsWith("Edited:") || result.startsWith("Written:"));
     }
 

@@ -234,7 +234,7 @@ public final class ToolUtils {
             return "cat";
         }
 
-        // Block sed — should use intellij_write_file for proper undo/redo and live buffer access
+        // Block sed — should use edit_text for proper undo/redo and live buffer access
         if (cmd.startsWith("sed ") || cmd.contains("| sed") ||
             cmd.contains("&& sed") || cmd.contains("; sed")) {
             return "sed";
@@ -289,7 +289,7 @@ public final class ToolUtils {
             case "cat" -> "Error: cat/head/tail/less/more are not allowed via run_command (reads stale disk files). "
                 + "Use intellij_read_file to read live editor buffers instead.";
             case "sed" -> "Error: sed is not allowed via run_command (bypasses IntelliJ editor buffers). "
-                + "Use intellij_write_file with old_str/new_str for file editing instead.";
+                + "Use edit_text with old_str/new_str for file editing instead.";
             case "grep" -> "Error: grep/rg commands are not allowed via run_command (searches stale disk files). "
                 + "Use search_text or search_symbols to search live editor buffers instead.";
             case "find" -> "Error: find commands are not allowed via run_command. "

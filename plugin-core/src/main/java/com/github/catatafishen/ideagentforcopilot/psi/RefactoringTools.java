@@ -332,10 +332,10 @@ class RefactoringTools extends AbstractToolHandler {
             case "rename" -> performRename(targetElement, symbolName, newName, pathStr);
             case "safe_delete" -> performSafeDelete(targetElement, symbolName, pathStr);
             case "inline" -> "Error: 'inline' refactoring is not yet supported via this tool. " +
-                "Use intellij_write_file to manually inline the code.";
+                "Use edit_text to manually inline the code.";
             case "extract_method" -> "Error: 'extract_method' requires a code selection range " +
                 "which is not well-suited for tool-based invocation. " +
-                "Use intellij_write_file to manually extract the method.";
+                "Use edit_text to manually extract the method.";
             default -> "Error: Unknown operation '" + operation + "'. Supported: rename, safe_delete";
         };
     }

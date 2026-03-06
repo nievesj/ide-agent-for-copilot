@@ -1624,7 +1624,7 @@ class CodeQualityTools extends AbstractToolHandler {
         if (lineProblems.isEmpty()) {
             return "No problems found for inspection '" + inspectionId + "' at line " + targetLine +
                 " in " + pathStr + ". The inspection may have been resolved, or it may be a global inspection " +
-                "that doesn't support quickfixes. Try using intellij_write_file instead.";
+                "that doesn't support quickfixes. Try using edit_text instead.";
         }
 
         return applyAndReportFix(lineProblems, fixIndex, pathStr, targetLine);
@@ -1669,7 +1669,7 @@ class CodeQualityTools extends AbstractToolHandler {
         var fixes = targetProblem.getFixes();
         if (fixes == null || fixes.length == 0) {
             return "No quickfixes available for this problem. Description: " +
-                targetProblem.getDescriptionTemplate() + ". Use intellij_write_file to fix manually.";
+                targetProblem.getDescriptionTemplate() + ". Use edit_text to fix manually.";
         }
 
         var fix = fixes[Math.min(fixIndex, fixes.length - 1)];

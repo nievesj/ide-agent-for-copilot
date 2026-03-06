@@ -92,6 +92,7 @@ class FileTools extends AbstractToolHandler {
         register("intellij_read_file", this::readFile);
         register("write_file", this::writeFile);
         register("intellij_write_file", this::writeFile);
+        register("edit_text", this::writeFile);
         register("create_file", this::createFile);
         register("delete_file", this::deleteFile);
         register("undo", this::undo);
@@ -741,7 +742,7 @@ class FileTools extends AbstractToolHandler {
 
         if (Files.exists(filePath)) {
             return "Error: File already exists: " + pathStr +
-                ". Use intellij_write_file to modify existing files.";
+                ". Use edit_text to modify existing files.";
         }
 
         // Create parent directories

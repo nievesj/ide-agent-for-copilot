@@ -143,6 +143,7 @@ class McpServerTest {
         assertTrue(toolNames.contains("go_to_declaration"));
         assertTrue(toolNames.contains("get_type_hierarchy"));
         assertTrue(toolNames.contains("create_file"));
+        assertTrue(toolNames.contains("edit_text"));
         assertTrue(toolNames.contains("delete_file"));
         assertTrue(toolNames.contains("build_project"));
     }

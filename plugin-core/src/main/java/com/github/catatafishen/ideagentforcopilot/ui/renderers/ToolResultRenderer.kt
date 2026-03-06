@@ -115,6 +115,7 @@ internal object ToolRenderers {
         "intellij_write_file" to WriteFileRenderer,
         "write_file" to WriteFileRenderer,
         "create_file" to WriteFileRenderer,
+        "edit_text" to WriteFileRenderer,
         // Symbol editing
         "replace_symbol_body" to ReplaceSymbolRenderer,
         "insert_before_symbol" to ReplaceSymbolRenderer,

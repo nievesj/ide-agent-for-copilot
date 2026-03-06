@@ -74,14 +74,15 @@ public final class ToolRegistry {
         new ToolEntry("glob", "Glob Find (built-in)", "Find files by name pattern (Copilot CLI built-in)", Category.SEARCH, true, false, false),
         new ToolEntry("bash", "Bash Shell (built-in)", "Run arbitrary shell commands — use run_command instead for safer, paginated execution", Category.SHELL, true, true, false),
         // edit/create/execute/runInTerminal fire permission requests (hasDenyControl=true)
-        new ToolEntry("edit", "Edit File (built-in)", "Edit a file in place (Copilot CLI built-in) — use intellij_write_file for IDE-aware editing", Category.FILE, true, true, true),
+        new ToolEntry("edit", "Edit File (built-in)", "Edit a file in place (Copilot CLI built-in) — use edit_text or replace_symbol_body for IDE-aware editing", Category.FILE, true, true, true),
         new ToolEntry("create", "Create File (built-in)", "Create a new file (Copilot CLI built-in) — use create_file for IDE-aware creation", Category.FILE, true, true, true),
         new ToolEntry("execute", "Execute (built-in)", "Execute a shell command (Copilot CLI built-in)", Category.SHELL, true, true, false),
         new ToolEntry("runInTerminal", "Run in Terminal (built-in)", "Run a command in the integrated terminal (Copilot CLI built-in)", Category.SHELL, true, true, false),
 
         // ── File operations ──────────────────────────────────────────────────────
         new ToolEntry("intellij_read_file", "Read File", "Read a file via IntelliJ's editor buffer — always returns the current in-memory content", Category.FILE, false, false, true),
-        new ToolEntry("intellij_write_file", "Write File", "Write or partially edit a file through IntelliJ — supports full write, old_str/new_str, and line-range replace", Category.FILE, false, false, true),
+        new ToolEntry("intellij_write_file", "Write File", "Write full file content or create a new file through IntelliJ's editor buffer", Category.FILE, false, false, true),
+        new ToolEntry("edit_text", "Edit Text", "Surgical find-and-replace edit within a file — for small changes inside methods, imports, or config", Category.FILE, false, false, true),
         new ToolEntry("create_file", "Create File", "Create a new file and register it in IntelliJ's VFS", Category.FILE, false, false, true),
         new ToolEntry("delete_file", "Delete File", "Delete a file from the project via IntelliJ", Category.FILE, false, false, true),
         new ToolEntry("reload_from_disk", "Reload from Disk", "Force IntelliJ to refresh a file or directory from disk, picking up changes made by external tools", Category.FILE, false, false, true),
