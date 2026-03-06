@@ -45,11 +45,24 @@ configurations.all {
     resolutionStrategy.force("org.jetbrains:annotations:26.0.2")
 }
 
+// Repackage plugin-core without its plugin.xml descriptor.
+// standalone-mcp has its own plugin.xml; including plugin-core's would cause
+// "multiple plugin descriptors" errors during verifyPlugin.
+val repackagePluginCore by tasks.registering(Jar::class) {
+    archiveBaseName.set("plugin-core-classes")
+    dependsOn(project(":plugin-core").tasks.named("jar"))
+    from(provider {
+        zipTree(project(":plugin-core").tasks.named("jar").get().outputs.files.singleFile)
+    }) {
+        exclude("META-INF/plugin.xml")
+    }
+}
+
 // Include plugin-core classes in the standalone plugin
 tasks.named("prepareSandbox") {
-    dependsOn(project(":plugin-core").tasks.named("jar"))
+    dependsOn(repackagePluginCore)
     doLast {
-        val coreJar = project(":plugin-core").tasks.named("jar").get().outputs.files.singleFile
+        val coreJar = repackagePluginCore.get().outputs.files.singleFile
         val ideDirs = File(
             layout.buildDirectory.asFile.get(),
             "idea-sandbox"
@@ -65,8 +78,8 @@ tasks.named("prepareSandbox") {
 tasks.named<Zip>("buildPlugin") {
     archiveBaseName.set("ide-mcp-server")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    dependsOn(project(":plugin-core").tasks.named("jar"))
-    from(project(":plugin-core").tasks.named("jar")) {
+    dependsOn(repackagePluginCore)
+    from(repackagePluginCore) {
         into("lib")
         rename { "plugin-core.jar" }
     }
