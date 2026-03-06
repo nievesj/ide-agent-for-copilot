@@ -1,11 +1,9 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
-import com.github.catatafishen.ideagentforcopilot.services.MacroToolRegistrar;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.ToolEntry;
 import com.intellij.openapi.project.Project;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -48,18 +46,14 @@ public final class McpToolFilter {
     }
 
     /**
-     * Returns all configurable tools including registered macro tools.
+     * Returns all configurable tools for a given project context.
      */
     public static List<ToolEntry> getConfigurableTools(Project project) {
-        List<ToolEntry> tools = new ArrayList<>(getConfigurableTools());
-        if (project != null) {
-            tools.addAll(MacroToolRegistrar.getInstance(project).getRegisteredToolEntries());
-        }
-        return tools;
+        return getConfigurableTools();
     }
 
     /**
-     * Returns tool IDs that are enabled, including macro tools.
+     * Returns tool IDs that are enabled for a given project context.
      */
     public static List<ToolEntry> getEnabledTools(McpServerSettings settings, Project project) {
         return getConfigurableTools(project).stream()

@@ -1,7 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.psi
 
 import com.github.catatafishen.ideagentforcopilot.bridge.CopilotInstructionsManager
-import com.github.catatafishen.ideagentforcopilot.services.MacroToolRegistrar
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
@@ -27,9 +26,6 @@ class PsiBridgeStartup : ProjectActivity {
         notifyIfNewInstructions(project)
 
         PsiBridgeService.getInstance(project).start()
-
-        // Register any user-configured macro tools as MCP tools
-        MacroToolRegistrar.getInstance(project).syncRegistrations()
     }
 
     /**
