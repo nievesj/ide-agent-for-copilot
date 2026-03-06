@@ -6,6 +6,7 @@ import com.github.catatafishen.ideagentforcopilot.services.MacroToolSettings.Mac
 import com.intellij.ide.actionMacro.ActionMacro;
 import com.intellij.ide.actionMacro.ActionMacroManager;
 import com.intellij.openapi.options.Configurable;
+import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
@@ -19,13 +20,17 @@ import javax.swing.*;
 import javax.swing.table.AbstractTableModel;
 import java.awt.*;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
- * Settings panel at Settings > Tools > Macro Tools.
- * Lets users register recorded macros as MCP tools with custom names and descriptions.
+ * Settings panel at Settings &gt; Tools &gt; Macro Tools.
+ * Auto-discovers all recorded macros from {@link ActionMacroManager} and lets users
+ * enable them as MCP tools with custom names and descriptions.
  */
 public final class MacroToolConfigurable implements Configurable {
 
@@ -36,9 +41,7 @@ public final class MacroToolConfigurable implements Configurable {
     private static final int COL_COUNT = 4;
 
     private final Project project;
-    private JPanel mainPanel;
     private MacroTableModel tableModel;
-    private JBTable table;
 
     public MacroToolConfigurable(@NotNull Project project) {
         this.project = project;
@@ -51,18 +54,16 @@ public final class MacroToolConfigurable implements Configurable {
 
     @Override
     public @Nullable JComponent createComponent() {
-        mainPanel = new JPanel(new BorderLayout(0, JBUI.scale(8)));
+        JPanel panel = new JPanel(new BorderLayout(0, JBUI.scale(8)));
 
-        // Info label
         JBLabel info = new JBLabel(
-            "<html>Register recorded macros as MCP tools. "
-                + "Record macros via <b>Edit → Macros → Start Macro Recording</b>.</html>");
+            "<html>Recorded macros are auto-discovered. Enable a macro to expose it as an MCP tool. "
+                + "Record new macros via <b>Edit → Macros → Start Macro Recording</b>.</html>");
         info.setBorder(JBUI.Borders.emptyBottom(4));
-        mainPanel.add(info, BorderLayout.NORTH);
+        panel.add(info, BorderLayout.NORTH);
 
-        // Table
         tableModel = new MacroTableModel();
-        table = new JBTable(tableModel);
+        JBTable table = new JBTable(tableModel);
         table.getColumnModel().getColumn(COL_ENABLED).setMaxWidth(JBUI.scale(60));
         table.getColumnModel().getColumn(COL_ENABLED).setMinWidth(JBUI.scale(60));
         table.getColumnModel().getColumn(COL_MACRO).setPreferredWidth(JBUI.scale(150));
@@ -70,89 +71,85 @@ public final class MacroToolConfigurable implements Configurable {
         table.getColumnModel().getColumn(COL_DESCRIPTION).setPreferredWidth(JBUI.scale(300));
         table.setRowHeight(JBUI.scale(24));
 
-        JBScrollPane scrollPane = new JBScrollPane(table);
-        mainPanel.add(scrollPane, BorderLayout.CENTER);
+        panel.add(new JBScrollPane(table), BorderLayout.CENTER);
 
-        // Buttons
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0));
-        JButton addButton = new JButton("Register Macro...");
-        addButton.addActionListener(e -> addMacro());
-        JButton removeButton = new JButton("Remove");
-        removeButton.addActionListener(e -> removeSelected());
-        buttonPanel.add(addButton);
-        buttonPanel.add(removeButton);
-        mainPanel.add(buttonPanel, BorderLayout.SOUTH);
+        JButton refreshButton = new JButton("Refresh");
+        refreshButton.setToolTipText("Re-scan for newly recorded macros");
+        refreshButton.addActionListener(e -> refreshMacroList());
+        buttonPanel.add(refreshButton);
+        panel.add(buttonPanel, BorderLayout.SOUTH);
 
         reset();
-        return mainPanel;
+        return panel;
     }
 
-    private void addMacro() {
-        ActionMacro[] macros = ActionMacroManager.getInstance().getAllMacros();
-        if (macros.length == 0) {
-            JOptionPane.showMessageDialog(mainPanel,
-                "No recorded macros found.\n"
-                    + "Record one via Edit → Macros → Start Macro Recording.",
-                "No Macros", JOptionPane.INFORMATION_MESSAGE);
-            return;
+    /**
+     * Builds the table rows by merging persisted registrations with all currently
+     * recorded macros from {@link ActionMacroManager}. New macros appear as disabled.
+     */
+    private List<MacroRegistration> buildMergedRows() {
+        MacroToolSettings settings = MacroToolSettings.getInstance(project);
+        List<MacroRegistration> persisted = settings.getRegistrations();
+
+        Map<String, MacroRegistration> byName = new LinkedHashMap<>();
+        for (MacroRegistration reg : persisted) {
+            byName.put(reg.macroName, reg.copy());
         }
 
-        // Filter out already-registered macros
-        Set<String> alreadyRegistered = tableModel.rows.stream()
-            .map(r -> r.macroName)
-            .collect(Collectors.toSet());
+        for (ActionMacro macro : ActionMacroManager.getInstance().getAllMacros()) {
+            byName.computeIfAbsent(macro.getName(), name -> {
+                String toolName = MacroToolRegistrar.sanitizeToolName(name);
+                return new MacroRegistration(name, toolName, "", false);
+            });
+        }
 
-        List<String> available = new ArrayList<>();
-        for (ActionMacro m : macros) {
-            if (!alreadyRegistered.contains(m.getName())) {
-                available.add(m.getName());
+        return new ArrayList<>(byName.values());
+    }
+
+    /**
+     * Refreshes the table by re-scanning for newly recorded macros while preserving
+     * the user's in-progress edits for already-listed macros.
+     */
+    private void refreshMacroList() {
+        if (tableModel == null) return;
+
+        Map<String, MacroRegistration> currentEdits = new LinkedHashMap<>();
+        for (MacroRegistration row : tableModel.rows) {
+            currentEdits.put(row.macroName, row);
+        }
+
+        Set<String> discoveredNames = new LinkedHashSet<>();
+        for (ActionMacro macro : ActionMacroManager.getInstance().getAllMacros()) {
+            discoveredNames.add(macro.getName());
+        }
+
+        List<MacroRegistration> merged = new ArrayList<>();
+        for (Map.Entry<String, MacroRegistration> entry : currentEdits.entrySet()) {
+            if (discoveredNames.remove(entry.getKey())) {
+                merged.add(entry.getValue());
             }
         }
-
-        if (available.isEmpty()) {
-            JOptionPane.showMessageDialog(mainPanel,
-                "All recorded macros are already registered.",
-                "No New Macros", JOptionPane.INFORMATION_MESSAGE);
-            return;
+        for (String newName : discoveredNames) {
+            String toolName = MacroToolRegistrar.sanitizeToolName(newName);
+            merged.add(new MacroRegistration(newName, toolName, "", false));
         }
 
-        String selected = (String) JOptionPane.showInputDialog(mainPanel,
-            "Select a macro to register as an MCP tool:",
-            "Register Macro",
-            JOptionPane.PLAIN_MESSAGE,
-            null,
-            available.toArray(new String[0]),
-            available.get(0));
-
-        if (selected != null) {
-            String toolName = MacroToolRegistrar.sanitizeToolName(selected);
-            MacroRegistration reg = new MacroRegistration(selected, toolName, "", true);
-            tableModel.rows.add(reg);
-            tableModel.fireTableRowsInserted(tableModel.rows.size() - 1, tableModel.rows.size() - 1);
-        }
-    }
-
-    private void removeSelected() {
-        int row = table.getSelectedRow();
-        if (row >= 0) {
-            tableModel.rows.remove(row);
-            tableModel.fireTableRowsDeleted(row, row);
-        }
+        tableModel.rows = merged;
+        tableModel.fireTableDataChanged();
     }
 
     @Override
     public boolean isModified() {
-        MacroToolSettings settings = MacroToolSettings.getInstance(project);
-        return !tableModel.rows.equals(settings.getRegistrations());
+        return !tableModel.rows.equals(buildMergedRows());
     }
 
     @Override
-    public void apply() throws com.intellij.openapi.options.ConfigurationException {
-        // Validate: no duplicate tool names
-        Set<String> names = new java.util.HashSet<>();
+    public void apply() throws ConfigurationException {
+        Set<String> names = new HashSet<>();
         for (MacroRegistration reg : tableModel.rows) {
-            if (!reg.toolName.isEmpty() && !names.add(reg.toolName)) {
-                throw new com.intellij.openapi.options.ConfigurationException(
+            if (reg.enabled && !reg.toolName.isEmpty() && !names.add(reg.toolName)) {
+                throw new ConfigurationException(
                     "Duplicate tool name: " + reg.toolName);
             }
         }
@@ -160,7 +157,7 @@ public final class MacroToolConfigurable implements Configurable {
         MacroToolSettings settings = MacroToolSettings.getInstance(project);
         settings.setRegistrations(tableModel.rows.stream()
             .map(MacroRegistration::copy)
-            .collect(Collectors.toList()));
+            .toList());
 
         MacroToolRegistrar.getInstance(project).syncRegistrations();
     }
@@ -168,17 +165,14 @@ public final class MacroToolConfigurable implements Configurable {
     @Override
     public void reset() {
         if (tableModel == null) return;
-        MacroToolSettings settings = MacroToolSettings.getInstance(project);
-        tableModel.rows = new ArrayList<>(
-            settings.getRegistrations().stream()
-                .map(MacroRegistration::copy)
-                .collect(Collectors.toList()));
+        tableModel.rows = buildMergedRows();
         tableModel.fireTableDataChanged();
     }
 
     private static final class MacroTableModel extends AbstractTableModel {
         private static final String[] COLUMNS = {"Enabled", "Macro", "Tool Name", "Description"};
-        List<MacroRegistration> rows = new ArrayList<>();
+        private static final long serialVersionUID = 1L;
+        transient List<MacroRegistration> rows = new ArrayList<>();
 
         @Override
         public int getRowCount() {
@@ -202,7 +196,6 @@ public final class MacroToolConfigurable implements Configurable {
 
         @Override
         public boolean isCellEditable(int rowIndex, int columnIndex) {
-            // Macro name is read-only; tool name, description, and enabled are editable
             return columnIndex != COL_MACRO;
         }
 
