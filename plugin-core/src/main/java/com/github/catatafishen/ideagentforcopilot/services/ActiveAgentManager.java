@@ -41,7 +41,11 @@ public final class ActiveAgentManager {
 
     public enum AgentType {
         COPILOT("copilot", "GitHub Copilot"),
-        CLAUDE("claude", "Claude Code");
+        CLAUDE("claude", "Claude Code"),
+        KIRO("kiro", "Kiro"),
+        GEMINI("gemini", "Gemini"),
+        OPENCODE("opencode", "OpenCode"),
+        CLINE("cline", "Cline");
 
         private final String id;
         private final String displayName;
@@ -110,6 +114,10 @@ public final class ActiveAgentManager {
     public AgentService getService() {
         return switch (getActiveType()) {
             case CLAUDE -> ClaudeService.getInstance(project);
+            case KIRO -> KiroService.getInstance(project);
+            case GEMINI -> GeminiService.getInstance(project);
+            case OPENCODE -> OpenCodeService.getInstance(project);
+            case CLINE -> ClineService.getInstance(project);
             default -> CopilotService.getInstance(project);
         };
     }

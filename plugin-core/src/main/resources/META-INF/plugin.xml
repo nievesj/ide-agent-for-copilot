@@ -162,6 +162,14 @@
     <applicationService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.ClaudeService"/>
     <applicationService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.KiroService"/>
+    <applicationService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.GeminiService"/>
+    <applicationService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.OpenCodeService"/>
+    <applicationService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.ClineService"/>
+    <applicationService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings"/>
     <applicationService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings"/>
