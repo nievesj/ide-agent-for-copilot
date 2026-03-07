@@ -60,6 +60,26 @@ public final class CopilotService extends AgentService {
         }
 
         @Override
+        public int getPromptTimeout() {
+            return CopilotSettings.getPromptTimeout();
+        }
+
+        @Override
+        public void setPromptTimeout(int seconds) {
+            CopilotSettings.setPromptTimeout(seconds);
+        }
+
+        @Override
+        public int getMaxToolCallsPerTurn() {
+            return CopilotSettings.getMaxToolCallsPerTurn();
+        }
+
+        @Override
+        public void setMaxToolCallsPerTurn(int count) {
+            CopilotSettings.setMaxToolCallsPerTurn(count);
+        }
+
+        @Override
         public @NotNull ToolPermission getToolPermission(@NotNull String toolId) {
             return CopilotSettings.getToolPermission(toolId);
         }

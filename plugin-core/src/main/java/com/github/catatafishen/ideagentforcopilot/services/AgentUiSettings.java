@@ -37,6 +37,16 @@ public interface AgentUiSettings {
 
     // ── Tool permissions ─────────────────────────────────────────────────────
 
+    // ── Timeout & limits ─────────────────────────────────────────────────────
+
+    int getPromptTimeout();
+
+    void setPromptTimeout(int seconds);
+
+    int getMaxToolCallsPerTurn();
+
+    void setMaxToolCallsPerTurn(int count);
+
     @NotNull
     ToolPermission getToolPermission(@NotNull String toolId);
 

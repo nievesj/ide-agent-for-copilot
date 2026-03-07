@@ -59,6 +59,26 @@ public final class ClaudeService extends AgentService {
         }
 
         @Override
+        public int getPromptTimeout() {
+            return ClaudeSettings.getPromptTimeout();
+        }
+
+        @Override
+        public void setPromptTimeout(int seconds) {
+            ClaudeSettings.setPromptTimeout(seconds);
+        }
+
+        @Override
+        public int getMaxToolCallsPerTurn() {
+            return ClaudeSettings.getMaxToolCallsPerTurn();
+        }
+
+        @Override
+        public void setMaxToolCallsPerTurn(int count) {
+            ClaudeSettings.setMaxToolCallsPerTurn(count);
+        }
+
+        @Override
         public @NotNull ToolPermission getToolPermission(@NotNull String toolId) {
             return ClaudeSettings.getToolPermission(toolId);
         }
