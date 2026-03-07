@@ -101,7 +101,7 @@ const ChatController = {
 
     // ── Public API ─────────────────────────────────────────────
 
-    addUserMessage(text: string, timestamp: string, refsHtml?: string): void {
+    addUserMessage(text: string, timestamp: string, encodedBubbleHtml?: string): void {
         const msg = document.createElement('chat-message');
         msg.setAttribute('type', 'user');
         const meta = document.createElement('message-meta');
@@ -109,14 +109,11 @@ const ChatController = {
         msg.appendChild(meta);
         const bubble = document.createElement('message-bubble');
         bubble.setAttribute('type', 'user');
-        if (refsHtml) {
-            const refsRow = document.createElement('span');
-            refsRow.className = 'inline-refs';
-            refsRow.innerHTML = refsHtml;
-            bubble.appendChild(refsRow);
+        if (encodedBubbleHtml) {
+            bubble.innerHTML = b64(encodedBubbleHtml);
+        } else {
+            bubble.textContent = text;
         }
-        const textNode = document.createTextNode(text);
-        bubble.appendChild(textNode);
         msg.appendChild(bubble);
         this._msgs().appendChild(msg);
         this._container()?.forceScroll();

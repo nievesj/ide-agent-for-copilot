@@ -636,7 +636,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             setSendingState(true)
             setResponseStatus(MSG_THINKING)
 
-            // Add session separator before new prompt if old content exists and no active session
             if (currentSessionId == null && consolePanel.hasContent()) {
                 val ts = java.text.SimpleDateFormat("MMM d, yyyy h:mm a").format(java.util.Date())
                 consolePanel.addSessionSeparator(ts)
@@ -644,13 +643,16 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
             // Collect context items from inline inlays BEFORE clearing the editor
             val contextItems = contextManager.collectInlineContextItems()
-            val prompt = rawText.replace(PromptContextManager.ORC.toString(), "").trim()
+            // Agent sees inline text refs: "refactor `AuthLoginService.kt:116-170` please"
+            val prompt = contextManager.replaceOrcsWithTextRefs(rawText, contextItems)
             val ctxFiles = if (contextItems.isNotEmpty()) {
                 contextItems.map { item ->
                     Triple(item.name, item.path, if (item.isSelection) item.startLine else 0)
                 }
             } else null
-            consolePanel.addPromptEntry(prompt, ctxFiles)
+            // Chat bubble gets HTML with inline chip links at ORC positions
+            val bubbleHtml = buildBubbleHtml(rawText, contextItems)
+            consolePanel.addPromptEntry(prompt, ctxFiles, bubbleHtml)
             promptTextArea.text = ""
 
             ApplicationManager.getApplication().executeOnPooledThread {
@@ -660,6 +662,44 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             }
         }
     }
+
+    /**
+     * Build HTML for the chat bubble where each ORC is replaced with an inline chip link.
+     * Returns null if there are no context items (plain text suffices).
+     */
+    private fun buildBubbleHtml(rawText: String, items: List<ContextItemData>): String? {
+        if (items.isEmpty()) return null
+        val fileIconSvg = "<svg width='12' height='12' viewBox='0 0 16 16' fill='currentColor' " +
+            "style='vertical-align:-2px'><path d='M3.5 1A1.5 1.5 0 0 0 2 2.5v11A1.5 1.5 0 0 0 " +
+            "3.5 15h9a1.5 1.5 0 0 0 1.5-1.5V6.621a1.5 1.5 0 0 0-.44-1.06L9.94 1.94A1.5 1.5 0 0 0 " +
+            "8.879 1.5H3.5z'/></svg>"
+        val sb = StringBuilder()
+        var idx = 0
+        for (ch in rawText) {
+            if (ch == PromptContextManager.ORC && idx < items.size) {
+                val item = items[idx++]
+                val href =
+                    if (item.isSelection && item.startLine > 0) "openfile://${item.path}:${item.startLine}" else "openfile://${item.path}"
+                val title =
+                    escHtml(if (item.isSelection && item.startLine > 0) "${item.path}:${item.startLine}" else item.path)
+                sb.append("<a class='prompt-ctx-chip' href='$href' title='$title'>$fileIconSvg ${escHtml(item.name)}</a>")
+            } else {
+                when (ch) {
+                    '&' -> sb.append("&amp;")
+                    '<' -> sb.append("&lt;")
+                    '>' -> sb.append("&gt;")
+                    '\'' -> sb.append("&#39;")
+                    '"' -> sb.append("&quot;")
+                    '\n' -> sb.append("\n")
+                    else -> sb.append(ch)
+                }
+            }
+        }
+        return sb.toString().trim()
+    }
+
+    private fun escHtml(s: String) =
+        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;")
 
     private fun setSendingState(sending: Boolean) {
         isSending = sending
@@ -1524,9 +1564,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         return currentSessionId!!
     }
 
-    private fun buildEffectivePrompt(prompt: String, contextItems: List<ContextItemData> = emptyList()): String {
-        val refMarkers = contextManager.buildReferenceMarkers(contextItems.ifEmpty { null })
-        var effective = if (refMarkers.isNotEmpty()) "$prompt\n\n$refMarkers" else prompt
+    private fun buildEffectivePrompt(prompt: String): String {
+        var effective = prompt
 
         if (CopilotSettings.getSessionMode() == "plan") {
             effective = "[[PLAN]] $effective"
@@ -1583,7 +1622,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             val modelId = prepareModelAndTurnState()
 
             val references = contextManager.buildContextReferences(contextItems.ifEmpty { null })
-            val effectivePrompt = buildEffectivePrompt(prompt, contextItems)
+            val effectivePrompt = buildEffectivePrompt(prompt)
             addContextEntries(references, contextItems)
 
             dispatchPromptWithRetry(client, sessionId, effectivePrompt, modelId, references)

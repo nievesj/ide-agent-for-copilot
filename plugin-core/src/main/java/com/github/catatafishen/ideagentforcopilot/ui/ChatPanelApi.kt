@@ -17,7 +17,7 @@ interface ChatPanelApi : Disposable {
 
     // ── User messages ──────────────────────────────────────────────
 
-    fun addPromptEntry(text: String, contextFiles: List<Triple<String, String, Int>>? = null)
+    fun addPromptEntry(text: String, contextFiles: List<Triple<String, String, Int>>? = null, bubbleHtml: String? = null)
     fun setPromptStats(modelId: String, multiplier: String)
     fun setCurrentModel(modelId: String)
     fun addContextFilesEntry(files: List<Pair<String, String>>)

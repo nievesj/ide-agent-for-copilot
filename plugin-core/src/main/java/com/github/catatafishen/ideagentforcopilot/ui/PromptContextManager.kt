@@ -62,6 +62,24 @@ class PromptContextManager(
         }
     }
 
+    /**
+     * Replace each ORC in [rawText] with a backtick-wrapped text reference
+     * from the corresponding context item, e.g. `` `AuthLoginService.kt:116-170` ``.
+     */
+    fun replaceOrcsWithTextRefs(rawText: String, items: List<ContextItemData>): String {
+        if (items.isEmpty()) return rawText.replace(ORC.toString(), "").trim()
+        val sb = StringBuilder()
+        var idx = 0
+        for (ch in rawText) {
+            if (ch == ORC && idx < items.size) {
+                sb.append('`').append(items[idx++].name).append('`')
+            } else {
+                sb.append(ch)
+            }
+        }
+        return sb.toString().trim()
+    }
+
     // ── Clipboard detection ───────────────────────────────────────────
 
     fun getClipboardText(): String? {

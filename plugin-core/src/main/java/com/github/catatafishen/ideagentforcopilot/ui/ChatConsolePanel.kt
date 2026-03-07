@@ -225,22 +225,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     // ── Public API ─────────────────────────────────────────────────
 
-    override fun addPromptEntry(text: String, contextFiles: List<Triple<String, String, Int>>?) {
+    override fun addPromptEntry(text: String, contextFiles: List<Triple<String, String, Int>>?, bubbleHtml: String?) {
         toolJustCompleted = false
         finalizeCurrentText()
         collapseThinking()
         currentTurnId = "t${turnCounter++}"
         val ts = timestamp()
         entries.add(EntryData.Prompt(text, ts, contextFiles))
-        val refsHtml = if (!contextFiles.isNullOrEmpty()) {
-            contextFiles.joinToString("") { (name, path, line) ->
-                val href = if (line > 0) "openfile://$path:$line" else "openfile://$path"
-                "<a class=\\'prompt-ctx-chip\\' href=\\'$href\\' title=\\'${escJs(path)}${if (line > 0) ":$line" else ""}\\'>$FILE_ICON_SVG ${
-                    escJs(name)
-                }</a>"
-            }
-        } else ""
-        executeJs("ChatController.addUserMessage('${escJs(text)}','$ts','$refsHtml')")
+        val encodedBubble = if (bubbleHtml != null) b64(bubbleHtml) else ""
+        executeJs("ChatController.addUserMessage('${escJs(text)}','$ts','$encodedBubble')")
     }
 
     override fun startStreaming() {
@@ -763,7 +756,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                     sb.append("<message-meta><span class='ts'>${esc(ts)}</span></message-meta>")
                     sb.append("<message-bubble type='user'>")
                     if (refsHtml.isNotEmpty()) {
-                        sb.append("<span class='inline-refs'>$refsHtml</span>")
+                        sb.append(refsHtml).append(" ")
                     }
                     sb.append("${esc(text)}</message-bubble>")
                     sb.append("</chat-message>")
@@ -867,13 +860,17 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     private fun buildPromptRefsHtml(ctxFiles: com.google.gson.JsonArray?): String {
         if (ctxFiles == null || ctxFiles.isEmpty) return ""
+        val iconSvg = "<svg width='12' height='12' viewBox='0 0 16 16' fill='currentColor' " +
+            "style='vertical-align:-2px'><path d='M3.5 1A1.5 1.5 0 0 0 2 2.5v11A1.5 1.5 0 0 0 " +
+            "3.5 15h9a1.5 1.5 0 0 0 1.5-1.5V6.621a1.5 1.5 0 0 0-.44-1.06L9.94 1.94A1.5 1.5 0 0 0 " +
+            "8.879 1.5H3.5z'/></svg>"
         return ctxFiles.joinToString("") { f ->
             val fo = f.asJsonObject
             val name = fo["name"]?.asString ?: ""
             val path = fo["path"]?.asString ?: ""
             val line = fo["line"]?.asInt ?: 0
             val href = if (line > 0) "openfile://$path:$line" else "openfile://$path"
-            "<a class='prompt-ctx-chip' href='$href' title='${esc(path)}${if (line > 0) ":$line" else ""}'>$FILE_ICON_SVG ${
+            "<a class='prompt-ctx-chip' href='$href' title='${esc(path)}${if (line > 0) ":$line" else ""}'>$iconSvg ${
                 esc(
                     name
                 )
