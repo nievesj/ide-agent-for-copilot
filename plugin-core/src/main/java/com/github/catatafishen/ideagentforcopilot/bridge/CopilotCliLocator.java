@@ -124,12 +124,12 @@ final class CopilotCliLocator {
      */
     @Nullable
     static String findMcpServerJar() {
-        // Strategy 1: Use IntelliJ plugin API to find plugin directory
+        // Strategy 1: Use PlatformApiCompat to find plugin directory (avoids daemon false positives)
         try {
-            var pluginId = com.intellij.openapi.extensions.PluginId.getId("com.github.catatafishen.ideagentforcopilot");
-            var plugin = com.intellij.ide.plugins.PluginManagerCore.getPlugin(pluginId);
-            if (plugin != null) {
-                File libDir = plugin.getPluginPath().resolve("lib").toFile();
+            java.nio.file.Path pluginPath = com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat
+                .getPluginPath("com.github.catatafishen.ideagentforcopilot");
+            if (pluginPath != null) {
+                File libDir = pluginPath.resolve("lib").toFile();
                 File mcpJar = new File(libDir, "mcp-server.jar");
                 if (mcpJar.exists()) {
                     LOG.info("Found MCP server JAR via plugin API: " + mcpJar.getAbsolutePath());

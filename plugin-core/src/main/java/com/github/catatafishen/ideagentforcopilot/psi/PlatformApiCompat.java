@@ -570,6 +570,21 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Returns the filesystem path to a plugin's installation directory, or null if unavailable.
+     *
+     * <p><b>Why extracted:</b> {@code PluginManagerCore.getPlugin(PluginId)} has a different
+     * {@code @NotNull} annotation between IDE versions, causing the daemon to report
+     * "cannot be applied to (PluginId)". Cascading: {@code descriptor.getPluginPath()} also
+     * fails because the return type of {@code getPlugin} is unresolved. The Gradle build
+     * compiles without errors.</p>
+     */
+    public static @Nullable java.nio.file.Path getPluginPath(@NotNull String pluginId) {
+        var descriptor = com.intellij.ide.plugins.PluginManagerCore.getPlugin(
+            com.intellij.openapi.extensions.PluginId.getId(pluginId));
+        return descriptor != null ? descriptor.getPluginPath() : null;
+    }
+
+    /**
      * Searches for a ConfigurationType by flexible matching on ID and display name.
      * <p>
      * False positive: {@code ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()} fails
