@@ -1,9 +1,12 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.ui.PermissionsPanel;
 import com.intellij.openapi.options.Configurable;
+import com.intellij.openapi.project.Project;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
@@ -14,7 +17,12 @@ import javax.swing.*;
  */
 public final class ToolPermissionsConfigurable implements Configurable {
 
+    private final Project project;
     private PermissionsPanel permissionsPanel;
+
+    public ToolPermissionsConfigurable(@NotNull Project project) {
+        this.project = project;
+    }
 
     @Override
     public @Nls(capitalization = Nls.Capitalization.Title) String getDisplayName() {
@@ -23,7 +31,8 @@ public final class ToolPermissionsConfigurable implements Configurable {
 
     @Override
     public @Nullable JComponent createComponent() {
-        permissionsPanel = new PermissionsPanel();
+        var settings = ActiveAgentManager.getInstance(project).getSettings();
+        permissionsPanel = new PermissionsPanel(settings);
         JComponent comp = permissionsPanel.getComponent();
         comp.setPreferredSize(JBUI.size(740, 560));
         comp.setMinimumSize(JBUI.size(500, 340));

@@ -8,6 +8,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Copilot-specific agent service.
@@ -25,6 +26,78 @@ public final class CopilotService extends AgentService {
     @NotNull
     public static CopilotService getInstance(@NotNull Project project) {
         return PlatformApiCompat.getService(project, CopilotService.class);
+    }
+
+    private final AgentUiSettings uiSettings = new AgentUiSettings() {
+        @Override
+        public @Nullable String getSelectedModel() {
+            return CopilotSettings.getSelectedModel();
+        }
+
+        @Override
+        public void setSelectedModel(@NotNull String modelId) {
+            CopilotSettings.setSelectedModel(modelId);
+        }
+
+        @Override
+        public @NotNull String getSessionMode() {
+            return CopilotSettings.getSessionMode();
+        }
+
+        @Override
+        public void setSessionMode(@NotNull String mode) {
+            CopilotSettings.setSessionMode(mode);
+        }
+
+        @Override
+        public @Nullable String getActiveAgentLabel() {
+            return CopilotSettings.getActiveAgentLabel();
+        }
+
+        @Override
+        public void setActiveAgentLabel(@Nullable String label) {
+            CopilotSettings.setActiveAgentLabel(label);
+        }
+
+        @Override
+        public @NotNull ToolPermission getToolPermission(@NotNull String toolId) {
+            return CopilotSettings.getToolPermission(toolId);
+        }
+
+        @Override
+        public void setToolPermission(@NotNull String toolId, @NotNull ToolPermission perm) {
+            CopilotSettings.setToolPermission(toolId, perm);
+        }
+
+        @Override
+        public @NotNull ToolPermission getToolPermissionInsideProject(@NotNull String toolId) {
+            return CopilotSettings.getToolPermissionInsideProject(toolId);
+        }
+
+        @Override
+        public void setToolPermissionInsideProject(@NotNull String toolId, @NotNull ToolPermission perm) {
+            CopilotSettings.setToolPermissionInsideProject(toolId, perm);
+        }
+
+        @Override
+        public @NotNull ToolPermission getToolPermissionOutsideProject(@NotNull String toolId) {
+            return CopilotSettings.getToolPermissionOutsideProject(toolId);
+        }
+
+        @Override
+        public void setToolPermissionOutsideProject(@NotNull String toolId, @NotNull ToolPermission perm) {
+            CopilotSettings.setToolPermissionOutsideProject(toolId, perm);
+        }
+
+        @Override
+        public void clearToolSubPermissions(@NotNull String toolId) {
+            CopilotSettings.clearToolSubPermissions(toolId);
+        }
+    };
+
+    @Override
+    public @NotNull AgentUiSettings getUiSettings() {
+        return uiSettings;
     }
 
     @Override

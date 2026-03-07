@@ -168,6 +168,8 @@
 
     <!-- Project Services -->
     <projectService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager"/>
+    <projectService
       serviceInterface="com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings"
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.bridge.CopilotToolLayerSettings"/>
     <projectService

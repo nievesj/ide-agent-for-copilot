@@ -4,8 +4,7 @@ import com.github.catatafishen.ideagentforcopilot.bridge.AcpClient
 import com.github.catatafishen.ideagentforcopilot.bridge.AcpException
 import com.github.catatafishen.ideagentforcopilot.bridge.Model
 import com.github.catatafishen.ideagentforcopilot.bridge.ResourceReference
-import com.github.catatafishen.ideagentforcopilot.services.CopilotService
-import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.*
@@ -51,6 +50,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     private val mainPanel = JBPanel<JBPanel<*>>(BorderLayout())
+    private val agentManager = ActiveAgentManager.getInstance(project)
 
     // Shared model list (populated from ACP)
     private var loadedModels: List<Model> = emptyList()
@@ -992,9 +992,9 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             )) {
                 triggerGroup.add(object : ToggleAction(label) {
                     override fun getActionUpdateThread() = ActionUpdateThread.BGT
-                    override fun isSelected(e: AnActionEvent) = CopilotSettings.getAttachTriggerChar() == value
+                    override fun isSelected(e: AnActionEvent) = ActiveAgentManager.getAttachTriggerChar() == value
                     override fun setSelected(e: AnActionEvent, state: Boolean) {
-                        if (state) CopilotSettings.setAttachTriggerChar(value)
+                        if (state) ActiveAgentManager.setAttachTriggerChar(value)
                     }
                 })
             }
@@ -1093,10 +1093,10 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
         override fun isSelected(e: AnActionEvent): Boolean =
-            CopilotSettings.getFollowAgentFiles(project)
+            ActiveAgentManager.getFollowAgentFiles(project)
 
         override fun setSelected(e: AnActionEvent, state: Boolean) {
-            CopilotSettings.setFollowAgentFiles(project, state)
+            ActiveAgentManager.setFollowAgentFiles(project, state)
         }
 
     }
@@ -1262,11 +1262,11 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                         if (index == selectedModelIndex) return
 
                         selectedModelIndex = index
-                        CopilotSettings.setSelectedModel(model.id)
+                        agentManager.settings.setSelectedModel(model.id)
                         LOG.info("Model selected: ${model.id} (index=$index)")
                         ApplicationManager.getApplication().executeOnPooledThread {
                             try {
-                                val client = CopilotService.getInstance(project).getClient()
+                                val client = agentManager.client
                                 val sessionId = currentSessionId
                                 if (sessionId != null) {
                                     // Switch model on current session (no restart needed)
@@ -1297,21 +1297,21 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     // ComboBoxAction for mode selection — matches Run panel dropdown style
-    private class ModeSelectorAction : ComboBoxAction() {
+    private inner class ModeSelectorAction : ComboBoxAction() {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun createPopupActionGroup(button: JComponent, context: DataContext): DefaultActionGroup {
             val group = DefaultActionGroup()
             group.add(object : AnAction("Agent") {
                 override fun actionPerformed(e: AnActionEvent) {
-                    CopilotSettings.setSessionMode("agent")
+                    agentManager.settings.setSessionMode("agent")
                 }
 
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
             group.add(object : AnAction("Plan") {
                 override fun actionPerformed(e: AnActionEvent) {
-                    CopilotSettings.setSessionMode("plan")
+                    agentManager.settings.setSessionMode("plan")
                 }
 
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -1320,7 +1320,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
 
         override fun update(e: AnActionEvent) {
-            e.presentation.text = if (CopilotSettings.getSessionMode() == "plan") "Plan" else "Agent"
+            e.presentation.text = if (agentManager.settings.sessionMode == "plan") "Plan" else "Agent"
         }
     }
 
@@ -1417,7 +1417,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         // remove it and open the file search popup instead
         editor.document.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
             override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
-                val trigger = CopilotSettings.getAttachTriggerChar()
+                val trigger = ActiveAgentManager.getAttachTriggerChar()
                 if (trigger.isEmpty()) return
                 val inserted = event.newFragment.toString()
                 if (inserted != trigger) return
@@ -1532,7 +1532,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         val sessionId = currentSessionId
         if (sessionId != null) {
             try {
-                CopilotService.getInstance(project).getClient().cancelSession(sessionId)
+                agentManager.client.cancelSession(sessionId)
             } catch (_: Exception) {
                 // Best-effort cancellation
             }
@@ -1549,7 +1549,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             currentSessionId = client.createSession(project.basePath)
             addTimelineEvent(EventType.SESSION_START, "Session created")
             updateSessionInfo()
-            val savedModel = CopilotSettings.getSelectedModel()
+            val savedModel = agentManager.settings.selectedModel
             if (!savedModel.isNullOrEmpty()) {
                 try {
                     client.setModel(currentSessionId!!, savedModel)
@@ -1564,7 +1564,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private fun buildEffectivePrompt(prompt: String): String {
         var effective = prompt
 
-        if (CopilotSettings.getSessionMode() == "plan") {
+        if (agentManager.settings.sessionMode == "plan") {
             effective = "[[PLAN]] $effective"
         }
 
@@ -1625,7 +1625,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         SwingUtilities.invokeLater {
             consolePanel.component.revalidate()
             consolePanel.component.repaint()
-            if (com.github.catatafishen.ideagentforcopilot.services.CopilotSettings.getFollowAgentFiles(project)) {
+            if (ActiveAgentManager.getFollowAgentFiles(project)) {
                 promptTextArea.requestFocusInWindow()
             }
         }
@@ -1635,8 +1635,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         try {
             if (isBlockedByAuth()) return
 
-            val service = CopilotService.getInstance(project)
-            val client = service.getClient()
+            val client = agentManager.client
             val sessionId = ensureSessionCreated(client)
             wirePermissionListener(client)
 
@@ -1834,8 +1833,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 if (::processingTimerPanel.isInitialized) processingTimerPanel.incrementToolCalls()
                 toolCallTitles[toolCallId] = "task" // mark as sub-agent for update routing
                 activeSubAgentId = toolCallId
-                CopilotService.getInstance(project).getClient().setSubAgentActive(true)
-                CopilotSettings.setActiveAgentLabel(agentType)
+                agentManager.client.setSubAgentActive(true)
+                agentManager.settings.setActiveAgentLabel(agentType)
                 setResponseStatus("Running: $title")
                 val description = title.ifBlank { extractJsonField(arguments, "description") ?: "Sub-agent task" }
                 val prompt = extractJsonField(arguments, "prompt")
@@ -1877,8 +1876,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             setResponseStatus(MSG_THINKING)
             if (isSubAgent) {
                 activeSubAgentId = null
-                CopilotService.getInstance(project).getClient().setSubAgentActive(false)
-                CopilotSettings.setActiveAgentLabel(null)
+                agentManager.client.setSubAgentActive(false)
+                agentManager.settings.setActiveAgentLabel(null)
                 consolePanel.updateSubAgentResult(toolCallId, "completed", result)
             } else if (isInternal) {
                 consolePanel.updateSubAgentToolCall(toolCallId, "completed", result)
@@ -1891,8 +1890,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 ?: update.toString().take(500)
             if (isSubAgent) {
                 activeSubAgentId = null
-                CopilotService.getInstance(project).getClient().setSubAgentActive(false)
-                CopilotSettings.setActiveAgentLabel(null)
+                agentManager.client.setSubAgentActive(false)
+                agentManager.settings.setActiveAgentLabel(null)
                 consolePanel.updateSubAgentResult(toolCallId, "failed", error)
             } else if (isInternal) {
                 consolePanel.updateSubAgentToolCall(toolCallId, "failed", error)
@@ -1971,7 +1970,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
     private fun getModelMultiplier(modelId: String): String {
         return try {
-            CopilotService.getInstance(project).getClient().getModelMultiplier(modelId)
+            agentManager.client.getModelMultiplier(modelId)
         } catch (_: Exception) {
             "1x"
         }
@@ -2287,7 +2286,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     private fun restoreModelSelection(models: List<Model>) {
-        val savedModel = CopilotSettings.getSelectedModel()
+        val savedModel = agentManager.settings.selectedModel
         LOG.info("Restoring model selection: saved='$savedModel', available=${models.map { it.id }}")
         if (savedModel != null) {
             val idx = models.indexOfFirst { it.id == savedModel }
@@ -2308,7 +2307,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             var lastError: Exception? = null
             for (attempt in 1..3) {
                 try {
-                    val models = CopilotService.getInstance(project).getClient().listModels().toList()
+                    val models = agentManager.client.listModels().toList()
                     SwingUtilities.invokeLater {
                         modelsStatusText = null
                         restoreModelSelection(models)

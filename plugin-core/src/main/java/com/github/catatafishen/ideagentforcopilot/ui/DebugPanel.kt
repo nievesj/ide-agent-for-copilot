@@ -1,7 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
 import com.github.catatafishen.ideagentforcopilot.bridge.DebugEvent
-import com.github.catatafishen.ideagentforcopilot.services.CopilotService
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.intellij.openapi.project.Project
 import com.intellij.ui.JBColor
 import com.intellij.ui.OnePixelSplitter
@@ -200,9 +200,9 @@ internal class DebugPanel(
                 list.ensureIndexIsVisible(debugModel.size() - 1)
             }
         }
-        val copilotService = CopilotService.getInstance(project)
+        val agentService = ActiveAgentManager.getInstance(project).service
         try {
-            val client = copilotService.getClient()
+            val client = agentService.client
             client.addDebugListener(listener)
         } catch (_: Exception) {
             // Client not started yet — will add listener when it starts

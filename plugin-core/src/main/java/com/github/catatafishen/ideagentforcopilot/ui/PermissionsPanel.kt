@@ -1,6 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings
+import com.github.catatafishen.ideagentforcopilot.services.AgentUiSettings
 import com.github.catatafishen.ideagentforcopilot.services.ToolPermission
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.Category
@@ -92,7 +92,7 @@ private class NavTreeCellRenderer : TreeCellRenderer {
  * This panel is purely about permission levels (allow/ask/deny).
  * Tool enable/disable is managed in Tool Registration settings.
  */
-internal class PermissionsPanel {
+internal class PermissionsPanel(private val settings: AgentUiSettings) {
 
     private data class ToolRow(
         val tool: ToolRegistry.ToolEntry,
@@ -118,13 +118,13 @@ internal class PermissionsPanel {
             val permCombo: ComboBox<String>? = when {
                 !tool.isBuiltIn -> ComboBox(PLUGIN_PERM_OPTIONS).apply {
                     setMinimumAndPreferredWidth(JBUI.scale(108))
-                    selectedIndex = CopilotSettings.getToolPermission(tool.id).toPluginIndex()
+                    selectedIndex = settings.getToolPermission(tool.id).toPluginIndex()
                     toolTipText = "Permission when agent requests this tool"
                 }
 
                 tool.hasDenyControl -> ComboBox(BUILTIN_PERM_OPTIONS).apply {
                     setMinimumAndPreferredWidth(JBUI.scale(108))
-                    selectedIndex = CopilotSettings.getToolPermission(tool.id).toBuiltinIndex()
+                    selectedIndex = settings.getToolPermission(tool.id).toBuiltinIndex()
                     toolTipText = BUILTIN_TOOLTIP
                 }
 
@@ -153,13 +153,13 @@ internal class PermissionsPanel {
         val inProjectCombo = ComboBox(PLUGIN_PERM_OPTIONS).apply {
             setMinimumAndPreferredWidth(JBUI.scale(108))
             isEnabled = topIsAllow
-            selectedIndex = CopilotSettings.getToolPermissionInsideProject(tool.id).toPluginIndex()
+            selectedIndex = settings.getToolPermissionInsideProject(tool.id).toPluginIndex()
             toolTipText = subTooltip(true, topIsAllow)
         }
         val outProjectCombo = ComboBox(PLUGIN_PERM_OPTIONS).apply {
             setMinimumAndPreferredWidth(JBUI.scale(108))
             isEnabled = topIsAllow
-            selectedIndex = CopilotSettings.getToolPermissionOutsideProject(tool.id).toPluginIndex()
+            selectedIndex = settings.getToolPermissionOutsideProject(tool.id).toPluginIndex()
             toolTipText = subTooltip(false, topIsAllow)
         }
 
@@ -351,21 +351,21 @@ internal class PermissionsPanel {
             if (row.isPlugin) {
                 row.permCombo?.let { combo ->
                     val perm = combo.selectedIndex.toPluginPermission()
-                    CopilotSettings.setToolPermission(id, perm)
+                    settings.setToolPermission(id, perm)
 
                     if (perm == ToolPermission.ALLOW) {
                         row.inProjectCombo?.let {
-                            CopilotSettings.setToolPermissionInsideProject(id, it.selectedIndex.toPluginPermission())
+                            settings.setToolPermissionInsideProject(id, it.selectedIndex.toPluginPermission())
                         }
                         row.outProjectCombo?.let {
-                            CopilotSettings.setToolPermissionOutsideProject(id, it.selectedIndex.toPluginPermission())
+                            settings.setToolPermissionOutsideProject(id, it.selectedIndex.toPluginPermission())
                         }
                     } else {
-                        CopilotSettings.clearToolSubPermissions(id)
+                        settings.clearToolSubPermissions(id)
                     }
                 }
             } else {
-                row.permCombo?.let { CopilotSettings.setToolPermission(id, it.selectedIndex.toBuiltinPermission()) }
+                row.permCombo?.let { settings.setToolPermission(id, it.selectedIndex.toBuiltinPermission()) }
             }
         }
     }

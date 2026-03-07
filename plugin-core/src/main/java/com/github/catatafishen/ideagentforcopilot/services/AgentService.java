@@ -42,6 +42,13 @@ public abstract class AgentService implements Disposable {
     protected abstract AgentSettings createAgentSettings();
 
     /**
+     * Provide the per-agent UI settings (model selection, session mode, tool permissions).
+     * The UI layer reads and writes settings through this interface.
+     */
+    @NotNull
+    public abstract AgentUiSettings getUiSettings();
+
+    /**
      * Human-readable name for log messages (e.g., "Copilot", "Claude Code").
      */
     @NotNull
