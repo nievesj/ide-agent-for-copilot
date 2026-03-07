@@ -110,7 +110,8 @@ class SymbolEditingTools extends AbstractToolHandler {
                 int replacedLines = loc.endLine - loc.startLine + 1;
                 int newLineCount = (int) fNew.chars().filter(c -> c == '\n').count();
                 result.complete("Replaced lines " + loc.startLine + "-" + loc.endLine
-                    + " (" + replacedLines + " lines) with " + newLineCount + " lines in " + pathStr);
+                    + " (" + replacedLines + " lines) with " + newLineCount + " lines in " + pathStr
+                    + " (formatted & imports optimized)");
             } catch (Exception e) {
                 result.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
             }
@@ -179,7 +180,8 @@ class SymbolEditingTools extends AbstractToolHandler {
                 FileDocumentManager.getInstance().saveDocument(doc);
 
                 int newLineCount = (int) fContent.chars().filter(c -> c == '\n').count();
-                result.complete("Inserted " + newLineCount + " lines before line " + loc.startLine + " in " + pathStr);
+                result.complete("Inserted " + newLineCount + " lines before line " + loc.startLine + " in " + pathStr
+                    + " (formatted & imports optimized)");
             } catch (Exception e) {
                 result.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
             }
@@ -251,7 +253,8 @@ class SymbolEditingTools extends AbstractToolHandler {
                 FileDocumentManager.getInstance().saveDocument(doc);
 
                 int newLineCount = (int) fContent.chars().filter(c -> c == '\n').count();
-                result.complete("Inserted " + newLineCount + " lines after line " + loc.endLine + " in " + pathStr);
+                result.complete("Inserted " + newLineCount + " lines after line " + loc.endLine + " in " + pathStr
+                    + " (formatted & imports optimized)");
             } catch (Exception e) {
                 result.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
             }

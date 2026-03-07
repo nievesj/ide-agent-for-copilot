@@ -415,7 +415,8 @@ class FileTools extends AbstractToolHandler {
             FileDocumentManager.getInstance().saveDocument(doc);
             String syntaxWarning = checkSyntaxErrors(pathStr);
             if (autoFormat && syntaxWarning.isEmpty()) pendingAutoFormat.add(pathStr);
-            resultFuture.complete("Written: " + pathStr + " (" + newContent.length() + FORMAT_CHARS_SUFFIX + syntaxWarning);
+            String formatNote = autoFormat && syntaxWarning.isEmpty() ? " (auto-format queued)" : "";
+            resultFuture.complete("Written: " + pathStr + " (" + newContent.length() + FORMAT_CHARS_SUFFIX + formatNote + syntaxWarning);
         } else {
             ApplicationManager.getApplication().runWriteAction(() -> {
                 try (var os = vf.getOutputStream(this)) {
@@ -499,8 +500,9 @@ class FileTools extends AbstractToolHandler {
         followRange[0] = doc.getLineNumber(finalIdx) + 1;
         int ctxEnd = Math.min(finalIdx + normalizedNew.length(), doc.getTextLength());
         followRange[1] = doc.getLineNumber(Math.max(ctxEnd - 1, finalIdx)) + 1;
+        String formatNote = autoFormat && syntaxWarning.isEmpty() ? " (auto-format queued)" : "";
         resultFuture.complete("Edited: " + pathStr + " (replaced " + finalLen + " chars with " + normalizedNew.length() + FORMAT_CHARS_SUFFIX
-            + contextLines(doc, finalIdx, ctxEnd) + syntaxWarning);
+            + contextLines(doc, finalIdx, ctxEnd) + formatNote + syntaxWarning);
     }
 
     /**
@@ -558,9 +560,10 @@ class FileTools extends AbstractToolHandler {
         if (autoFormat && syntaxWarning.isEmpty()) pendingAutoFormat.add(pathStr);
         int ctxEnd = Math.min(fStart + fNew.length(), doc.getTextLength());
         followRange[1] = doc.getLineNumber(Math.max(ctxEnd - 1, fStart)) + 1;
+        String formatNote = autoFormat && syntaxWarning.isEmpty() ? " (auto-format queued)" : "";
         resultFuture.complete("Edited: " + pathStr + " (replaced lines " + startLine + "-" + endLine
             + " (" + replacedLines + " lines) with " + fNew.length() + FORMAT_CHARS_SUFFIX
-            + contextLines(doc, fStart, ctxEnd) + syntaxWarning);
+            + contextLines(doc, fStart, ctxEnd) + formatNote + syntaxWarning);
     }
 
     /**
