@@ -1,6 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.github.catatafishen.ideagentforcopilot.bridge.AcpClient
+import com.github.catatafishen.ideagentforcopilot.bridge.ResourceReference
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.project.Project
@@ -270,9 +270,9 @@ class PromptContextManager(
 
     // ── Reference building ────────────────────────────────────────────
 
-    fun buildContextReferences(items: List<ContextItemData>? = null): List<AcpClient.ResourceReference> {
+    fun buildContextReferences(items: List<ContextItemData>? = null): List<ResourceReference> {
         val contextItems = items ?: collectInlineContextItems()
-        val references = mutableListOf<AcpClient.ResourceReference>()
+        val references = mutableListOf<ResourceReference>()
         for (item in contextItems) {
             try {
                 val ref = buildSingleReference(item)
@@ -299,7 +299,7 @@ class PromptContextManager(
         return "Referenced: " + parts.joinToString(", ")
     }
 
-    private fun buildSingleReference(item: ContextItemData): AcpClient.ResourceReference? {
+    private fun buildSingleReference(item: ContextItemData): ResourceReference? {
         val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(item.path)
             ?: return null
         var doc: com.intellij.openapi.editor.Document? = null
@@ -329,7 +329,7 @@ class PromptContextManager(
             }
         }
         val mimeType = getMimeTypeForFileType(file.fileType.name.lowercase())
-        return AcpClient.ResourceReference(uri, mimeType, text)
+        return ResourceReference(uri, mimeType, text)
     }
 
     private fun getMimeTypeForFileType(fileTypeName: String): String {

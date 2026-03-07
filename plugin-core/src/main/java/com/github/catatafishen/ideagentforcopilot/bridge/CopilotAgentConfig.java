@@ -42,7 +42,7 @@ public class CopilotAgentConfig implements AgentConfig {
     }
 
     @Override
-    public @NotNull String findAgentBinary() throws CopilotException {
+    public @NotNull String findAgentBinary() throws AcpException {
         String path = CopilotCliLocator.findCopilotCli();
         resolvedBinaryPath = path;
         return path;
@@ -50,7 +50,7 @@ public class CopilotAgentConfig implements AgentConfig {
 
     @Override
     public @NotNull ProcessBuilder buildAcpProcess(@NotNull String binaryPath,
-                                                   @Nullable String projectBasePath) throws CopilotException {
+                                                   @Nullable String projectBasePath) throws AcpException {
         resolvedBinaryPath = binaryPath;
         return CopilotCliLocator.buildAcpCommand(binaryPath, projectBasePath);
     }
@@ -69,10 +69,10 @@ public class CopilotAgentConfig implements AgentConfig {
     }
 
     @Override
-    public @Nullable AcpClient.AuthMethod getAuthMethod() {
+    public @Nullable AuthMethod getAuthMethod() {
         if (authMethods == null || authMethods.isEmpty()) return null;
         JsonObject first = authMethods.get(0).getAsJsonObject();
-        AcpClient.AuthMethod method = new AcpClient.AuthMethod();
+        AuthMethod method = new AuthMethod();
         method.setId(first.has("id") ? first.get("id").getAsString() : "");
         method.setName(first.has("name") ? first.get("name").getAsString() : "");
         method.setDescription(first.has(DESCRIPTION) ? first.get(DESCRIPTION).getAsString() : "");
@@ -85,7 +85,7 @@ public class CopilotAgentConfig implements AgentConfig {
         return resolvedBinaryPath;
     }
 
-    private void parseTerminalAuth(JsonObject jsonObject, AcpClient.AuthMethod method) {
+    private void parseTerminalAuth(JsonObject jsonObject, AuthMethod method) {
         if (jsonObject.has(META)) {
             JsonObject meta = jsonObject.getAsJsonObject(META);
             if (meta.has("terminal-auth")) {

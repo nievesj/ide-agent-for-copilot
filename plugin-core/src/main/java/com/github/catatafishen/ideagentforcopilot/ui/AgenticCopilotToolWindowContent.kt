@@ -1,6 +1,9 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
 import com.github.catatafishen.ideagentforcopilot.bridge.AcpClient
+import com.github.catatafishen.ideagentforcopilot.bridge.AcpException
+import com.github.catatafishen.ideagentforcopilot.bridge.Model
+import com.github.catatafishen.ideagentforcopilot.bridge.ResourceReference
 import com.github.catatafishen.ideagentforcopilot.services.CopilotService
 import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings
 import com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings
@@ -50,7 +53,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private val mainPanel = JBPanel<JBPanel<*>>(BorderLayout())
 
     // Shared model list (populated from ACP)
-    private var loadedModels: List<AcpClient.Model> = emptyList()
+    private var loadedModels: List<Model> = emptyList()
 
     // Current conversation session — reused for multi-turn
     private var currentSessionId: String? = null
@@ -1592,7 +1595,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
      */
     private fun buildEffectivePromptWithContent(
         prompt: String,
-        references: List<AcpClient.ResourceReference>,
+        references: List<ResourceReference>,
         contextItems: List<ContextItemData>
     ): String {
         val base = buildEffectivePrompt(prompt)
@@ -1664,7 +1667,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         initialSessionId: String,
         effectivePrompt: String,
         modelId: String,
-        references: List<AcpClient.ResourceReference>
+        references: List<ResourceReference>
     ) {
         var receivedContent = false
         val refs = references.ifEmpty { null }
@@ -1713,7 +1716,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         return modelId
     }
 
-    private fun addContextEntries(references: List<AcpClient.ResourceReference>, contextItems: List<ContextItemData>) {
+    private fun addContextEntries(references: List<ResourceReference>, contextItems: List<ContextItemData>) {
         if (references.isNotEmpty() && contextItems.isNotEmpty()) {
             val contextFiles = contextItems.map { Pair(it.name, it.path) }
             consolePanel.addContextFilesEntry(contextFiles)
@@ -1746,7 +1749,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         try {
             sendCall()
             return initialSessionId
-        } catch (e: com.github.catatafishen.ideagentforcopilot.bridge.CopilotException) {
+        } catch (e: AcpException) {
             if (e.message != null && e.message!!.contains("not found", ignoreCase = true)) {
                 LOG.info("Session expired ('not found'), creating new session and retrying")
                 currentSessionId = null
@@ -1962,7 +1965,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
 
         val isRecoverable = e is InterruptedException || e.cause is InterruptedException ||
-            (e is com.github.catatafishen.ideagentforcopilot.bridge.CopilotException && e.isRecoverable)
+            (e is AcpException && e.isRecoverable)
         if (!isRecoverable) {
             currentSessionId = null
             updateSessionInfo()
@@ -2287,7 +2290,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         updateSessionInfo()
     }
 
-    private fun restoreModelSelection(models: List<AcpClient.Model>) {
+    private fun restoreModelSelection(models: List<Model>) {
         val savedModel = CopilotSettings.getSelectedModel()
         LOG.info("Restoring model selection: saved='$savedModel', available=${models.map { it.id }}")
         if (savedModel != null) {
@@ -2300,7 +2303,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         if (models.isNotEmpty()) selectedModelIndex = 0
     }
 
-    private fun loadModelsAsync(onSuccess: (List<AcpClient.Model>) -> Unit) {
+    private fun loadModelsAsync(onSuccess: (List<Model>) -> Unit) {
         SwingUtilities.invokeLater {
             modelsStatusText = MSG_LOADING
             selectedModelIndex = -1

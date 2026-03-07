@@ -30,23 +30,23 @@ class CopilotAcpClientTest {
 
     @Test
     void testCopilotExceptionRecoverable() {
-        CopilotException recoverable = new CopilotException("timeout", null, true);
+        AcpException recoverable = new AcpException("timeout", null, true);
         assertTrue(recoverable.isRecoverable());
         assertEquals("timeout", recoverable.getMessage());
 
-        CopilotException nonRecoverable = new CopilotException("auth error", null, false);
+        AcpException nonRecoverable = new AcpException("auth error", null, false);
         assertFalse(nonRecoverable.isRecoverable());
     }
 
     @Test
     void testCopilotExceptionDefaultRecoverable() {
-        CopilotException ex = new CopilotException("test");
+        AcpException ex = new AcpException("test");
         assertTrue(ex.isRecoverable(), "Default should be recoverable");
     }
 
     @Test
     void testModelDto() {
-        AcpClient.Model model = new AcpClient.Model();
+        Model model = new Model();
         model.setId("gpt-4.1");
         model.setName("GPT-4.1");
         model.setDescription("Fast model");
@@ -60,7 +60,7 @@ class CopilotAcpClientTest {
 
     @Test
     void testAuthMethodDto() {
-        AcpClient.AuthMethod auth = new AcpClient.AuthMethod();
+        AuthMethod auth = new AuthMethod();
         auth.setId("copilot-login");
         auth.setName("Log in with Copilot CLI");
         auth.setCommand("copilot.exe");
@@ -74,14 +74,14 @@ class CopilotAcpClientTest {
 
     @Test
     void testClientIsNotHealthyBeforeStart() {
-        try (AcpClient client = new AcpClient(new CopilotAgentConfig(), null)) {
+        try (AcpClient client = new AcpClient(new CopilotAgentConfig(), new CopilotAgentSettings(), null)) {
             assertFalse(client.isHealthy(), "Client should not be healthy before start");
         }
     }
 
     @Test
     void testCloseIdempotent() {
-        try (AcpClient client = new AcpClient(new CopilotAgentConfig(), null)) {
+        try (AcpClient client = new AcpClient(new CopilotAgentConfig(), new CopilotAgentSettings(), null)) {
             // Should not throw even if never started
             assertDoesNotThrow(client::close);
             assertDoesNotThrow(client::close);
@@ -110,7 +110,7 @@ class CopilotAcpClientTest {
         @BeforeEach
         void setUp() throws Exception {
             Assumptions.assumeTrue(copilotAvailable(), "Copilot CLI not available, skipping integration tests");
-            client = new AcpClient(new CopilotAgentConfig(), null);
+            client = new AcpClient(new CopilotAgentConfig(), new CopilotAgentSettings(), null);
             client.start();
         }
 
@@ -127,29 +127,29 @@ class CopilotAcpClientTest {
         }
 
         @Test
-        void testCreateSession() throws CopilotException {
+        void testCreateSession() throws AcpException {
             String sessionId = client.createSession();
             assertNotNull(sessionId, "Session ID should not be null");
             assertFalse(sessionId.isEmpty(), "Session ID should not be empty");
         }
 
         @Test
-        void testListModels() throws CopilotException {
-            List<AcpClient.Model> models = client.listModels();
+        void testListModels() throws AcpException {
+            List<Model> models = client.listModels();
             assertNotNull(models);
             assertFalse(models.isEmpty(), "Should return at least one model");
 
             // Verify model structure
-            AcpClient.Model first = models.getFirst();
+            Model first = models.getFirst();
             assertNotNull(first.getId(), "Model should have id");
             assertNotNull(first.getName(), "Model should have name");
             assertFalse(first.getId().isEmpty());
         }
 
         @Test
-        void testListModelsContainsKnownModels() throws CopilotException {
-            List<AcpClient.Model> models = client.listModels();
-            List<String> modelIds = models.stream().map(AcpClient.Model::getId).toList();
+        void testListModelsContainsKnownModels() throws AcpException {
+            List<Model> models = client.listModels();
+            List<String> modelIds = models.stream().map(Model::getId).toList();
 
             // At least some of these should be present
             boolean hasGpt = modelIds.stream().anyMatch(id -> id.startsWith("gpt-"));
@@ -159,7 +159,7 @@ class CopilotAcpClientTest {
 
         @Test
         void testGetAuthMethod() {
-            AcpClient.AuthMethod auth = client.getAuthMethod();
+            AuthMethod auth = client.getAuthMethod();
             // Auth method should always be present from initialize
             assertNotNull(auth, "Auth method should not be null");
             assertNotNull(auth.getId());
@@ -167,7 +167,7 @@ class CopilotAcpClientTest {
         }
 
         @Test
-        void testSendPromptWithStreaming() throws CopilotException {
+        void testSendPromptWithStreaming() throws AcpException {
             String sessionId = client.createSession();
             StringBuilder accumulated = new StringBuilder();
 
@@ -180,14 +180,14 @@ class CopilotAcpClientTest {
         }
 
         @Test
-        void testSendPromptWithModelSelection() throws CopilotException {
+        void testSendPromptWithModelSelection() throws AcpException {
             String sessionId = client.createSession();
-            List<AcpClient.Model> models = client.listModels();
+            List<Model> models = client.listModels();
             // Pick the cheapest model
             String cheapModel = models.stream()
                 .filter(m -> "0x".equals(m.getUsage()) || "0.33x".equals(m.getUsage()))
                 .findFirst()
-                .map(AcpClient.Model::getId)
+                .map(Model::getId)
                 .orElse(models.getLast().getId());
 
             StringBuilder response = new StringBuilder();
@@ -199,7 +199,7 @@ class CopilotAcpClientTest {
         }
 
         @Test
-        void testMultiplePromptsInSameSession() throws CopilotException {
+        void testMultiplePromptsInSameSession() throws AcpException {
             String sessionId = client.createSession();
 
             StringBuilder r1 = new StringBuilder();
@@ -212,13 +212,13 @@ class CopilotAcpClientTest {
         }
 
         @Test
-        void testCloseAndRestart() throws CopilotException {
+        void testCloseAndRestart() throws AcpException {
             assertTrue(client.isHealthy());
             client.close();
             assertFalse(client.isHealthy());
 
             // Create a new client
-            client = new AcpClient(new CopilotAgentConfig(), null);
+            client = new AcpClient(new CopilotAgentConfig(), new CopilotAgentSettings(), null);
             client.start();
             assertTrue(client.isHealthy());
         }

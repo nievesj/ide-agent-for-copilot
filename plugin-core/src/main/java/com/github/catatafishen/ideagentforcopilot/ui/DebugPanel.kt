@@ -1,6 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.github.catatafishen.ideagentforcopilot.bridge.AcpClient
+import com.github.catatafishen.ideagentforcopilot.bridge.DebugEvent
 import com.github.catatafishen.ideagentforcopilot.services.CopilotService
 import com.intellij.openapi.project.Project
 import com.intellij.ui.JBColor
@@ -80,7 +80,7 @@ internal class DebugPanel(
         buildInfoLabel.border = JBUI.Borders.empty(0, 0, 5, 0)
         panel.add(buildInfoLabel, BorderLayout.NORTH)
 
-        val debugModel = DefaultListModel<AcpClient.DebugEvent>()
+        val debugModel = DefaultListModel<DebugEvent>()
         val list = JBList(debugModel)
         list.cellRenderer = createDebugCellRenderer()
 
@@ -110,7 +110,7 @@ internal class DebugPanel(
                 isSelected: Boolean, cellHasFocus: Boolean
             ): Component {
                 super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
-                if (value is AcpClient.DebugEvent) {
+                if (value is DebugEvent) {
                     text = value.toString()
                     foreground = when (value.type) {
                         "PERMISSION_APPROVED" -> JBColor.GREEN.darker()
@@ -124,7 +124,7 @@ internal class DebugPanel(
         }
     }
 
-    private fun setupDebugSelectionListener(list: JBList<AcpClient.DebugEvent>, detailsArea: JBTextArea) {
+    private fun setupDebugSelectionListener(list: JBList<DebugEvent>, detailsArea: JBTextArea) {
         list.addListSelectionListener {
             if (!it.valueIsAdjusting) {
                 val selected = list.selectedValue
@@ -144,8 +144,8 @@ internal class DebugPanel(
     }
 
     private fun createDebugToolbar(
-        debugModel: DefaultListModel<AcpClient.DebugEvent>,
-        list: JBList<AcpClient.DebugEvent>
+        debugModel: DefaultListModel<DebugEvent>,
+        list: JBList<DebugEvent>
     ): JBPanel<JBPanel<*>> {
         val toolbar = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.LEFT))
         val clearBtn = JButton("Clear")
@@ -172,7 +172,7 @@ internal class DebugPanel(
         return toolbar
     }
 
-    private fun exportDebugEvents(debugModel: DefaultListModel<AcpClient.DebugEvent>) {
+    private fun exportDebugEvents(debugModel: DefaultListModel<DebugEvent>) {
         val sb = StringBuilder()
         for (i in 0 until debugModel.size()) {
             val event = debugModel.getElementAt(i)
@@ -188,10 +188,10 @@ internal class DebugPanel(
     }
 
     private fun registerDebugListener(
-        debugModel: DefaultListModel<AcpClient.DebugEvent>,
-        list: JBList<AcpClient.DebugEvent>
+        debugModel: DefaultListModel<DebugEvent>,
+        list: JBList<DebugEvent>
     ) {
-        val listener: (AcpClient.DebugEvent) -> Unit = { event ->
+        val listener: (DebugEvent) -> Unit = { event ->
             SwingUtilities.invokeLater {
                 debugModel.addElement(event)
                 while (debugModel.size() > 500) {

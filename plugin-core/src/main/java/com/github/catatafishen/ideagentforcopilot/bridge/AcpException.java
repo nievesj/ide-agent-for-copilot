@@ -1,20 +1,20 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
 /**
- * Exception thrown when Copilot ACP operations fail.
+ * Exception thrown when ACP (Agent Client Protocol) operations fail.
  */
-public class CopilotException extends Exception {
+public class AcpException extends Exception {
     private final boolean recoverable;
 
-    public CopilotException(String message) {
+    public AcpException(String message) {
         this(message, null, true);
     }
 
-    public CopilotException(String message, Throwable cause) {
+    public AcpException(String message, Throwable cause) {
         this(message, cause, true);
     }
 
-    public CopilotException(String message, Throwable cause, boolean recoverable) {
+    public AcpException(String message, Throwable cause, boolean recoverable) {
         super(message, cause);
         this.recoverable = recoverable;
     }

@@ -37,10 +37,10 @@ public interface AgentConfig {
      * Find the agent binary on the system.
      *
      * @return absolute path to the agent binary
-     * @throws CopilotException if the binary cannot be found
+     * @throws AcpException if the binary cannot be found
      */
     @NotNull
-    String findAgentBinary() throws CopilotException;
+    String findAgentBinary() throws AcpException;
 
     /**
      * Build the ProcessBuilder for launching the agent in ACP mode.
@@ -48,11 +48,11 @@ public interface AgentConfig {
      * @param binaryPath      path returned by {@link #findAgentBinary()}
      * @param projectBasePath project root (for config-dir, working directory)
      * @return configured ProcessBuilder ready to start
-     * @throws CopilotException if the command cannot be built
+     * @throws AcpException if the command cannot be built
      */
     @NotNull
     ProcessBuilder buildAcpProcess(@NotNull String binaryPath, @Nullable String projectBasePath)
-        throws CopilotException;
+        throws AcpException;
 
     /**
      * Extract agent-specific data from the ACP {@code initialize} response.
@@ -75,7 +75,7 @@ public interface AgentConfig {
      * @return auth method, or null if not available or not applicable
      */
     @Nullable
-    AcpClient.AuthMethod getAuthMethod();
+    AuthMethod getAuthMethod();
 
     /**
      * Get the resolved path to the agent binary (for external commands like login/logout).

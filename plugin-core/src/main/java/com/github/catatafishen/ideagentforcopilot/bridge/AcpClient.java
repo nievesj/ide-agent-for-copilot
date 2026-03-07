@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
-import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings;
 import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.Gson;
@@ -77,6 +76,7 @@ public class AcpClient implements Closeable {
     private final Object writerLock = new Object();
     private final String projectBasePath; // Project path for config-dir
     private final AgentConfig agentConfig;
+    private final AgentSettings agentSettings;
     private Process process;
     private BufferedWriter writer;
     private Thread readerThread;
@@ -110,30 +110,7 @@ public class AcpClient implements Closeable {
     private volatile java.util.function.Consumer<PermissionRequest> permissionRequestListener;
     private final ConcurrentHashMap<Long, CompletableFuture<Boolean>> pendingPermissionAsks = new ConcurrentHashMap<>();
 
-    /**
-     * A permission request surfaced to the UI when a tool has ASK permission mode.
-     * Call {@link #respond} with true to allow, false to deny.
-     */
-    public static class PermissionRequest {
-        public final long reqId;
-        public final String toolId;
-        public final String displayName;
-        public final String description;
-        private final java.util.function.Consumer<Boolean> respondFn;
-
-        public PermissionRequest(long reqId, String toolId, String displayName, String description,
-                                 java.util.function.Consumer<Boolean> respondFn) {
-            this.reqId = reqId;
-            this.toolId = toolId;
-            this.displayName = displayName;
-            this.description = description;
-            this.respondFn = respondFn;
-        }
-
-        public void respond(boolean allowed) {
-            respondFn.accept(allowed);
-        }
-    }
+    // PermissionRequest is in separate file: PermissionRequest.java
 
     /**
      * Register a listener that is called when a tool with ASK permission needs user approval.
@@ -149,27 +126,7 @@ public class AcpClient implements Closeable {
     // Debug event listeners for UI debug tab
     private final CopyOnWriteArrayList<Consumer<DebugEvent>> debugListeners = new CopyOnWriteArrayList<>();
 
-    /**
-     * Debug event for UI debug tab showing permission requests, denials, tool calls, etc.
-     */
-    public static class DebugEvent {
-        public final String timestamp;
-        public final String type;  // "PERMISSION_REQUEST", "PERMISSION_DENIED", "RETRY_SENT", "TOOL_CALL", etc.
-        public final String message;
-        public final String details; // JSON or additional info
-
-        public DebugEvent(String type, String message, String details) {
-            this.timestamp = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS"));
-            this.type = type;
-            this.message = message;
-            this.details = details;
-        }
-
-        @Override
-        public String toString() {
-            return String.format("[%s] %s: %s", timestamp, type, message);
-        }
-    }
+    // DebugEvent is in separate file: DebugEvent.java
 
     /**
      * Register a debug event listener for the UI debug tab.
@@ -205,17 +162,19 @@ public class AcpClient implements Closeable {
     }
 
     /**
-     * Create ACP client with an agent configuration and optional project base path.
+     * Create ACP client with an agent configuration, settings, and optional project base path.
      */
-    public AcpClient(@NotNull AgentConfig agentConfig, @Nullable String projectBasePath) {
+    public AcpClient(@NotNull AgentConfig agentConfig, @NotNull AgentSettings agentSettings,
+                     @Nullable String projectBasePath) {
         this.agentConfig = agentConfig;
+        this.agentSettings = agentSettings;
         this.projectBasePath = projectBasePath;
     }
 
     /**
      * Start the ACP process and perform the initialization handshake.
      */
-    public synchronized void start() throws CopilotException {
+    public synchronized void start() throws AcpException {
         // Clean up the previous process if it died
         if (process != null) {
             LOG.info("Restarting ACP client (previous process died)");
@@ -258,14 +217,14 @@ public class AcpClient implements Closeable {
             doInitialize();
 
         } catch (IOException e) {
-            throw new CopilotException("Failed to start " + agentConfig.getDisplayName() + " ACP process", e);
+            throw new AcpException("Failed to start " + agentConfig.getDisplayName() + " ACP process", e);
         }
     }
 
     /**
      * Perform the ACP initialize handshake.
      */
-    private void doInitialize() throws CopilotException {
+    private void doInitialize() throws AcpException {
         JsonObject params = new JsonObject();
         params.addProperty("protocolVersion", 1);
         JsonObject clientCapabilities = new JsonObject();
@@ -291,7 +250,7 @@ public class AcpClient implements Closeable {
      * Create a new ACP session. Returns the session ID and populates available models.
      */
     @NotNull
-    public synchronized String createSession() throws CopilotException {
+    public synchronized String createSession() throws AcpException {
         return createSession(null);
     }
 
@@ -300,7 +259,7 @@ public class AcpClient implements Closeable {
      *
      * @param cwd The working directory for the session, or null to use user.home.
      */
-    public synchronized String createSession(@Nullable String cwd) throws CopilotException {
+    public synchronized String createSession(@Nullable String cwd) throws AcpException {
         ensureStarted();
 
         JsonObject params = new JsonObject();
@@ -364,7 +323,7 @@ public class AcpClient implements Closeable {
      * @param sessionId The session to switch the model for.
      * @param modelId   The model ID to switch to (e.g., "gpt-4.1", "claude-opus-4.6").
      */
-    public void setModel(@NotNull String sessionId, @NotNull String modelId) throws CopilotException {
+    public void setModel(@NotNull String sessionId, @NotNull String modelId) throws AcpException {
         ensureStarted();
         JsonObject params = new JsonObject();
         params.addProperty(SESSION_ID, sessionId);
@@ -379,7 +338,7 @@ public class AcpClient implements Closeable {
      * Uses the project path as CWD so the CLI reads copilot-instructions.md correctly.
      */
     @NotNull
-    public List<Model> listModels() throws CopilotException {
+    public List<Model> listModels() throws AcpException {
         if (availableModels == null) {
             createSession(projectBasePath);
         }
@@ -391,7 +350,7 @@ public class AcpClient implements Closeable {
      * Useful after authentication changes to pick up fresh tokens.
      */
     @NotNull
-    public List<Model> refreshModels() throws CopilotException {
+    public List<Model> refreshModels() throws AcpException {
         availableModels = null;
         currentSessionId = null;
         createSession();
@@ -411,7 +370,7 @@ public class AcpClient implements Closeable {
     @NotNull
     public String sendPrompt(@NotNull String sessionId, @NotNull String prompt,
                              @Nullable String model, @Nullable Consumer<String> onChunk)
-        throws CopilotException {
+        throws AcpException {
         return sendPrompt(sessionId, prompt, model, null, onChunk);
     }
 
@@ -422,7 +381,7 @@ public class AcpClient implements Closeable {
     public String sendPrompt(@NotNull String sessionId, @NotNull String prompt,
                              @Nullable String model, @Nullable List<ResourceReference> references,
                              @Nullable Consumer<String> onChunk)
-        throws CopilotException {
+        throws AcpException {
         return sendPrompt(sessionId, prompt, model, references, onChunk, null);
     }
 
@@ -436,7 +395,7 @@ public class AcpClient implements Closeable {
                              @Nullable String model, @Nullable List<ResourceReference> references,
                              @Nullable Consumer<String> onChunk,
                              @Nullable Consumer<JsonObject> onUpdate)
-        throws CopilotException {
+        throws AcpException {
         return sendPrompt(sessionId, prompt, model, references, onChunk, onUpdate, null);
     }
 
@@ -452,7 +411,7 @@ public class AcpClient implements Closeable {
                              @Nullable Consumer<String> onChunk,
                              @Nullable Consumer<JsonObject> onUpdate,
                              @Nullable Runnable onRequest)
-        throws CopilotException {
+        throws AcpException {
         ensureStarted();
 
         int refCount = references != null ? references.size() : 0;
@@ -518,8 +477,8 @@ public class AcpClient implements Closeable {
      * On either condition, terminates the CLI process gracefully.
      */
     @NotNull
-    private JsonObject sendPromptRequest(@NotNull JsonObject params) throws CopilotException {
-        if (closed) throw new CopilotException("ACP client is closed", null, false);
+    private JsonObject sendPromptRequest(@NotNull JsonObject params) throws AcpException {
+        if (closed) throw new AcpException("ACP client is closed", null, false);
 
         long id = requestIdCounter.getAndIncrement();
         CompletableFuture<JsonObject> future = new CompletableFuture<>();
@@ -545,15 +504,15 @@ public class AcpClient implements Closeable {
         } catch (ExecutionException e) {
             pendingRequests.remove(id);
             Throwable cause = e.getCause();
-            if (cause instanceof CopilotException copilotException) throw copilotException;
-            throw new CopilotException("ACP request failed: session/prompt - " + cause.getMessage(), e, false);
+            if (cause instanceof AcpException copilotException) throw copilotException;
+            throw new AcpException("ACP request failed: session/prompt - " + cause.getMessage(), e, false);
         } catch (InterruptedException e) {
             pendingRequests.remove(id);
             Thread.currentThread().interrupt();
-            throw new CopilotException("ACP request interrupted: session/prompt", e, true);
+            throw new AcpException("ACP request interrupted: session/prompt", e, true);
         } catch (IOException e) {
             pendingRequests.remove(id);
-            throw new CopilotException("ACP write failed: session/prompt", e, true);
+            throw new AcpException("ACP write failed: session/prompt", e, true);
         }
     }
 
@@ -561,9 +520,9 @@ public class AcpClient implements Closeable {
      * Polls for prompt completion, checking for inactivity timeout and credit limit.
      */
     private JsonObject pollForPromptCompletion(long id, CompletableFuture<JsonObject> future)
-        throws CopilotException, ExecutionException, InterruptedException {
-        int inactivityTimeoutSec = CopilotSettings.getPromptTimeout();
-        int maxToolCalls = CopilotSettings.getMaxToolCallsPerTurn();
+        throws AcpException, ExecutionException, InterruptedException {
+        int inactivityTimeoutSec = agentSettings.getPromptTimeout();
+        int maxToolCalls = agentSettings.getMaxToolCallsPerTurn();
         long pollIntervalMs = 5000;
 
         while (true) {
@@ -577,7 +536,7 @@ public class AcpClient implements Closeable {
     }
 
     private void checkInactivityTimeout(long id, int inactivityTimeoutSec, TimeoutException cause)
-        throws CopilotException {
+        throws AcpException {
         long inactiveMs = System.currentTimeMillis() - lastActivityTimestamp;
         if (inactiveMs > inactivityTimeoutSec * 1000L) {
             pendingRequests.remove(id);
@@ -586,13 +545,13 @@ public class AcpClient implements Closeable {
                 "No activity for " + (inactiveMs / 1000) + "s (limit: " + inactivityTimeoutSec + "s)",
                 "Tool calls this turn: " + toolCallsInTurn.get());
             terminateAgent();
-            throw new CopilotException(
+            throw new AcpException(
                 "Agent stopped: no activity for " + (inactiveMs / 1000) + " seconds", cause, true);
         }
     }
 
     private void checkCreditLimit(long id, int maxToolCalls, TimeoutException cause)
-        throws CopilotException {
+        throws AcpException {
         if (maxToolCalls > 0 && toolCallsInTurn.get() >= maxToolCalls) {
             pendingRequests.remove(id);
             LOG.warn("Tool call limit reached: " + toolCallsInTurn.get() + "/" + maxToolCalls);
@@ -600,7 +559,7 @@ public class AcpClient implements Closeable {
                 "Tool call limit reached: " + toolCallsInTurn.get() + "/" + maxToolCalls,
                 "Terminating agent to prevent excess usage");
             terminateAgent();
-            throw new CopilotException(
+            throw new AcpException(
                 "Agent stopped: tool call limit reached (" + toolCallsInTurn.get() + "/" + maxToolCalls + ")", cause, true);
         }
     }
@@ -762,8 +721,8 @@ public class AcpClient implements Closeable {
      * Send a JSON-RPC request and wait for the response.
      */
     @NotNull
-    private JsonObject sendRequest(@NotNull String method, @NotNull JsonObject params) throws CopilotException {
-        if (closed) throw new CopilotException("ACP client is closed", null, false);
+    private JsonObject sendRequest(@NotNull String method, @NotNull JsonObject params) throws AcpException {
+        if (closed) throw new AcpException("ACP client is closed", null, false);
 
         long id = requestIdCounter.getAndIncrement();
         CompletableFuture<JsonObject> future = new CompletableFuture<>();
@@ -789,19 +748,19 @@ public class AcpClient implements Closeable {
 
         } catch (TimeoutException e) {
             pendingRequests.remove(id);
-            throw new CopilotException("ACP request timed out: " + method, e, true);
+            throw new AcpException("ACP request timed out: " + method, e, true);
         } catch (ExecutionException e) {
             pendingRequests.remove(id);
             Throwable cause = e.getCause();
-            if (cause instanceof CopilotException copilotException) throw copilotException;
-            throw new CopilotException("ACP request failed: " + method + " - " + cause.getMessage(), e, false);
+            if (cause instanceof AcpException copilotException) throw copilotException;
+            throw new AcpException("ACP request failed: " + method + " - " + cause.getMessage(), e, false);
         } catch (InterruptedException e) {
             pendingRequests.remove(id);
             Thread.currentThread().interrupt();
-            throw new CopilotException("ACP request interrupted: " + method, e, true);
+            throw new AcpException("ACP request interrupted: " + method, e, true);
         } catch (IOException e) {
             pendingRequests.remove(id);
-            throw new CopilotException("ACP write failed: " + method, e, true);
+            throw new AcpException("ACP write failed: " + method, e, true);
         }
     }
 
@@ -884,7 +843,7 @@ public class AcpClient implements Closeable {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 LOG.warn("Restart attempt interrupted", e);
-            } catch (CopilotException e) {
+            } catch (AcpException e) {
                 LOG.warn("Failed to restart ACP process (attempt " + restartAttempts + ")", e);
                 attemptAutoRestart(); // Try again
             }
@@ -901,7 +860,7 @@ public class AcpClient implements Closeable {
     private void failAllPendingRequests() {
         for (Map.Entry<Long, CompletableFuture<JsonObject>> entry : pendingRequests.entrySet()) {
             entry.getValue().completeExceptionally(
-                new CopilotException("Connection lost — please retry your message", null, false));
+                new AcpException("Connection lost — please retry your message", null, false));
         }
         pendingRequests.clear();
     }
@@ -964,7 +923,7 @@ public class AcpClient implements Closeable {
                 LOG.debug("Error extracting error data as string", e);
             }
         }
-        future.completeExceptionally(new CopilotException("ACP error: " + errorMessage, null, false));
+        future.completeExceptionally(new AcpException("ACP error: " + errorMessage, null, false));
     }
 
     private void handleNotificationMessage(JsonObject msg) {
@@ -1000,9 +959,9 @@ public class AcpClient implements Closeable {
         }
     }
 
-    private void ensureStarted() throws CopilotException {
+    private void ensureStarted() throws AcpException {
         if (closed) {
-            throw new CopilotException("ACP client is closed", null, false);
+            throw new AcpException("ACP client is closed", null, false);
         }
         if (!initialized || process == null || !process.isAlive()) {
             initialized = false;
@@ -1183,15 +1142,15 @@ public class AcpClient implements Closeable {
     private ToolPermission resolveEffectivePermission(String toolId, String permKind, @Nullable JsonObject toolCall) {
         ToolRegistry.ToolEntry entry = ToolRegistry.findById(toolId);
 
-        // Path-based sub-permissions for file tools (ceiling enforced by CopilotSettings)
+        // Path-based sub-permissions for file tools (ceiling enforced by AgentSettings)
         if (entry != null && entry.supportsPathSubPermissions && toolCall != null) {
             String path = extractPathFromToolCall(toolCall);
             if (path != null && !path.isEmpty()) {
                 boolean insideProject = isPathInsideProject(path);
-                return CopilotSettings.resolveEffectivePermission(toolId, insideProject);
+                return agentSettings.resolveEffectivePermission(toolId, insideProject);
             }
         }
-        return CopilotSettings.getToolPermission(toolId);
+        return agentSettings.getToolPermission(toolId);
     }
 
     /**
@@ -1458,109 +1417,5 @@ public class AcpClient implements Closeable {
         LOG.info("ACP client closed");
     }
 
-    // DTOs
-
-    public static class Model {
-        private String id;
-        private String name;
-        private String description;
-        private String usage; // e.g., "1x", "3x", "0.33x"
-
-        public String getId() {
-            return id;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setId(String id) {
-            this.id = id;
-        }
-
-        public String getName() {
-            return name;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setName(String name) {
-            this.name = name;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public String getDescription() {
-            return description;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setDescription(String description) {
-            this.description = description;
-        }
-
-        public String getUsage() {
-            return usage;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setUsage(String usage) {
-            this.usage = usage;
-        }
-    }
-
-    /**
-     * ACP resource reference ? file or selection context sent with prompts.
-     */
-    public record ResourceReference(@NotNull String uri, @Nullable String mimeType, @NotNull String text) {
-    }
-
-    public static class AuthMethod {
-        private String id;
-        private String name;
-        private String description;
-        private String command;
-        private List<String> args;
-
-        public String getId() {
-            return id;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setId(String id) {
-            this.id = id;
-        }
-
-        public String getName() {
-            return name;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setName(String name) {
-            this.name = name;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public String getDescription() {
-            return description;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setDescription(String description) {
-            this.description = description;
-        }
-
-        public String getCommand() {
-            return command;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setCommand(String command) {
-            this.command = command;
-        }
-
-        public List<String> getArgs() {
-            return args;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setArgs(List<String> args) {
-            this.args = args;
-        }
-    }
+    // DTOs are in separate files: Model.java, ResourceReference.java, AuthMethod.java
 }

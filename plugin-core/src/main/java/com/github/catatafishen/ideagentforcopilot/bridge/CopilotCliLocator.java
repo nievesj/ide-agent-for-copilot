@@ -27,7 +27,7 @@ final class CopilotCliLocator {
     private CopilotCliLocator() {
     }
 
-    static String findCopilotCli() throws CopilotException {
+    static String findCopilotCli() throws AcpException {
         boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
 
         // Check PATH first
@@ -49,7 +49,7 @@ final class CopilotCliLocator {
         String installInstructions = isWindows
             ? "Install with: winget install GitHub.Copilot"
             : "Install with: npm install -g @anthropic-ai/copilot-cli";
-        throw new CopilotException("Copilot CLI not found. " + installInstructions, null, false);
+        throw new AcpException("Copilot CLI not found. " + installInstructions, null, false);
     }
 
     @Nullable
