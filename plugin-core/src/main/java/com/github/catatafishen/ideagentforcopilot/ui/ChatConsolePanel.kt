@@ -78,11 +78,6 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     companion object {
         private const val SA_COLOR_COUNT = 8
         private val QUICK_REPLY_TAG_REGEX = Regex("\\[quick-reply:\\s*([^]]+)]")
-        private const val FILE_ICON_SVG =
-            "<svg width=\\'12\\' height=\\'12\\' viewBox=\\'0 0 16 16\\' fill=\\'currentColor\\' " +
-                "style=\\'vertical-align:-2px\\'><path d=\\'M3.5 1A1.5 1.5 0 0 0 2 2.5v11A1.5 1.5 0 0 0 " +
-                "3.5 15h9a1.5 1.5 0 0 0 1.5-1.5V6.621a1.5 1.5 0 0 0-.44-1.06L9.94 1.94A1.5 1.5 0 0 0 " +
-                "8.879 1.5H3.5z\\'/></svg>"
 
         /** Active panels keyed by project — used by MCP tool to retrieve page HTML. */
         private val instances = java.util.concurrent.ConcurrentHashMap<Project, ChatConsolePanel>()
@@ -718,23 +713,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         }
     }
 
-    /**
-     * Rebuilds bubble HTML for a restored prompt that had context file references.
-     * The stored text contains backtick-wrapped names (e.g. `` `File.kt:10-20` ``);
-     * this method replaces them with the same `<a class='prompt-ctx-chip'>` elements
-     * used in [AgenticCopilotToolWindowContent.buildBubbleHtml] for live messages.
-     */
     private fun buildRestoredBubbleHtml(text: String, ctxFiles: List<Triple<String, String, Int>>): String {
-        val fileIconSvg = "<svg class='file-icon' width='12' height='12' viewBox='0 0 16 16' fill='currentColor'>" +
-            "<path d='M3.5 1A1.5 1.5 0 0 0 2 2.5v11A1.5 1.5 0 0 0 " +
-            "3.5 15h9a1.5 1.5 0 0 0 1.5-1.5V6.621a1.5 1.5 0 0 0-.44-1.06L9.94 1.94A1.5 1.5 0 0 0 " +
-            "8.879 1.5H3.5z'/></svg>"
         var result = esc(text)
         for ((name, path, line) in ctxFiles) {
             val href = if (line > 0) "openfile://$path:$line" else "openfile://$path"
             val title = esc(if (line > 0) "$path:$line" else path)
-            val chip =
-                "<a class='prompt-ctx-chip' href='$href' title='$title'>$fileIconSvg<code>${esc(name)}</code></a>"
+            val chip = "<a class='prompt-ctx-chip' href='$href' title='$title'>${esc(name)}</a>"
             result = result.replaceFirst("`${esc(name)}`", chip)
         }
         return result

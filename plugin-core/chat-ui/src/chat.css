@@ -182,28 +182,13 @@ body {
 }
 
 .prompt-ctx-chip {
-    display: inline;
     color: var(--link);
     text-decoration: none;
     cursor: pointer;
 }
 
-.prompt-ctx-chip code {
-    background: var(--code-bg);
-    padding: var(--sp-1) var(--sp-3);
-    border-radius: var(--r-sm);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: var(--code-font-size);
-}
-
 .prompt-ctx-chip:hover {
     text-decoration: underline;
-}
-
-.prompt-ctx-chip .file-icon {
-    vertical-align: -2px;
-    opacity: 0.7;
-    margin-right: 2px;
 }
 
 

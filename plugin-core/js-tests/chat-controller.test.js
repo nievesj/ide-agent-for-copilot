@@ -34,7 +34,7 @@ describe('ChatController', () => {
         });
 
         it('renders reference chips in metadata row', () => {
-            CC().addUserMessage('Hi', '14:22', '<a class="prompt-ctx-chip">📄 file.kt</a>');
+            CC().addUserMessage('Hi', '14:22', '<a class="prompt-ctx-chip">file.kt</a>');
             const chip = getMessages().querySelector('.prompt-ctx-chip');
             expect(chip).not.toBeNull();
             expect(chip.textContent).toContain('file.kt');

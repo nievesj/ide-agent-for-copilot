@@ -24,6 +24,30 @@ class PromptContextManager(
         const val ORC = '\uFFFC'
     }
 
+    init {
+        // Dispose orphaned inlays whenever their ORC placeholder character is deleted.
+        // This makes backspace over a chip feel like deleting a single character.
+        promptTextArea.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
+            override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
+                val removed = event.oldFragment
+                if (removed.isEmpty() || removed.chars().noneMatch { it == ORC.code }) return
+                val editor = promptTextArea.editor ?: return
+                val inlays = editor.inlayModel
+                    .getInlineElementsInRange(0, editor.document.textLength, ContextChipRenderer::class.java)
+                val orcOffsets = mutableSetOf<Int>()
+                val text = editor.document.charsSequence
+                for (i in text.indices) {
+                    if (text[i] == ORC) orcOffsets.add(i)
+                }
+                for (inlay in inlays) {
+                    if (inlay.offset !in orcOffsets) {
+                        com.intellij.openapi.util.Disposer.dispose(inlay)
+                    }
+                }
+            }
+        })
+    }
+
     // ── Inline chip CRUD ──────────────────────────────────────────────
 
     /** Insert a U+FFFC placeholder at the caret and attach an inlay chip for the given context item. */
