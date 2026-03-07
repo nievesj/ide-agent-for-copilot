@@ -1581,6 +1581,26 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         return effective
     }
 
+    /**
+     * Build the prompt sent to the agent, including referenced file content inline.
+     * ACP ResourceReference objects may be ignored by Copilot, so we embed
+     * the content directly in the prompt text to guarantee the agent sees it.
+     */
+    private fun buildEffectivePromptWithContent(
+        prompt: String,
+        references: List<AcpClient.ResourceReference>,
+        contextItems: List<ContextItemData>
+    ): String {
+        val base = buildEffectivePrompt(prompt)
+        if (references.isEmpty()) return base
+
+        val contentBlocks = references.mapIndexed { i, ref ->
+            val label = contextItems.getOrNull(i)?.name ?: ref.uri().substringAfterLast("/")
+            "--- $label ---\n${ref.text()}"
+        }
+        return "$base\n\n${contentBlocks.joinToString("\n\n")}"
+    }
+
     private fun handlePromptCompletion(prompt: String) {
         com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).flushPendingAutoFormat()
         com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).clearFileAccessTracking()
@@ -1622,7 +1642,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             val modelId = prepareModelAndTurnState()
 
             val references = contextManager.buildContextReferences(contextItems.ifEmpty { null })
-            val effectivePrompt = buildEffectivePrompt(prompt)
+            val effectivePrompt = buildEffectivePromptWithContent(prompt, references, contextItems)
             addContextEntries(references, contextItems)
 
             dispatchPromptWithRetry(client, sessionId, effectivePrompt, modelId, references)
