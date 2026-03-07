@@ -26,7 +26,7 @@ class PromptContextManager(
 
     init {
         // Dispose orphaned inlays whenever their ORC placeholder character is deleted.
-        // Also clean up any trailing space after the ORC to make deletion feel like a single character.
+        // This makes backspace over a chip feel like deleting a single character.
         promptTextArea.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
             override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
                 val removed = event.oldFragment
@@ -39,26 +39,9 @@ class PromptContextManager(
                 for (i in text.indices) {
                     if (text[i] == ORC) orcOffsets.add(i)
                 }
-                // Track positions to delete (trailing spaces after deleted ORCs)
-                val spacesToDelete = mutableListOf<Int>()
                 for (inlay in inlays) {
                     if (inlay.offset !in orcOffsets) {
-                        // Inlay's ORC was deleted. Check if there's a trailing space to clean up.
-                        val offset = inlay.offset
-                        if (offset < text.length && text[offset] == ' ') {
-                            spacesToDelete.add(offset)
-                        }
                         com.intellij.openapi.util.Disposer.dispose(inlay)
-                    }
-                }
-                // Delete trailing spaces from back to front so offsets stay valid
-                if (spacesToDelete.isNotEmpty()) {
-                    com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(editor.project) {
-                        for (offset in spacesToDelete.sortedDescending()) {
-                            if (offset < editor.document.textLength) {
-                                editor.document.deleteString(offset, offset + 1)
-                            }
-                        }
                     }
                 }
             }
@@ -71,9 +54,7 @@ class PromptContextManager(
     fun insertInlineChip(editor: EditorEx, data: ContextItemData) {
         com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
             val offset = editor.caretModel.offset
-            // Only insert ORC with single space after for separation
-            editor.document.insertString(offset, "$ORC ")
-            // Position caret after the chip (before the trailing space)
+            editor.document.insertString(offset, ORC.toString())
             editor.caretModel.moveToOffset(offset + 1)
         }
         val inlayOffset = editor.caretModel.offset - 1
