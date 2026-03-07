@@ -2348,8 +2348,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
 
         // Fallback: show the language picker
-        com.intellij.ide.scratch.LRUPopupBuilder
-            .languagePopupBuilder(project, "Paste as Scratch File") { lang ->
+        val popup = com.intellij.ide.scratch.LRUPopupBuilder
+            .languagePopupBuilder(project, "Paste as Scratch File (paste again to skip)") { lang ->
                 lang.associatedFileType?.icon ?: com.intellij.icons.AllIcons.FileTypes.Any_type
             }
             .forValues(enabledLanguages)
@@ -2358,7 +2358,46 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 createAndAttachScratch(ext, text)
             }
             .buildPopup()
-            .showCenteredInCurrentWindow(project)
+
+        // Register paste shortcuts on the popup so pressing paste again skips the
+        // scratch and inserts the text directly into the prompt editor.
+        registerPasteToSkip(popup, text)
+
+        popup.showCenteredInCurrentWindow(project)
+    }
+
+    /**
+     * Registers paste keyboard shortcuts on a popup so that pressing paste
+     * while the popup is visible cancels it and inserts the text directly
+     * into the prompt editor instead.
+     */
+    private fun registerPasteToSkip(popup: com.intellij.openapi.ui.popup.JBPopup, text: String) {
+        val content = popup.content ?: return
+        val inputMap = content.getInputMap(javax.swing.JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+        val actionMap = content.actionMap
+
+        for (stroke in arrayOf(
+            javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.CTRL_DOWN_MASK),
+            javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.META_DOWN_MASK),
+            javax.swing.KeyStroke.getKeyStroke(
+                java.awt.event.KeyEvent.VK_INSERT,
+                java.awt.event.InputEvent.SHIFT_DOWN_MASK
+            )
+        )) {
+            inputMap.put(stroke, "pasteDirectlyToPrompt")
+        }
+
+        actionMap.put("pasteDirectlyToPrompt", object : javax.swing.AbstractAction() {
+            override fun actionPerformed(e: java.awt.event.ActionEvent) {
+                popup.cancel()
+                com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+                    val editor = promptTextArea.editor ?: return@runWriteCommandAction
+                    val offset = editor.caretModel.offset
+                    editor.document.insertString(offset, text)
+                    editor.caretModel.moveToOffset(offset + text.length)
+                }
+            }
+        })
     }
 
     private fun handleCreateScratch(e: AnActionEvent) {
