@@ -624,7 +624,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 currentTurnId = "t${turnCounter++}"
                 val text = obj["text"]?.asString ?: ""
                 val ts = obj["ts"]?.asString ?: ""
-                executeJs("ChatController.addUserMessage('${escJs(text)}','$ts','')")
+                val ctxFiles = obj["ctxFiles"]?.asJsonArray?.map { f ->
+                    val fo = f.asJsonObject
+                    Triple(fo["name"]?.asString ?: "", fo["path"]?.asString ?: "", fo["line"]?.asInt ?: 0)
+                }
+                val encodedBubble = if (!ctxFiles.isNullOrEmpty()) b64(buildRestoredBubbleHtml(text, ctxFiles)) else ""
+                executeJs("ChatController.addUserMessage('${escJs(text)}','$ts','$encodedBubble')")
             }
 
             "text" -> {
@@ -713,6 +718,28 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         }
     }
 
+    /**
+     * Rebuilds bubble HTML for a restored prompt that had context file references.
+     * The stored text contains backtick-wrapped names (e.g. `` `File.kt:10-20` ``);
+     * this method replaces them with the same `<a class='prompt-ctx-chip'>` elements
+     * used in [AgenticCopilotToolWindowContent.buildBubbleHtml] for live messages.
+     */
+    private fun buildRestoredBubbleHtml(text: String, ctxFiles: List<Triple<String, String, Int>>): String {
+        val fileIconSvg = "<svg class='file-icon' width='12' height='12' viewBox='0 0 16 16' fill='currentColor'>" +
+            "<path d='M3.5 1A1.5 1.5 0 0 0 2 2.5v11A1.5 1.5 0 0 0 " +
+            "3.5 15h9a1.5 1.5 0 0 0 1.5-1.5V6.621a1.5 1.5 0 0 0-.44-1.06L9.94 1.94A1.5 1.5 0 0 0 " +
+            "8.879 1.5H3.5z'/></svg>"
+        var result = esc(text)
+        for ((name, path, line) in ctxFiles) {
+            val href = if (line > 0) "openfile://$path:$line" else "openfile://$path"
+            val title = esc(if (line > 0) "$path:$line" else path)
+            val chip =
+                "<a class='prompt-ctx-chip' href='$href' title='$title'>$fileIconSvg<code>${esc(name)}</code></a>"
+            result = result.replaceFirst("`${esc(name)}`", chip)
+        }
+        return result
+    }
+
     private fun loadMoreEntries() {
         if (deferredRestoreJson.isEmpty()) return
         val turnsToLoad = 3
@@ -751,14 +778,20 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 "prompt" -> {
                     val text = obj["text"]?.asString ?: ""
                     val ts = obj["ts"]?.asString ?: ""
-                    val refsHtml = buildPromptRefsHtml(obj["ctxFiles"]?.asJsonArray)
+                    val ctxArr = obj["ctxFiles"]?.asJsonArray
+                    val ctxFiles = ctxArr?.map { f ->
+                        val fo = f.asJsonObject
+                        Triple(fo["name"]?.asString ?: "", fo["path"]?.asString ?: "", fo["line"]?.asInt ?: 0)
+                    }
                     sb.append("<chat-message type='user'>")
                     sb.append("<message-meta><span class='ts'>${esc(ts)}</span></message-meta>")
                     sb.append("<message-bubble type='user'>")
-                    if (refsHtml.isNotEmpty()) {
-                        sb.append(refsHtml).append(" ")
+                    if (!ctxFiles.isNullOrEmpty()) {
+                        sb.append(buildRestoredBubbleHtml(text, ctxFiles))
+                    } else {
+                        sb.append(esc(text))
                     }
-                    sb.append("${esc(text)}</message-bubble>")
+                    sb.append("</message-bubble>")
                     sb.append("</chat-message>")
                     i++
                 }
@@ -856,26 +889,6 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             }
         }
         return sb.toString()
-    }
-
-    private fun buildPromptRefsHtml(ctxFiles: com.google.gson.JsonArray?): String {
-        if (ctxFiles == null || ctxFiles.isEmpty) return ""
-        val iconSvg = "<svg class='file-icon' width='12' height='12' viewBox='0 0 16 16' fill='currentColor'>" +
-            "<path d='M3.5 1A1.5 1.5 0 0 0 2 2.5v11A1.5 1.5 0 0 0 " +
-            "3.5 15h9a1.5 1.5 0 0 0 1.5-1.5V6.621a1.5 1.5 0 0 0-.44-1.06L9.94 1.94A1.5 1.5 0 0 0 " +
-            "8.879 1.5H3.5z'/></svg>"
-        return ctxFiles.joinToString("") { f ->
-            val fo = f.asJsonObject
-            val name = fo["name"]?.asString ?: ""
-            val path = fo["path"]?.asString ?: ""
-            val line = fo["line"]?.asInt ?: 0
-            val href = if (line > 0) "openfile://$path:$line" else "openfile://$path"
-            "<a class='prompt-ctx-chip' href='$href' title='${esc(path)}${if (line > 0) ":$line" else ""}'>${iconSvg}<code>${
-                esc(
-                    name
-                )
-            }</code></a>"
-        }
     }
 
     override fun getPageHtml(): String? {
