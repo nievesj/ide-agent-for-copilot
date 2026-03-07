@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
+import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -53,6 +54,10 @@ class EditorTools extends AbstractToolHandler {
         String pathStr = args.get("file").getAsString();
         int line = args.has("line") ? args.get("line").getAsInt() : -1;
         boolean focus = !args.has("focus") || args.get("focus").getAsBoolean();
+        // When follow mode is off, never steal focus from the user's current editor
+        if (!CopilotSettings.getFollowAgentFiles(project)) {
+            focus = false;
+        }
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
 
@@ -225,8 +230,9 @@ class EditorTools extends AbstractToolHandler {
             );
 
             if (resultFile[0] != null) {
+                boolean focusScratch = CopilotSettings.getFollowAgentFiles(project);
                 com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
-                    .openFile(resultFile[0], true);
+                    .openFile(resultFile[0], focusScratch);
             }
         } catch (Exception e) {
             LOG.warn("Failed in EDT execution", e);
