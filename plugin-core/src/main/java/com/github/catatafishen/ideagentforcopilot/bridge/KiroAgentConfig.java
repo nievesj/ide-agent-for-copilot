@@ -49,14 +49,15 @@ public class KiroAgentConfig implements AgentConfig {
 
     @Override
     public @NotNull ProcessBuilder buildAcpProcess(@NotNull String binaryPath,
-                                                   @Nullable String projectBasePath) {
+                                                   @Nullable String projectBasePath,
+                                                   int mcpPort) {
         resolvedBinaryPath = binaryPath;
         return GenericCliLocator.buildAcpCommand(
             binaryPath, "kiro-cli",
             List.of("acp"),
             settings.getSelectedModel(),
             projectBasePath,
-            settings.getDisabledMcpToolIds(),
+            mcpPort,
             true, true);
     }
 

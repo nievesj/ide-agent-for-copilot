@@ -47,12 +47,13 @@ public interface AgentConfig {
      *
      * @param binaryPath      path returned by {@link #findAgentBinary()}
      * @param projectBasePath project root (for config-dir, working directory)
+     * @param mcpPort         port the MCP HTTP server listens on (for stdio proxy)
      * @return configured ProcessBuilder ready to start
      * @throws AcpException if the command cannot be built
      */
     @NotNull
-    ProcessBuilder buildAcpProcess(@NotNull String binaryPath, @Nullable String projectBasePath)
-        throws AcpException;
+    ProcessBuilder buildAcpProcess(@NotNull String binaryPath, @Nullable String projectBasePath,
+                                   int mcpPort) throws AcpException;
 
     /**
      * Extract agent-specific data from the ACP {@code initialize} response.

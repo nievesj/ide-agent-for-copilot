@@ -100,7 +100,8 @@ final class ClaudeCliLocator {
         cmd.add(claudePath);
     }
 
-    static ProcessBuilder buildAcpCommand(String claudePath, @Nullable String projectBasePath) {
+    static ProcessBuilder buildAcpCommand(String claudePath, @Nullable String projectBasePath,
+                                          int mcpPort) {
         List<String> cmd = new ArrayList<>();
 
         addNodeAndClaudeCommand(cmd, claudePath);
@@ -122,7 +123,7 @@ final class ClaudeCliLocator {
             LOG.info("Claude CLI config-dir set to: " + agentWorkPath);
         }
 
-        CopilotCliLocator.addMcpConfigFlags(cmd, projectBasePath, ClaudeSettings.getDisabledMcpToolIds());
+        CopilotCliLocator.addMcpConfigFlags(cmd, mcpPort);
 
         return new ProcessBuilder(cmd);
     }

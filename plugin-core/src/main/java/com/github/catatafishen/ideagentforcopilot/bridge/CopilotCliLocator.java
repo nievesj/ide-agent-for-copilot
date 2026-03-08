@@ -5,7 +5,6 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
@@ -177,11 +176,9 @@ final class CopilotCliLocator {
 
     /**
      * Build MCP config JSON, write to temp file, and add --additional-mcp-config flag.
-     * The {@code disabledToolIds} parameter is a comma-separated list of tool IDs
-     * to exclude from the MCP server's tool listing.
+     * The proxy connects to the MCP HTTP server at the specified port.
      */
-    static void addMcpConfigFlags(List<String> cmd, @Nullable String projectBasePath,
-                                  @NotNull String disabledToolIds) {
+    static void addMcpConfigFlags(List<String> cmd, int mcpPort) {
         String mcpJarPath = findMcpServerJar();
         if (mcpJarPath == null) {
             LOG.warn(MCP_SERVER_ERROR + ": MCP server JAR not found. IntelliJ code tools will be unavailable.");
@@ -207,13 +204,9 @@ final class CopilotCliLocator {
             JsonArray args = new JsonArray();
             args.add("-jar");
             args.add(mcpJarPath);
-            args.add(projectBasePath != null ? projectBasePath : System.getProperty(USER_HOME));
+            args.add("--port");
+            args.add(String.valueOf(mcpPort));
             codeTools.add("args", args);
-            if (!disabledToolIds.isEmpty()) {
-                args.add("--disabled-tools");
-                args.add(disabledToolIds);
-                LOG.info("MCP disabled tools: " + disabledToolIds);
-            }
             servers.add("intellij-code-tools", codeTools);
             mcpConfig.add("mcpServers", servers);
 
@@ -233,7 +226,8 @@ final class CopilotCliLocator {
         }
     }
 
-    static ProcessBuilder buildAcpCommand(String copilotPath, @Nullable String projectBasePath) {
+    static ProcessBuilder buildAcpCommand(String copilotPath, @Nullable String projectBasePath,
+                                          int mcpPort) {
         List<String> cmd = new ArrayList<>();
 
         addNodeAndCopilotCommand(cmd, copilotPath);
@@ -258,7 +252,7 @@ final class CopilotCliLocator {
             LOG.info("Copilot CLI config-dir set to: " + agentWorkPath);
         }
 
-        addMcpConfigFlags(cmd, projectBasePath, CopilotSettings.getDisabledMcpToolIds());
+        addMcpConfigFlags(cmd, mcpPort);
 
         return new ProcessBuilder(cmd);
     }

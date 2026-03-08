@@ -1,5 +1,7 @@
 package com.github.catatafishen.idemcpserver;
 
+import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService;
+import com.github.catatafishen.ideagentforcopilot.services.McpServerControl;
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
 import com.github.catatafishen.ideagentforcopilot.settings.TransportMode;
 import com.intellij.openapi.Disposable;
@@ -27,7 +29,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * GET /health is always available for status checks.
  */
 @Service(Service.Level.PROJECT)
-public final class McpHttpServer implements Disposable {
+public final class McpHttpServer implements Disposable, McpServerControl {
     private static final Logger LOG = Logger.getInstance(McpHttpServer.class);
     private static final String CONTENT_TYPE = "Content-Type";
     private static final String APPLICATION_JSON = "application/json";
@@ -54,6 +56,12 @@ public final class McpHttpServer implements Disposable {
         int port = settings.getPort();
         activeTransportMode = settings.getTransportMode();
 
+        // Ensure PsiBridgeService (tool execution engine) is running
+        PsiBridgeService bridge = PsiBridgeService.getInstance(project);
+        if (!bridge.isRunning()) {
+            bridge.start();
+        }
+
         protocolHandler = new McpProtocolHandler(project);
         httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
         httpServer.createContext("/health", this::handleHealth);
@@ -72,6 +80,14 @@ public final class McpHttpServer implements Disposable {
         running = true;
         LOG.info("MCP server started on port " + port + " (" + activeTransportMode.getDisplayName()
             + ") for project: " + project.getBasePath());
+    }
+
+    /**
+     * Start on a specific port (saves the port to settings first).
+     */
+    public synchronized void start(int port) throws IOException {
+        McpServerSettings.getInstance(project).setPort(port);
+        start();
     }
 
     public synchronized void stop() {

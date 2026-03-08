@@ -47,7 +47,8 @@ public class GeminiAgentConfig implements AgentConfig {
 
     @Override
     public @NotNull ProcessBuilder buildAcpProcess(@NotNull String binaryPath,
-                                                   @Nullable String projectBasePath) {
+                                                   @Nullable String projectBasePath,
+                                                   int mcpPort) {
         resolvedBinaryPath = binaryPath;
         // Gemini uses --experimental-acp flag; does not support --config-dir
         return GenericCliLocator.buildAcpCommand(
@@ -55,7 +56,7 @@ public class GeminiAgentConfig implements AgentConfig {
             List.of("--experimental-acp"),
             settings.getSelectedModel(),
             projectBasePath,
-            settings.getDisabledMcpToolIds(),
+            mcpPort,
             false, true);
     }
 

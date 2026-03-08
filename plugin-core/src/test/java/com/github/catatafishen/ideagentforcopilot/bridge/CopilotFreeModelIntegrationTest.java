@@ -53,7 +53,7 @@ class CopilotFreeModelIntegrationTest {
     @BeforeEach
     void setUp() throws Exception {
         Assumptions.assumeTrue(copilotAvailable(), "Copilot CLI not available");
-        client = new AcpClient(new CopilotAgentConfig(), new CopilotAgentSettings(), null);
+        client = new AcpClient(new CopilotAgentConfig(), new CopilotAgentSettings(), null, 0);
         client.start();
         sessionId = client.createSession();
 
@@ -144,7 +144,7 @@ class CopilotFreeModelIntegrationTest {
         assertFalse(client.isHealthy());
 
         // Create new client
-        client = new AcpClient(new CopilotAgentConfig(), new CopilotAgentSettings(), null);
+        client = new AcpClient(new CopilotAgentConfig(), new CopilotAgentSettings(), null, 0);
         client.start();
         assertTrue(client.isHealthy());
 

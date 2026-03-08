@@ -2,6 +2,7 @@ package com.github.catatafishen.idemcpserver;
 
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
+import com.github.catatafishen.ideagentforcopilot.services.ToolSchemas;
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
 import com.github.catatafishen.ideagentforcopilot.settings.McpToolFilter;
 import com.google.gson.Gson;
@@ -88,14 +89,7 @@ public final class McpProtocolHandler {
             JsonObject tool = new JsonObject();
             tool.addProperty("name", entry.id);
             tool.addProperty("description", entry.description);
-
-            // Minimal valid schema — CAPI requires 'properties' on all object types
-            JsonObject inputSchema = new JsonObject();
-            inputSchema.addProperty("type", "object");
-            inputSchema.add("properties", new JsonObject());
-            inputSchema.add("required", new JsonArray());
-            tool.add("inputSchema", inputSchema);
-
+            tool.add("inputSchema", ToolSchemas.getInputSchema(entry.id));
             tools.add(tool);
         }
 
@@ -118,7 +112,7 @@ public final class McpProtocolHandler {
         }
 
         JsonObject arguments = params.has("arguments")
-            ? params.getAsJsonObject("arguments") : new JsonObject();
+                ? params.getAsJsonObject("arguments") : new JsonObject();
 
         LOG.info("MCP tool call: " + toolName);
 
@@ -168,8 +162,8 @@ public final class McpProtocolHandler {
 
     private static JsonObject respondError(JsonObject request, int code, String message) {
         return makeErrorResponse(
-            request != null && request.has("id") ? request.get("id") : null,
-            code, message
+                request != null && request.has("id") ? request.get("id") : null,
+                code, message
         );
     }
 

@@ -50,9 +50,10 @@ public class CopilotAgentConfig implements AgentConfig {
 
     @Override
     public @NotNull ProcessBuilder buildAcpProcess(@NotNull String binaryPath,
-                                                   @Nullable String projectBasePath) throws AcpException {
+                                                   @Nullable String projectBasePath,
+                                                   int mcpPort) throws AcpException {
         resolvedBinaryPath = binaryPath;
-        return CopilotCliLocator.buildAcpCommand(binaryPath, projectBasePath);
+        return CopilotCliLocator.buildAcpCommand(binaryPath, projectBasePath, mcpPort);
     }
 
     @Override

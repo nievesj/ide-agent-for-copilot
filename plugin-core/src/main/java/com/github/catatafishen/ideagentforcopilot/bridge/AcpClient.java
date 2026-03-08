@@ -77,6 +77,7 @@ public class AcpClient implements Closeable {
     private final String projectBasePath; // Project path for config-dir
     private final AgentConfig agentConfig;
     private final AgentSettings agentSettings;
+    private final int mcpPort;
     private Process process;
     private BufferedWriter writer;
     private Thread readerThread;
@@ -165,10 +166,11 @@ public class AcpClient implements Closeable {
      * Create ACP client with an agent configuration, settings, and optional project base path.
      */
     public AcpClient(@NotNull AgentConfig agentConfig, @NotNull AgentSettings agentSettings,
-                     @Nullable String projectBasePath) {
+                     @Nullable String projectBasePath, int mcpPort) {
         this.agentConfig = agentConfig;
         this.agentSettings = agentSettings;
         this.projectBasePath = projectBasePath;
+        this.mcpPort = mcpPort;
     }
 
     /**
@@ -197,7 +199,7 @@ public class AcpClient implements Closeable {
             String binaryPath = agentConfig.findAgentBinary();
             LOG.info("Starting " + agentConfig.getDisplayName() + " ACP: " + binaryPath);
 
-            ProcessBuilder pb = agentConfig.buildAcpProcess(binaryPath, projectBasePath);
+            ProcessBuilder pb = agentConfig.buildAcpProcess(binaryPath, projectBasePath, mcpPort);
             pb.redirectErrorStream(false);
             process = pb.start();
 

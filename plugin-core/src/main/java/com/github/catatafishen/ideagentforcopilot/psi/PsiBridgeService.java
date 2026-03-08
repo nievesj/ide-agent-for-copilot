@@ -199,7 +199,6 @@ public final class PsiBridgeService implements Disposable {
             httpServer.setExecutor(Executors.newFixedThreadPool(8));
             httpServer.start();
             port = httpServer.getAddress().getPort();
-            writeBridgeFile();
             LOG.info("PSI Bridge started on port " + port + " for project: " + project.getBasePath());
             project.getMessageBus().syncPublisher(STATUS_TOPIC).bridgeStarted(port);
         } catch (Exception e) {
@@ -266,59 +265,6 @@ public final class PsiBridgeService implements Disposable {
             depth++;
         }
         return sb.toString();
-    }
-
-    // Serialises all bridge-file writes/removes within the same JVM (single IntelliJ process).
-    // File-level locking across separate IDE processes is not needed in practice.
-    private static final Object BRIDGE_FILE_LOCK = new Object();
-
-    private void writeBridgeFile() {
-        if (ApplicationManager.getApplication().isUnitTestMode()) {
-            LOG.info("Skipping bridge file write in unit test mode");
-            return;
-        }
-        String projectPath = project.getBasePath();
-        if (projectPath == null) return;
-
-        synchronized (BRIDGE_FILE_LOCK) {
-            try {
-                Path bridgeDir = Path.of(System.getProperty("user.home"), ".copilot");
-                Files.createDirectories(bridgeDir);
-                Path bridgeFile = bridgeDir.resolve("psi-bridge.json");
-
-                JsonObject registry = readRegistry(bridgeFile);
-
-                // Add / update our entry
-                JsonObject entry = new JsonObject();
-                entry.addProperty("port", port);
-                registry.add(projectPath, entry);
-
-                Files.writeString(bridgeFile, GSON.toJson(registry));
-                LOG.info("Bridge registry updated: " + registry.size() + " project(s) registered");
-            } catch (IOException e) {
-                LOG.error("Failed to write bridge file", e);
-            }
-        }
-    }
-
-    /**
-     * Reads the bridge registry file. Handles both the legacy single-entry format
-     * ({@code {"port":N,"projectPath":"…"}}) and the new multi-project map format.
-     * Returns an empty object on any parse or I/O error.
-     */
-    private static JsonObject readRegistry(Path bridgeFile) {
-        if (!Files.exists(bridgeFile)) return new JsonObject();
-        try {
-            String content = Files.readString(bridgeFile);
-            JsonElement el = JsonParser.parseString(content);
-            if (!el.isJsonObject()) return new JsonObject();
-            JsonObject obj = el.getAsJsonObject();
-            // Old single-entry format — discard; projects will re-register on startup.
-            if (obj.has("port")) return new JsonObject();
-            return obj;
-        } catch (Exception e) {
-            return new JsonObject();
-        }
     }
 
     private void handleHealth(HttpExchange exchange) throws IOException {
@@ -659,25 +605,5 @@ public final class PsiBridgeService implements Disposable {
 
     public void dispose() {
         stop();
-        if (ApplicationManager.getApplication().isUnitTestMode()) return;
-        String projectPath = project.getBasePath();
-        if (projectPath == null) return;
-        synchronized (BRIDGE_FILE_LOCK) {
-            try {
-                Path bridgeFile = Path.of(System.getProperty("user.home"), ".copilot", "psi-bridge.json");
-                JsonObject registry = readRegistry(bridgeFile);
-                registry.remove(projectPath);
-                // Normalise slashes in case the key was stored differently
-                registry.remove(projectPath.replace('/', '\\'));
-                registry.remove(projectPath.replace('\\', '/'));
-                if (registry.isEmpty()) {
-                    Files.deleteIfExists(bridgeFile);
-                } else {
-                    Files.writeString(bridgeFile, GSON.toJson(registry));
-                }
-            } catch (IOException e) {
-                LOG.warn("Failed to clean up bridge file", e);
-            }
-        }
     }
 }

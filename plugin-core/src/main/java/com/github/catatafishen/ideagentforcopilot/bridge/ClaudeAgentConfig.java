@@ -43,9 +43,10 @@ public class ClaudeAgentConfig implements AgentConfig {
 
     @Override
     public @NotNull ProcessBuilder buildAcpProcess(@NotNull String binaryPath,
-                                                   @Nullable String projectBasePath) throws AcpException {
+                                                   @Nullable String projectBasePath,
+                                                   int mcpPort) throws AcpException {
         resolvedBinaryPath = binaryPath;
-        return ClaudeCliLocator.buildAcpCommand(binaryPath, projectBasePath);
+        return ClaudeCliLocator.buildAcpCommand(binaryPath, projectBasePath, mcpPort);
     }
 
     @Override

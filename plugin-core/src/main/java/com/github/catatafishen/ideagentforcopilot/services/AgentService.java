@@ -86,8 +86,10 @@ public abstract class AgentService implements Disposable {
             }
 
             String projectPath = project.getBasePath();
+            int mcpPort = com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings
+                .getInstance(project).getPort();
             AgentConfig config = resolveStartConfig();
-            acpClient = new AcpClient(config, createAgentSettings(), projectPath);
+            acpClient = new AcpClient(config, createAgentSettings(), projectPath, mcpPort);
             acpClient.start();
             started = true;
             LOG.info(getDisplayName() + " ACP client started with config-dir: " + projectPath + "/.agent-work");

@@ -80,7 +80,8 @@ public class GenericCustomAgentConfig implements AgentConfig {
 
     @Override
     public @NotNull ProcessBuilder buildAcpProcess(@NotNull String binaryPath,
-                                                   @Nullable String projectBasePath) {
+                                                   @Nullable String projectBasePath,
+                                                   int mcpPort) {
         List<String> cmd = parseCommand();
         if (!cmd.isEmpty()) {
             cmd.set(0, binaryPath);

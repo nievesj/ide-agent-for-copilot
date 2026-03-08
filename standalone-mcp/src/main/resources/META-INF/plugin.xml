@@ -99,6 +99,7 @@
 
     <!-- Project service: MCP HTTP server -->
     <projectService
+      serviceInterface="com.github.catatafishen.ideagentforcopilot.services.McpServerControl"
       serviceImplementation="com.github.catatafishen.idemcpserver.McpHttpServer"/>
 
     <!-- Persistent settings state (shared from plugin-core) -->

@@ -131,7 +131,7 @@ final class GenericCliLocator {
      * @param acpArgs         ACP activation args (e.g., ["--acp"] or ["acp"])
      * @param savedModel      previously selected model, or null
      * @param projectBasePath project root directory, or null
-     * @param disabledToolIds comma-separated disabled MCP tool IDs
+     * @param mcpPort         MCP HTTP server port for the stdio proxy
      * @param supportsConfigDir whether the CLI supports --config-dir
      * @param supportsMcpConfig whether the CLI supports --additional-mcp-config
      * @return configured ProcessBuilder
@@ -141,7 +141,7 @@ final class GenericCliLocator {
                                           @NotNull List<String> acpArgs,
                                           @Nullable String savedModel,
                                           @Nullable String projectBasePath,
-                                          @NotNull String disabledToolIds,
+                                          int mcpPort,
                                           boolean supportsConfigDir,
                                           boolean supportsMcpConfig) {
         List<String> cmd = new ArrayList<>();
@@ -163,7 +163,7 @@ final class GenericCliLocator {
         }
 
         if (supportsMcpConfig) {
-            CopilotCliLocator.addMcpConfigFlags(cmd, projectBasePath, disabledToolIds);
+            CopilotCliLocator.addMcpConfigFlags(cmd, mcpPort);
         }
 
         return new ProcessBuilder(cmd);
