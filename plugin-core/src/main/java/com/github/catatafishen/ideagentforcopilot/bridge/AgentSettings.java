@@ -13,10 +13,12 @@ import org.jetbrains.annotations.NotNull;
 public interface AgentSettings {
 
     /**
-     * Whether the agent is in autopilot mode (auto-approve all permission requests).
-     * Default is {@code false} — each implementation reads from its own session-mode setting.
+     * Whether permission requests flagged as ASK should be auto-approved.
+     * This is a plugin-level feature (not agent-specific) that promotes ASK → ALLOW
+     * while preserving DENY decisions. Implementations typically delegate to
+     * {@link com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager#isAutoApprovePermissions()}.
      */
-    default boolean isAutopilotMode() {
+    default boolean isAutoApprovePermissions() {
         return false;
     }
 

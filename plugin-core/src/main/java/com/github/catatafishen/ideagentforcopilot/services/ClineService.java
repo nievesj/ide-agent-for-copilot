@@ -44,7 +44,7 @@ public final class ClineService extends AgentService {
 
     @Override
     protected @NotNull AgentSettings createAgentSettings() {
-        return new GenericAgentSettings(SETTINGS);
+        return new GenericAgentSettings(SETTINGS, project);
     }
 
     @Override

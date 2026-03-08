@@ -27,6 +27,7 @@ public final class ActiveAgentManager {
     private static final String KEY_FOLLOW_AGENT_FILES = "agent.followAgentFiles";
     private static final String KEY_AUTO_CONNECT = "agent.autoConnect";
     private static final String KEY_CUSTOM_ACP_COMMAND = "agent.customAcpCommand";
+    private static final String KEY_AUTO_APPROVE = "agent.autoApprovePermissions";
 
     private final Project project;
     private volatile boolean acpConnected;
@@ -193,5 +194,19 @@ public final class ActiveAgentManager {
 
     public void setCustomAcpCommand(@NotNull String command) {
         PropertiesComponent.getInstance(project).setValue(KEY_CUSTOM_ACP_COMMAND, command, "");
+    }
+
+    // ── Auto-approve permissions (plugin-level, applies to all agents) ──────
+
+    /**
+     * When enabled, all ASK permission requests are automatically approved (DENY is still respected).
+     * This is a plugin-level feature, not an agent-specific mode.
+     */
+    public boolean isAutoApprovePermissions() {
+        return PropertiesComponent.getInstance(project).getBoolean(KEY_AUTO_APPROVE, false);
+    }
+
+    public void setAutoApprovePermissions(boolean enabled) {
+        PropertiesComponent.getInstance(project).setValue(KEY_AUTO_APPROVE, enabled, false);
     }
 }

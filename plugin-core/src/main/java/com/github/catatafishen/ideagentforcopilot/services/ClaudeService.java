@@ -126,7 +126,7 @@ public final class ClaudeService extends AgentService {
 
     @Override
     protected @NotNull AgentSettings createAgentSettings() {
-        return new ClaudeAgentSettings();
+        return new ClaudeAgentSettings(project);
     }
 
     @Override

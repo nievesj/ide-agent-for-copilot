@@ -1,18 +1,23 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.services.ClaudeSettings;
 import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
+import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-/**
- * Claude-specific implementation of {@link AgentSettings}.
- * Delegates to {@link ClaudeSettings} for all values.
- */
 public class ClaudeAgentSettings implements AgentSettings {
 
+    private final Project project;
+
+    public ClaudeAgentSettings(@Nullable Project project) {
+        this.project = project;
+    }
+
     @Override
-    public boolean isAutopilotMode() {
-        return "autopilot".equals(ClaudeSettings.getSessionMode());
+    public boolean isAutoApprovePermissions() {
+        return project != null && ActiveAgentManager.getInstance(project).isAutoApprovePermissions();
     }
 
     @Override

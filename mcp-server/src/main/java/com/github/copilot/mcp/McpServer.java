@@ -421,7 +421,7 @@ public class McpServer {
             Map.of(
                 "path", Map.of("type", "string", "description", "Absolute or project-relative path to the file to write or create"),
                 "content", Map.of("type", "string", "description", "Full file content to write (replaces entire file). Creates the file if it doesn't exist"),
-                "auto_format", Map.of("type", "boolean", "description", "Auto-format and optimize imports after writing (default: true)")
+                "auto_format", Map.of("type", "boolean", "description", "Auto-format code AND optimize imports after writing (default: true). ⚠️ Import optimization REMOVES imports it considers unused — if you add imports in one edit and reference them in a later edit, set this to false or combine both changes in one edit")
             ),
             List.of("path", "content")));
 
@@ -430,7 +430,7 @@ public class McpServer {
                 "path", Map.of("type", "string", "description", "Absolute or project-relative path to the file to edit"),
                 "old_str", Map.of("type", "string", "description", "Exact string to find and replace. Must match exactly one location in the file"),
                 "new_str", Map.of("type", "string", "description", "Replacement string"),
-                "auto_format", Map.of("type", "boolean", "description", "Auto-format and optimize imports after writing (default: true)")
+                "auto_format", Map.of("type", "boolean", "description", "Auto-format code AND optimize imports after editing (default: true). ⚠️ Import optimization REMOVES imports it considers unused — if you add imports in one edit and reference them in a later edit, set this to false or combine both changes in one edit")
             ),
             List.of("path", "old_str", "new_str")));
 

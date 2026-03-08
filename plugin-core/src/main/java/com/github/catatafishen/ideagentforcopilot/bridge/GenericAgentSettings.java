@@ -1,25 +1,25 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.services.GenericSettings;
 import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
+import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-/**
- * Shared {@link AgentSettings} implementation backed by a {@link GenericSettings} instance.
- * New ACP agents (Kiro, Gemini, OpenCode, Cline) use this instead of a dedicated
- * settings class.
- */
 public final class GenericAgentSettings implements AgentSettings {
 
     private final GenericSettings settings;
+    private final Project project;
 
-    public GenericAgentSettings(@NotNull GenericSettings settings) {
+    public GenericAgentSettings(@NotNull GenericSettings settings, @Nullable Project project) {
         this.settings = settings;
+        this.project = project;
     }
 
     @Override
-    public boolean isAutopilotMode() {
-        return "autopilot".equals(settings.getSessionMode());
+    public boolean isAutoApprovePermissions() {
+        return project != null && ActiveAgentManager.getInstance(project).isAutoApprovePermissions();
     }
 
     @Override

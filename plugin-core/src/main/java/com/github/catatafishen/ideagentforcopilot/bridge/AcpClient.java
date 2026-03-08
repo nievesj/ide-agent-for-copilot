@@ -1068,9 +1068,9 @@ public class AcpClient implements Closeable {
         String toolId = resolveToolId(permKind, toolCall);
         ToolPermission perm = resolveEffectivePermission(toolId, permKind, toolCall);
 
-        // Autopilot mode: promote ASK → ALLOW (DENY stays DENY for safety)
-        if (perm == ToolPermission.ASK && agentSettings.isAutopilotMode()) {
-            LOG.info("ACP request_permission: autopilot promoting ASK→ALLOW for " + toolId);
+        // Auto-approve: plugin-level toggle promotes ASK → ALLOW (DENY stays DENY for safety)
+        if (perm == ToolPermission.ASK && agentSettings.isAutoApprovePermissions()) {
+            LOG.info("ACP request_permission: auto-approve promoting ASK→ALLOW for " + toolId);
             perm = ToolPermission.ALLOW;
         }
 

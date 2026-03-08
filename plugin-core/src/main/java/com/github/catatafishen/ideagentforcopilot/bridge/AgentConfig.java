@@ -84,6 +84,16 @@ public interface AgentConfig {
     String getAgentBinaryPath();
 
     /**
+     * Returns the session modes this agent supports (e.g., "agent", "plan").
+     * The first entry is the default. An empty list means the agent has no mode concept
+     * and no mode selector should be shown.
+     */
+    @NotNull
+    default java.util.List<AgentMode> getSupportedModes() {
+        return java.util.List.of();
+    }
+
+    /**
      * Whether ACP {@code ResourceReference} objects need their content duplicated as
      * plain text in the prompt. GitHub Copilot surfaces resource references as
      * metadata-only (path + line count) without inlining the content for the model,

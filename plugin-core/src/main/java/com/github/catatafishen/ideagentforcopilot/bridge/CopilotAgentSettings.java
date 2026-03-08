@@ -1,18 +1,23 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings;
 import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
+import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-/**
- * Copilot-specific implementation of {@link AgentSettings}.
- * Delegates to {@link CopilotSettings} for all values.
- */
 public class CopilotAgentSettings implements AgentSettings {
 
+    private final Project project;
+
+    public CopilotAgentSettings(@Nullable Project project) {
+        this.project = project;
+    }
+
     @Override
-    public boolean isAutopilotMode() {
-        return "autopilot".equals(CopilotSettings.getSessionMode());
+    public boolean isAutoApprovePermissions() {
+        return project != null && ActiveAgentManager.getInstance(project).isAutoApprovePermissions();
     }
 
     @Override

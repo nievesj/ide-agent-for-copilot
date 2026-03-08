@@ -788,6 +788,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         leftGroup.add(AgentSelectorAction())
         leftGroup.add(ModelSelectorAction())
         leftGroup.add(ModeSelectorAction())
+        leftGroup.add(AutoApproveToggleAction())
         leftGroup.addSeparator()
         leftGroup.add(FollowAgentFilesToggleAction())
         leftGroup.addSeparator()
@@ -1452,36 +1453,47 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
         override fun createPopupActionGroup(button: JComponent, context: DataContext): DefaultActionGroup {
             val group = DefaultActionGroup()
-            group.add(object : AnAction("Agent") {
-                override fun actionPerformed(e: AnActionEvent) {
-                    agentManager.settings.setSessionMode("agent")
-                }
+            val modes = agentManager.service.config.supportedModes
+            for (mode in modes) {
+                group.add(object : AnAction(mode.displayName()) {
+                    override fun actionPerformed(e: AnActionEvent) {
+                        agentManager.settings.setSessionMode(mode.id())
+                    }
 
-                override fun getActionUpdateThread() = ActionUpdateThread.BGT
-            })
-            group.add(object : AnAction("Plan") {
-                override fun actionPerformed(e: AnActionEvent) {
-                    agentManager.settings.setSessionMode("plan")
-                }
-
-                override fun getActionUpdateThread() = ActionUpdateThread.BGT
-            })
-            group.add(object : AnAction("Autopilot") {
-                override fun actionPerformed(e: AnActionEvent) {
-                    agentManager.settings.setSessionMode("autopilot")
-                }
-
-                override fun getActionUpdateThread() = ActionUpdateThread.BGT
-            })
+                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+                })
+            }
             return group
         }
 
         override fun update(e: AnActionEvent) {
-            e.presentation.text = when (agentManager.settings.sessionMode) {
-                "plan" -> "Plan"
-                "autopilot" -> "Autopilot"
-                else -> "Agent"
+            val modes = agentManager.service.config.supportedModes
+            if (modes.isEmpty()) {
+                e.presentation.isVisible = false
+                return
             }
+            e.presentation.isVisible = true
+            val currentId = agentManager.settings.sessionMode
+            val display = modes.firstOrNull { it.id() == currentId }?.displayName()
+                ?: modes.first().displayName()
+            e.presentation.text = display
+        }
+    }
+
+    /**
+     * Plugin-level toggle for auto-approving permission requests.
+     * Visible for all agents — promotes ASK → ALLOW while preserving DENY.
+     */
+    private inner class AutoApproveToggleAction :
+        ToggleAction("Auto-Approve", "Auto-approve permission requests (ASK → ALLOW)", AllIcons.Actions.Lightning) {
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+        override fun isSelected(e: AnActionEvent): Boolean {
+            return agentManager.isAutoApprovePermissions
+        }
+
+        override fun setSelected(e: AnActionEvent, state: Boolean) {
+            agentManager.isAutoApprovePermissions = state
         }
     }
 

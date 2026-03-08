@@ -127,7 +127,7 @@ public final class CopilotService extends AgentService {
 
     @Override
     protected @NotNull AgentSettings createAgentSettings() {
-        return new CopilotAgentSettings();
+        return new CopilotAgentSettings(project);
     }
 
     @Override

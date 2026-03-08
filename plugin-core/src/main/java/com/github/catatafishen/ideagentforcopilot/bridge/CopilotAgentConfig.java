@@ -85,6 +85,14 @@ public class CopilotAgentConfig implements AgentConfig {
         return resolvedBinaryPath;
     }
 
+    @Override
+    public @NotNull java.util.List<AgentMode> getSupportedModes() {
+        return java.util.List.of(
+            new AgentMode("agent", "Agent"),
+            new AgentMode("plan", "Plan")
+        );
+    }
+
     /**
      * Copilot surfaces ResourceReference as metadata-only — content must be duplicated
      * as plain text so the model actually sees it.

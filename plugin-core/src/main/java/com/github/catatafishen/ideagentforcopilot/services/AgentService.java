@@ -22,6 +22,7 @@ public abstract class AgentService implements Disposable {
 
     protected final Project project;
     private AcpClient acpClient;
+    private AgentConfig cachedConfig;
     private volatile boolean started = false;
 
     protected AgentService(@NotNull Project project) {
@@ -47,6 +48,19 @@ public abstract class AgentService implements Disposable {
      */
     @NotNull
     public abstract AgentUiSettings getUiSettings();
+
+    /**
+     * Returns the agent configuration. Used by the UI to query agent capabilities
+     * (e.g., supported modes via {@link AgentConfig#getSupportedModes()}).
+     * Cached to avoid repeated instantiation from toolbar update calls.
+     */
+    @NotNull
+    public AgentConfig getConfig() {
+        if (cachedConfig == null) {
+            cachedConfig = createAgentConfig();
+        }
+        return cachedConfig;
+    }
 
     /**
      * Human-readable name for log messages (e.g., "Copilot", "Claude Code").
