@@ -203,16 +203,22 @@ tasks.register("deployToMainIde") {
         logger.lifecycle("✅ Files deployed to $installDir")
 
         // Step 2: Try dynamic reload via PSI bridge (best-effort)
-        val bridgeFile = File(System.getProperty("user.home"), ".copilot/psi-bridge.json")
-        if (bridgeFile.exists()) {
+        // The bridge listens on a random port — scan common ranges.
+        logger.lifecycle("🔄 Attempting dynamic reload...")
+        var reloaded = false
+        val ports = (36400..36450).toList() + listOf(8642, 8643)
+        for (port in ports) {
             try {
-                val registry = com.google.gson.JsonParser.parseString(bridgeFile.readText()).asJsonObject
-                val port = registry.entrySet().firstOrNull()?.let {
-                    it.value.asJsonObject.get("port")?.asInt
+                val healthResult = providers.exec {
+                    commandLine(
+                        "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+                        "http://127.0.0.1:$port/health",
+                        "--connect-timeout", "0.3", "--max-time", "1"
+                    )
+                    isIgnoreExitValue = true
                 }
-                if (port != null) {
-                    logger.lifecycle("🔄 Requesting dynamic reload on port $port...")
-                    val result = providers.exec {
+                if (healthResult.standardOutput.asText.get().trim() == "200") {
+                    val reloadResult = providers.exec {
                         commandLine(
                             "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
                             "-X", "POST", "http://127.0.0.1:$port/reload-plugin",
@@ -222,20 +228,18 @@ tasks.register("deployToMainIde") {
                         )
                         isIgnoreExitValue = true
                     }
-                    val httpCode = result.standardOutput.asText.get().trim()
-                    if (httpCode == "200") {
-                        logger.lifecycle("🔄 IDE restart triggered — reloading with new plugin version")
-                    } else {
-                        logger.lifecycle("ℹ️  Dynamic reload unavailable (HTTP $httpCode) — restart IDE to apply")
+                    if (reloadResult.standardOutput.asText.get().trim() == "200") {
+                        logger.lifecycle("🔄 Reload requested on port $port — if it fails, restart IDE to apply")
+                        reloaded = true
+                        break
                     }
-                } else {
-                    logger.lifecycle("ℹ️  No PSI bridge port found — restart IDE to apply")
                 }
-            } catch (e: Exception) {
-                logger.lifecycle("ℹ️  PSI bridge not reachable — restart IDE to apply")
+            } catch (_: Exception) {
+                // Port not reachable, try next
             }
-        } else {
-            logger.lifecycle("ℹ️  No running IDE detected — restart IDE to apply")
+        }
+        if (!reloaded) {
+            logger.lifecycle("ℹ️  No running PSI bridge found — restart IDE to apply")
         }
     }
 }

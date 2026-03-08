@@ -516,9 +516,10 @@ class AcpConnectPanel(
     }
 
     private fun refreshMcpState() {
-        val mcpServer = McpServerControl.getInstance(project) ?: return
-        val running = mcpServer.isRunning
-        val port = mcpServer.port
+        val mcpServer = McpServerControl.getInstance(project)
+        val bridge = PsiBridgeService.getInstance(project)
+        val running = mcpServer?.isRunning ?: bridge.isRunning
+        val port = mcpServer?.port ?: bridge.port
 
         mcpStartButton.text = if (running) "Stop server" else "Start server"
         mcpStartButton.icon = if (running) AllIcons.Actions.Suspend else AllIcons.Actions.Execute
@@ -563,16 +564,22 @@ class AcpConnectPanel(
     }
 
     private fun toggleMcpServer() {
-        val mcpServer = McpServerControl.getInstance(project) ?: return
-        if (mcpServer.isRunning) {
-            mcpServer.stop()
+        val mcpServer = McpServerControl.getInstance(project)
+        val bridge = PsiBridgeService.getInstance(project)
+        val running = mcpServer?.isRunning ?: bridge.isRunning
+        if (running) {
+            mcpServer?.stop() ?: bridge.stop()
         } else {
             val portText = mcpPortField.text.trim()
             val port = portText.toIntOrNull() ?: McpServerSettings.DEFAULT_PORT
             try {
-                mcpServer.start(port)
+                if (mcpServer != null) {
+                    mcpServer.start(port)
+                } else {
+                    bridge.start(port)
+                }
             } catch (e: Exception) {
-                showError("Failed to start MCP server: ${e.message}")
+                showError("Failed to start server: ${e.message}")
             }
         }
         refreshMcpState()

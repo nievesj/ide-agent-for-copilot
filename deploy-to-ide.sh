@@ -9,7 +9,6 @@
 set -euo pipefail
 
 DIST_DIR="plugin-core/build/distributions"
-BRIDGE_FILE="$HOME/.copilot/psi-bridge.json"
 
 # Detect the top-level directory name inside the ZIP (e.g. "ide-agent-for-copilot")
 detect_zip_root_dir() {
@@ -89,31 +88,26 @@ fi
 echo "✅ Files deployed"
 
 # Step 5: Try dynamic reload via PSI bridge (best-effort)
-if [[ -f "$BRIDGE_FILE" ]]; then
-    PORT=$(python3 -c "
-import json, sys
-try:
-    reg = json.load(open('$BRIDGE_FILE'))
-    for v in reg.values():
-        print(v.get('port', '')); break
-except: pass
-" 2>/dev/null || true)
-
-    if [[ -n "$PORT" ]]; then
-        echo "🔄 Requesting dynamic reload on port $PORT..."
+# The bridge listens on a random port — scan common ranges.
+echo "🔄 Attempting dynamic reload..."
+RELOADED=false
+for PORT in $(seq 36400 36450) 8642 8643; do
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+        "http://127.0.0.1:$PORT/health" \
+        --connect-timeout 0.3 --max-time 1 2>/dev/null || echo "000")
+    if [[ "$HTTP_CODE" == "200" ]]; then
         HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST "http://127.0.0.1:$PORT/reload-plugin" \
             -H "Content-Type: application/json" \
             -d "{\"zipPath\":\"$LATEST_ZIP_ABS\"}" \
             --connect-timeout 3 --max-time 5 2>/dev/null || echo "000")
         if [[ "$HTTP_CODE" == "200" ]]; then
-            echo "🔄 Reload requested — if it fails, restart IDE to apply"
-        else
-            echo "ℹ️  Dynamic reload unavailable (HTTP $HTTP_CODE) — restart IDE to apply"
+            echo "🔄 Reload requested on port $PORT — if it fails, restart IDE to apply"
+            RELOADED=true
+            break
         fi
-    else
-        echo "ℹ️  No PSI bridge found — restart IDE to apply"
     fi
-else
-    echo "ℹ️  No running IDE detected — restart IDE to apply"
+done
+if [[ "$RELOADED" != "true" ]]; then
+    echo "ℹ️  No running PSI bridge found — restart IDE to apply"
 fi

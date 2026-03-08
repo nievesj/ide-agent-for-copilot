@@ -5,7 +5,6 @@ import com.github.catatafishen.ideagentforcopilot.services.McpServerControl;
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
 import com.github.catatafishen.ideagentforcopilot.settings.TransportMode;
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.sun.net.httpserver.HttpExchange;
@@ -28,7 +27,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  * </ul>
  * GET /health is always available for status checks.
  */
-@Service(Service.Level.PROJECT)
 public final class McpHttpServer implements Disposable, McpServerControl {
     private static final Logger LOG = Logger.getInstance(McpHttpServer.class);
     private static final String CONTENT_TYPE = "Content-Type";
@@ -47,7 +45,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     }
 
     public static McpHttpServer getInstance(@NotNull Project project) {
-        return project.getService(McpHttpServer.class);
+        return (McpHttpServer) project.getService(McpServerControl.class);
     }
 
     public synchronized void start() throws IOException {
