@@ -563,7 +563,7 @@ public final class PlatformApiCompat {
      * mismatch as {@link #getPluginVersionInfo}. Additionally, {@code descriptor.getPluginClassLoader()}
      * cannot be resolved because the return type of {@code getPlugin} is unresolved.</p>
      */
-    static @Nullable ClassLoader getPluginClassLoader(@NotNull String pluginId) {
+    public static @Nullable ClassLoader getPluginClassLoader(@NotNull String pluginId) {
         var descriptor = com.intellij.ide.plugins.PluginManagerCore.getPlugin(
             com.intellij.openapi.extensions.PluginId.getId(pluginId));
         return descriptor != null ? descriptor.getPluginClassLoader() : null;

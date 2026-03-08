@@ -80,8 +80,7 @@ class AcpConnectPanel(
         centerBox.add(customCommandLabel)
         centerBox.add(Box.createVerticalStrut(4))
 
-        customCommandField.emptyText.text = "e.g., my-agent --acp --stdio"
-        customCommandField.text = agentManager.customAcpCommand
+        customCommandField.text = agentManager.getCustomAcpCommandFor(agentManager.activeType)
         customCommandField.maximumSize = Dimension(400, customCommandField.preferredSize.height)
         customCommandField.alignmentX = Component.LEFT_ALIGNMENT
         centerBox.add(customCommandField)
@@ -118,24 +117,44 @@ class AcpConnectPanel(
     }
 
     private fun updateCustomCommandVisibility() {
-        val isGeneric = agentCombo.selectedItem == AgentType.GENERIC
-        customCommandLabel.isVisible = isGeneric
-        customCommandField.isVisible = isGeneric
+        // Command field is always visible — prefill with the selected agent's default
+        val selectedType = agentCombo.selectedItem as? AgentType ?: return
+        customCommandLabel.isVisible = true
+        customCommandField.isVisible = true
+
+        // Only update text if the user hasn't focused the field (avoid overwriting user edits)
+        if (!customCommandField.hasFocus()) {
+            val stored = agentManager.getCustomAcpCommandFor(selectedType)
+            customCommandField.text = stored
+        }
+
+        customCommandField.emptyText.text = if (selectedType == AgentType.GENERIC) {
+            "e.g., my-agent --acp --stdio"
+        } else {
+            selectedType.defaultStartCommand()
+        }
     }
 
     private fun doConnect() {
         val selectedType = agentCombo.selectedItem as AgentType
-        val customCommand = if (selectedType == AgentType.GENERIC) {
-            val cmd = customCommandField.text.trim()
-            if (cmd.isEmpty()) {
-                statusBanner.showError("Enter a start command for the generic ACP agent.")
-                return
-            }
-            agentManager.setCustomAcpCommand(cmd)
+        val cmd = customCommandField.text.trim()
+
+        if (cmd.isEmpty()) {
+            statusBanner.showError("Enter a start command for the agent.")
+            return
+        }
+
+        // Store the command for this agent type
+        agentManager.setCustomAcpCommandFor(selectedType, cmd)
+
+        // For known agents, pass null (let the config do binary discovery);
+        // for GENERIC or when user edited away from the default, pass the custom command.
+        val customCommand = if (selectedType == AgentType.GENERIC || cmd != selectedType.defaultStartCommand()) {
             cmd
         } else {
             null
         }
+
         statusBanner.dismissCurrent()
         connectButton.isEnabled = false
         connectButton.text = "Connecting..."
@@ -175,18 +194,9 @@ class AcpConnectPanel(
     }
 
     /**
-     * Checks if the MCP HTTP server is running by looking up the service dynamically.
-     * Uses reflection since McpHttpServer is in the standalone-mcp module.
+     * Checks if the MCP HTTP server is running via the shared probe utility.
      */
     private fun isMcpServerRunning(): Boolean {
-        return try {
-            val serverClass = Class.forName("com.github.catatafishen.idemcpserver.McpHttpServer")
-            val getInstance = serverClass.getMethod("getInstance", Project::class.java)
-            val server = getInstance.invoke(null, project) ?: return false
-            val isRunning = serverClass.getMethod("isRunning")
-            isRunning.invoke(server) as Boolean
-        } catch (_: Exception) {
-            false
-        }
+        return McpServerProbe.isRunning(project)
     }
 }

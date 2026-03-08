@@ -840,7 +840,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
             // Periodic refresh via timer
             val timer = Timer(5000) {
-                val running = isMcpServerRunning()
+                val running = McpServerProbe.isRunning(project)
                 val port =
                     com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings.getInstance(project).port
                 label.text = if (running) "MCP:$port" else "MCP:off"
@@ -850,18 +850,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             timer.initialDelay = 0
             timer.start()
             return label
-        }
-
-        private fun isMcpServerRunning(): Boolean {
-            return try {
-                val serverClass = Class.forName("com.github.catatafishen.idemcpserver.McpHttpServer")
-                val getInstance = serverClass.getMethod("getInstance", Project::class.java)
-                val server = getInstance.invoke(null, project) ?: return false
-                val isRunning = serverClass.getMethod("isRunning")
-                isRunning.invoke(server) as Boolean
-            } catch (_: Exception) {
-                false
-            }
         }
     }
 
@@ -1374,30 +1362,25 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     /**
-     * Toolbar dropdown for switching between installed agents (Copilot, Claude).
-     * Resets the session and reloads models on switch.
+     * Read-only label showing the active agent name.
+     * The agent is selected in [AcpConnectPanel] before the chat loads,
+     * so no dropdown is needed here — just an indicator.
      */
-    private inner class AgentSelectorAction : ComboBoxAction() {
+    private inner class AgentSelectorAction : AnAction(), CustomComponentAction {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun actionPerformed(e: AnActionEvent) { /* display-only */
+        }
 
-        override fun createPopupActionGroup(button: JComponent, context: DataContext): DefaultActionGroup {
-            val group = DefaultActionGroup()
-            for (type in ActiveAgentManager.AgentType.entries) {
-                group.add(object : AnAction(type.displayName()) {
-                    override fun actionPerformed(e: AnActionEvent) {
-                        if (agentManager.activeType == type) return
-                        switchToAgent(type)
-                    }
-
-                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
-                })
-            }
-            return group
+        override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
+            val label = JBLabel(agentManager.activeType.displayName())
+            label.font = label.font.deriveFont(Font.BOLD, 11f)
+            label.border = JBUI.Borders.empty(0, 4)
+            label.toolTipText = "Active agent (change in Connect screen)"
+            return label
         }
 
         override fun update(e: AnActionEvent) {
             e.presentation.text = agentManager.activeType.displayName()
-            e.presentation.description = "Switch AI agent"
         }
     }
 

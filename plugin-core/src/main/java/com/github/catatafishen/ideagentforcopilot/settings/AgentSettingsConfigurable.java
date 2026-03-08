@@ -45,7 +45,7 @@ public final class AgentSettingsConfigurable implements Configurable {
 
         mainPanel = FormBuilder.createFormBuilder()
             .addComponent(new JBLabel("<html>Settings for the <b>" + agentName + "</b> agent. "
-                + "Switch agents using the toolbar dropdown in the chat panel.</html>"))
+                + "Switch agents by disconnecting and reconnecting from the Connect screen.</html>"))
             .addSeparator()
             .addLabeledComponent("Prompt timeout (seconds):", timeoutSpinner)
             .addTooltip("Time before an inactive agent session is considered timed out (30–3600).")

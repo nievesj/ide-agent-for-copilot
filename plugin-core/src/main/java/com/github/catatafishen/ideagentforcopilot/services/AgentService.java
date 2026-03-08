@@ -70,6 +70,8 @@ public abstract class AgentService implements Disposable {
 
     /**
      * Start the ACP process if not already running.
+     * If the user has overridden the start command (via the connect panel),
+     * the override is used instead of the agent's built-in binary discovery.
      */
     public synchronized void start() {
         if (started && acpClient != null && acpClient.isHealthy()) {
@@ -84,7 +86,8 @@ public abstract class AgentService implements Disposable {
             }
 
             String projectPath = project.getBasePath();
-            acpClient = new AcpClient(createAgentConfig(), createAgentSettings(), projectPath);
+            AgentConfig config = resolveStartConfig();
+            acpClient = new AcpClient(config, createAgentSettings(), projectPath);
             acpClient.start();
             started = true;
             LOG.info(getDisplayName() + " ACP client started with config-dir: " + projectPath + "/.agent-work");
@@ -93,6 +96,36 @@ public abstract class AgentService implements Disposable {
             LOG.error("Failed to start " + getDisplayName() + " ACP client", e);
             throw new RuntimeException("Failed to start " + getDisplayName() + " ACP client", e);
         }
+    }
+
+    /**
+     * Returns the config to use for starting the ACP process.
+     * If the user edited the start command away from the agent's default,
+     * wraps the custom command in a {@link com.github.catatafishen.ideagentforcopilot.bridge.GenericCustomAgentConfig}
+     * that delegates non-process concerns (display name, init parsing) to the real config.
+     */
+    @NotNull
+    private AgentConfig resolveStartConfig() {
+        ActiveAgentManager mgr = ActiveAgentManager.getInstance(project);
+        ActiveAgentManager.AgentType type = mgr.getActiveType();
+        String storedCommand = mgr.getCustomAcpCommand();
+        String defaultCommand = type.defaultStartCommand();
+
+        // Use the agent-specific config when:
+        //  - no stored custom command (shouldn't happen, but be safe)
+        //  - the stored command matches the agent's default
+        //  - the agent is GENERIC (GenericCustomService already creates the right config)
+        if (storedCommand.isEmpty()
+            || storedCommand.equals(defaultCommand)
+            || type == ActiveAgentManager.AgentType.GENERIC) {
+            return createAgentConfig();
+        }
+
+        // User has customised the command — use GenericCustomAgentConfig with the real
+        // config's display name and init-response parsing so agent features still work.
+        LOG.info("Using custom start command for " + getDisplayName() + ": " + storedCommand);
+        AgentConfig realConfig = createAgentConfig();
+        return new CommandOverrideAgentConfig(realConfig, storedCommand);
     }
 
     /**

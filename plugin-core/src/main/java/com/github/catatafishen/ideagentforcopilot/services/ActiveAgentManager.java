@@ -44,20 +44,22 @@ public final class ActiveAgentManager {
     // ── Agent type ───────────────────────────────────────────────────────────
 
     public enum AgentType {
-        COPILOT("copilot", "GitHub Copilot"),
-        CLAUDE("claude", "Claude Code"),
-        KIRO("kiro", "Kiro"),
-        GEMINI("gemini", "Gemini"),
-        OPENCODE("opencode", "OpenCode"),
-        CLINE("cline", "Cline"),
-        GENERIC("generic", "Generic ACP");
+        COPILOT("copilot", "GitHub Copilot", "copilot-cli --acp --stdio"),
+        CLAUDE("claude", "Claude Code", "claude --acp --stdio"),
+        KIRO("kiro", "Kiro", "kiro-cli acp"),
+        GEMINI("gemini", "Gemini", "gemini --experimental-acp"),
+        OPENCODE("opencode", "OpenCode", "opencode acp"),
+        CLINE("cline", "Cline", "cline --acp"),
+        GENERIC("generic", "Generic ACP", "");
 
         private final String id;
         private final String displayName;
+        private final String defaultStartCommand;
 
-        AgentType(String id, String displayName) {
+        AgentType(String id, String displayName, String defaultStartCommand) {
             this.id = id;
             this.displayName = displayName;
+            this.defaultStartCommand = defaultStartCommand;
         }
 
         public String id() {
@@ -66,6 +68,15 @@ public final class ActiveAgentManager {
 
         public String displayName() {
             return displayName;
+        }
+
+        /**
+         * Default CLI command for starting this agent in ACP mode.
+         * Shown in the connect panel as a prefilled hint the user can edit.
+         * Empty for GENERIC (user must supply their own).
+         */
+        public String defaultStartCommand() {
+            return defaultStartCommand;
         }
 
         @NotNull
@@ -187,13 +198,62 @@ public final class ActiveAgentManager {
 
     // ── Generic ACP custom command ───────────────────────────────────────────
 
+    /**
+     * Returns the user-customized ACP start command for the currently active agent.
+     * Falls back to the agent type's default if the user hasn't overridden it.
+     */
     @NotNull
     public String getCustomAcpCommand() {
-        return PropertiesComponent.getInstance(project).getValue(KEY_CUSTOM_ACP_COMMAND, "");
+        AgentType type = getActiveType();
+        String stored = PropertiesComponent.getInstance(project)
+            .getValue(KEY_CUSTOM_ACP_COMMAND + "." + type.id());
+        if (stored != null && !stored.isEmpty()) {
+            return stored;
+        }
+        // Legacy fallback: check the old unqualified key (for GENERIC before per-agent storage)
+        String legacy = PropertiesComponent.getInstance(project).getValue(KEY_CUSTOM_ACP_COMMAND, "");
+        if (!legacy.isEmpty() && type == AgentType.GENERIC) {
+            return legacy;
+        }
+        return type.defaultStartCommand();
     }
 
+    /**
+     * Stores a user-customized ACP start command for the currently active agent.
+     * If the command matches the agent's default, it's cleared (so future default changes take effect).
+     */
     public void setCustomAcpCommand(@NotNull String command) {
-        PropertiesComponent.getInstance(project).setValue(KEY_CUSTOM_ACP_COMMAND, command, "");
+        AgentType type = getActiveType();
+        String value = command.equals(type.defaultStartCommand()) ? "" : command;
+        PropertiesComponent.getInstance(project)
+            .setValue(KEY_CUSTOM_ACP_COMMAND + "." + type.id(), value, "");
+    }
+
+    /**
+     * Returns the user-customized ACP start command for a specific agent type.
+     * Falls back to the agent type's default if the user hasn't overridden it.
+     */
+    @NotNull
+    public String getCustomAcpCommandFor(@NotNull AgentType type) {
+        String stored = PropertiesComponent.getInstance(project)
+            .getValue(KEY_CUSTOM_ACP_COMMAND + "." + type.id());
+        if (stored != null && !stored.isEmpty()) {
+            return stored;
+        }
+        String legacy = PropertiesComponent.getInstance(project).getValue(KEY_CUSTOM_ACP_COMMAND, "");
+        if (!legacy.isEmpty() && type == AgentType.GENERIC) {
+            return legacy;
+        }
+        return type.defaultStartCommand();
+    }
+
+    /**
+     * Stores a user-customized ACP start command for a specific agent type.
+     */
+    public void setCustomAcpCommandFor(@NotNull AgentType type, @NotNull String command) {
+        String value = command.equals(type.defaultStartCommand()) ? "" : command;
+        PropertiesComponent.getInstance(project)
+            .setValue(KEY_CUSTOM_ACP_COMMAND + "." + type.id(), value, "");
     }
 
     // ── Auto-approve permissions (plugin-level, applies to all agents) ──────
