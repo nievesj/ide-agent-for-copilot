@@ -784,7 +784,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         leftGroup.addSeparator()
         leftGroup.add(AttachContextDropdownAction())
         leftGroup.addSeparator()
-        leftGroup.add(AgentSelectorAction())
         leftGroup.add(ModelSelectorAction())
         leftGroup.add(ModeSelectorAction())
         leftGroup.add(AutoApproveToggleAction())
@@ -805,9 +804,11 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         controlsToolbar.targetComponent = row
         controlsToolbar.setReservePlaceAutoPopupIcon(false)
 
-        // Right toolbar: MCP status + disconnect + processing indicator + usage graph
+        // Right toolbar: agent indicator + disconnect + MCP status + processing indicator + usage graph
         val rightGroup = DefaultActionGroup()
         rightGroup.add(McpStatusIndicatorAction())
+        rightGroup.addSeparator()
+        rightGroup.add(AgentSelectorAction())
         rightGroup.add(DisconnectAction())
         rightGroup.addSeparator()
         rightGroup.add(ProcessingIndicatorAction())
@@ -825,7 +826,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         return row
     }
 
-    /** Toolbar action showing MCP server status (e.g., "MCP: 8642") */
+    /** Toolbar action showing MCP server status — hidden when the standalone-mcp plugin isn't installed */
     private inner class McpStatusIndicatorAction : AnAction(), CustomComponentAction {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
         override fun actionPerformed(e: AnActionEvent) { /* display-only */
@@ -837,13 +838,20 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             label.border = JBUI.Borders.empty(0, 4)
             label.toolTipText = "MCP server status"
 
-            // Periodic refresh via timer
             val timer = Timer(5000) {
+                val mcpPluginInstalled = com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat
+                    .getPluginClassLoader("com.github.catatafishen.idemcpserver") != null
+                if (!mcpPluginInstalled) {
+                    label.isVisible = false
+                    return@Timer
+                }
                 val running = McpServerProbe.isRunning(project)
                 val port =
                     com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings.getInstance(project).port
+                label.isVisible = true
                 label.text = if (running) "MCP:$port" else "MCP:off"
-                label.foreground = if (running) com.intellij.util.ui.UIUtil.getLabelInfoForeground() else JBColor.GRAY
+                label.foreground =
+                    if (running) com.intellij.util.ui.UIUtil.getLabelInfoForeground() else JBColor.GRAY
             }
             timer.isRepeats = true
             timer.initialDelay = 0
@@ -854,7 +862,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
     /** Toolbar action: disconnect from the current ACP agent */
     private inner class DisconnectAction :
-        AnAction("Disconnect", "Disconnect from ACP agent", AllIcons.Actions.Suspend) {
+        AnAction("Disconnect", "Disconnect from ACP agent", AllIcons.Actions.CloseDarkGrey) {
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
         override fun actionPerformed(e: AnActionEvent) {
             disconnectFromAgent()
