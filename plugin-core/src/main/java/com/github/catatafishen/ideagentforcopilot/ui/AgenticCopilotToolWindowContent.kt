@@ -130,8 +130,6 @@ class AgenticCopilotToolWindowContent(
 
     private fun setupTitleBarActions() {
         val actions = listOf<AnAction>(
-            ProcessingIndicatorAction(),
-            Separator.create(),
             FollowAgentFilesToggleAction(),
             Separator.create(),
             ProjectFilesDropdownAction(),
@@ -818,6 +816,7 @@ class AgenticCopilotToolWindowContent(
         val rightGroup = DefaultActionGroup()
         rightGroup.add(AgentSelectorAction())
         rightGroup.addSeparator()
+        rightGroup.add(ProcessingIndicatorAction())
         rightGroup.add(billing.createUsageGraphAction())
 
         val rightToolbar = ActionManager.getInstance().createActionToolbar(

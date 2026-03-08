@@ -25,8 +25,9 @@ class PsiBridgeStartup : ProjectActivity {
         CopilotInstructionsManager.ensureInstructions(project.basePath)
         notifyIfNewInstructions(project)
 
-        if (com.github.catatafishen.ideagentforcopilot.services.CopilotSettings.getMcpAutoStart()) {
-            val port = com.github.catatafishen.ideagentforcopilot.services.CopilotSettings.getMcpPort()
+        if (com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings.getInstance(project).isBridgeAutoStart) {
+            val port =
+                com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings.getInstance(project).bridgePort
             PsiBridgeService.getInstance(project).start(port)
         }
     }

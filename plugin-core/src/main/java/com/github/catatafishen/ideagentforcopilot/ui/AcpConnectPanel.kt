@@ -3,7 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.ui
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager.AgentType
-import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings
+import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings
 import com.intellij.openapi.project.Project
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
@@ -153,7 +153,8 @@ class AcpConnectPanel(
         controlRow.alignmentX = LEFT_ALIGNMENT
 
         controlRow.add(JBLabel("Port:"))
-        mcpPortField.text = formatPort(CopilotSettings.getMcpPort())
+        val mcpSettings = McpServerSettings.getInstance(project)
+        mcpPortField.text = formatPort(mcpSettings.bridgePort)
         mcpPortField.toolTipText = "0 or empty = auto-assign random port"
         controlRow.add(mcpPortField)
         controlRow.add(mcpStartStopButton)
@@ -163,10 +164,10 @@ class AcpConnectPanel(
         section.add(Box.createVerticalStrut(6))
 
         // Auto-start checkbox
-        mcpAutoStartCheckbox.isSelected = CopilotSettings.getMcpAutoStart()
+        mcpAutoStartCheckbox.isSelected = mcpSettings.isBridgeAutoStart
         mcpAutoStartCheckbox.alignmentX = LEFT_ALIGNMENT
         mcpAutoStartCheckbox.addActionListener {
-            CopilotSettings.setMcpAutoStart(mcpAutoStartCheckbox.isSelected)
+            mcpSettings.setBridgeAutoStart(mcpAutoStartCheckbox.isSelected)
         }
         section.add(mcpAutoStartCheckbox)
         section.add(Box.createVerticalStrut(10))
@@ -219,7 +220,7 @@ class AcpConnectPanel(
         } else {
             mcpPortField.isEnabled = true
             if (mcpPortField.text.isBlank() || mcpPortField.text == "0") {
-                mcpPortField.text = formatPort(CopilotSettings.getMcpPort())
+                mcpPortField.text = formatPort(McpServerSettings.getInstance(project).bridgePort)
             }
         }
     }
@@ -231,7 +232,7 @@ class AcpConnectPanel(
         } else {
             val portText = mcpPortField.text.trim()
             val port = portText.toIntOrNull() ?: 0
-            CopilotSettings.setMcpPort(port)
+            McpServerSettings.getInstance(project).setBridgePort(port)
             bridge.start(port)
         }
         refreshMcpState()
