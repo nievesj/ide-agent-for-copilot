@@ -494,49 +494,23 @@ class AgenticCopilotToolWindowContent(
 
     /**
      * Checks PSI bridge availability. Returns a multi-line diagnostic string on failure, or null if healthy.
+     * Queries PsiBridgeService directly — no bridge file needed.
      * Safe to call on a background thread.
      */
     private fun psiBridgeDiagnostics(): String? {
-        val bridgeFile = java.nio.file.Path.of(System.getProperty("user.home"), ".copilot", "psi-bridge.json")
-        if (!java.nio.file.Files.exists(bridgeFile)) {
-            return "PSI bridge file not found.\n\n" +
-                "Expected: ${bridgeFile.toAbsolutePath()}\n\n" +
-                "This file is written by the plugin when a project opens.\nPossible causes:\n" +
-                "  • No project is open (open a project, not the Welcome Screen)\n" +
+        val bridge = com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project)
+        if (!bridge.isRunning) {
+            return "PSI bridge HTTP server is not running.\n\n" +
+                "Possible causes:\n" +
                 "  • The plugin failed to initialize — check Help → Show Log for errors\n" +
-                "  • Write permission denied on ~/.copilot/"
+                "  • The server could not bind to a port\n" +
+                "  • The project is being disposed"
+        }
+        val port = bridge.port
+        if (port <= 0) {
+            return "PSI bridge reports running but port is $port."
         }
         return try {
-            val content = java.nio.file.Files.readString(bridgeFile)
-            val json = com.google.gson.JsonParser.parseString(content).asJsonObject
-
-            val port: Int
-            val bridgeProject: String
-
-            if (json.has("port")) {
-                // Legacy single-entry format
-                port = json.get("port")?.asInt
-                    ?: return "PSI bridge file found but has no 'port' field.\n\nFile content:\n$content"
-                bridgeProject = json.get("projectPath")?.asString ?: "(unknown)"
-            } else {
-                // New multi-project registry — find this project's entry
-                val ourPath = project.basePath?.replace('\\', '/') ?: ""
-                val entry = json.entrySet().firstOrNull { (key, _) ->
-                    val k = key.replace('\\', '/')
-                    ourPath == k || ourPath.startsWith("$k/") || k.startsWith("$ourPath/")
-                }
-                if (entry == null) {
-                    val others = json.keySet().joinToString("\n") { "  • $it" }.ifEmpty { "  (none)" }
-                    return "No PSI bridge entry found for this project.\n\n" +
-                        "Looking for: ${project.basePath}\n\n" +
-                        "Projects with active bridges:\n$others\n\n" +
-                        "Try closing and reopening this project."
-                }
-                port = entry.value.asJsonObject.get("port")?.asInt
-                    ?: return "Bridge entry for this project has no 'port' field."
-                bridgeProject = entry.key
-            }
-
             val url = java.net.URI.create("http://127.0.0.1:$port/health").toURL()
             val conn = url.openConnection() as java.net.HttpURLConnection
             conn.connectTimeout = 1500
@@ -545,14 +519,14 @@ class AgenticCopilotToolWindowContent(
             val code = try {
                 conn.responseCode
             } catch (e: Exception) {
-                return "PSI bridge file found (port $port, project: $bridgeProject)\n" +
+                return "PSI bridge reports running on port $port\n" +
                     "but the HTTP server is not responding.\n\n" +
                     "Connection error: ${e.javaClass.simpleName}: ${e.message}\n\n" +
                     "The bridge may have crashed. Check Help → Show Log,\nthen close and reopen the project."
             }
             if (code == 200) null else "PSI bridge returned HTTP $code from /health (port $port)."
         } catch (e: Exception) {
-            "Failed to read PSI bridge file:\n${e.javaClass.simpleName}: ${e.message}\n\nFile: $bridgeFile"
+            "Failed to check PSI bridge health:\n${e.javaClass.simpleName}: ${e.message}"
         }
     }
 
