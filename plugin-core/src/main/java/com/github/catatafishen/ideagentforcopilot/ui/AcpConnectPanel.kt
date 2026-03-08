@@ -1,8 +1,12 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
+import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager.AgentType
+import com.github.catatafishen.ideagentforcopilot.services.ClaudeSettings
+import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings
+import com.github.catatafishen.ideagentforcopilot.services.GenericSettings
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.project.Project
@@ -58,6 +62,12 @@ class AcpConnectPanel(
         isVisible = false
     }
     private val statusBanner = StatusBanner(project)
+
+    // Command details (collapsible)
+    private var detailsExpanded = false
+    private lateinit var detailsToggle: HyperlinkLabel
+    private lateinit var detailsContent: JBPanel<JBPanel<*>>
+    private lateinit var runtimeFlagsArea: JTextArea
 
     init {
         isOpaque = false
@@ -224,7 +234,10 @@ class AcpConnectPanel(
         agentCombo.selectedItem = agentManager.activeType
         agentCombo.alignmentX = LEFT_ALIGNMENT
         agentCombo.maximumSize = Dimension(Int.MAX_VALUE, agentCombo.preferredSize.height)
-        agentCombo.addActionListener { updateCustomCommandVisibility() }
+        agentCombo.addActionListener {
+            updateCustomCommandVisibility()
+            refreshCommandPreview()
+        }
         section.add(agentCombo)
         section.add(Box.createVerticalStrut(JBUI.scale(10)))
 
@@ -239,7 +252,11 @@ class AcpConnectPanel(
         customCommandField.alignmentX = LEFT_ALIGNMENT
         customCommandField.maximumSize = Dimension(Int.MAX_VALUE, customCommandField.preferredSize.height)
         section.add(customCommandField)
-        section.add(Box.createVerticalStrut(JBUI.scale(14)))
+        section.add(Box.createVerticalStrut(JBUI.scale(6)))
+
+        // Collapsible runtime arguments details
+        section.add(createDetailsPanel())
+        section.add(Box.createVerticalStrut(JBUI.scale(10)))
 
         // Connect split button
         section.add(createAcpSplitButton())
@@ -250,6 +267,7 @@ class AcpConnectPanel(
         section.add(statusBanner)
 
         updateCustomCommandVisibility()
+        refreshCommandPreview()
         return section
     }
 
@@ -270,6 +288,174 @@ class AcpConnectPanel(
         panel.add(connectDropdownButton, BorderLayout.EAST)
 
         return panel
+    }
+
+    private fun createDetailsPanel(): JComponent {
+        val wrapper = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+        }
+
+        // Toggle link
+        detailsToggle = HyperlinkLabel("\u25B8 Runtime arguments").apply {
+            alignmentX = LEFT_ALIGNMENT
+            toolTipText = "Additional CLI flags added at launch time"
+        }
+        detailsToggle.addHyperlinkListener {
+            detailsExpanded = !detailsExpanded
+            detailsContent.isVisible = detailsExpanded
+            detailsToggle.setHyperlinkText(
+                if (detailsExpanded) "\u25BE Runtime arguments" else "\u25B8 Runtime arguments"
+            )
+            wrapper.revalidate()
+        }
+        wrapper.add(detailsToggle)
+
+        // Collapsible content
+        detailsContent = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+            isVisible = false
+            border = JBUI.Borders.emptyLeft(12)
+        }
+
+        runtimeFlagsArea = JTextArea(3, 40).apply {
+            isEditable = false
+            lineWrap = true
+            wrapStyleWord = true
+            font = JBUI.Fonts.create(Font.MONOSPACED, 11)
+            background = JBColor(Color(0xF7, 0xF7, 0xF7), Color(0x2B, 0x2B, 0x2B))
+            foreground = JBUI.CurrentTheme.ContextHelp.FOREGROUND
+            border = CompoundBorder(
+                JBUI.Borders.customLine(JBColor.border(), 1),
+                JBUI.Borders.empty(6, 8)
+            )
+            alignmentX = LEFT_ALIGNMENT
+        }
+        // Prevent the text area from expanding beyond the panel
+        runtimeFlagsArea.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(120))
+
+        detailsContent.add(Box.createVerticalStrut(JBUI.scale(4)))
+        detailsContent.add(runtimeFlagsArea)
+        detailsContent.add(Box.createVerticalStrut(JBUI.scale(4)))
+
+        val mcpConfigLink = HyperlinkLabel("View MCP config").apply {
+            alignmentX = LEFT_ALIGNMENT
+            toolTipText = "Show the MCP server configuration JSON passed to the agent"
+        }
+        mcpConfigLink.addHyperlinkListener { showMcpConfigPopup(mcpConfigLink) }
+        detailsContent.add(mcpConfigLink)
+
+        wrapper.add(detailsContent)
+        return wrapper
+    }
+
+    private fun refreshCommandPreview() {
+        if (!::runtimeFlagsArea.isInitialized) return
+        val selectedType = agentCombo.selectedItem as? AgentType ?: return
+
+        if (selectedType == AgentType.GENERIC) {
+            runtimeFlagsArea.text = "(no additional flags \u2014 raw command used as-is)"
+            return
+        }
+
+        val lines = mutableListOf<String>()
+
+        val model = getSelectedModelForType(selectedType)
+        if (!model.isNullOrEmpty()) {
+            lines.add("--model $model")
+        }
+
+        if (supportsConfigDir(selectedType) && project.basePath != null) {
+            lines.add("--config-dir ${project.basePath}/.agent-work")
+        }
+
+        lines.add("--additional-mcp-config @<auto-generated>")
+
+        val disabledTools = getDisabledToolsForType(selectedType)
+        if (disabledTools.isNotEmpty()) {
+            lines.add("  \u2514 disabled tools: $disabledTools")
+        }
+
+        runtimeFlagsArea.text = lines.joinToString("\n")
+    }
+
+    private fun buildMcpConfigJson(): String {
+        val javaExe = if (System.getProperty("os.name", "").lowercase().contains("win")) "java.exe" else "java"
+        val javaPath = System.getProperty("java.home") + "/" + "bin" + "/" + javaExe
+        val projectPath = project.basePath ?: System.getProperty("user.home")
+
+        val mcpJarPath = try {
+            val pluginPath = PlatformApiCompat.getPluginPath("com.github.catatafishen.ideagentforcopilot")
+            pluginPath?.resolve("lib")?.resolve("mcp-server.jar")?.toString()
+                ?: "<plugin>/lib/mcp-server.jar"
+        } catch (_: Exception) {
+            "<plugin>/lib/mcp-server.jar"
+        }
+
+        val selectedType = agentCombo.selectedItem as? AgentType
+        val disabledTools = if (selectedType != null) getDisabledToolsForType(selectedType) else ""
+
+        val disabledToolsArgs = if (disabledTools.isNotEmpty()) {
+            ",\n        \"--disabled-tools\",\n        \"$disabledTools\""
+        } else {
+            ""
+        }
+
+        return """
+{
+  "mcpServers": {
+    "intellij-code-tools": {
+      "command": "$javaPath",
+      "args": [
+        "-jar",
+        "$mcpJarPath",
+        "$projectPath"$disabledToolsArgs
+      ]
+    }
+  }
+}""".trimIndent()
+    }
+
+    private fun showMcpConfigPopup(anchor: JComponent) {
+        val json = buildMcpConfigJson()
+        val textArea = JTextArea(json).apply {
+            isEditable = false
+            font = JBUI.Fonts.create(Font.MONOSPACED, 12)
+            border = JBUI.Borders.empty(8, 10)
+            background = JBColor(Color(0xF7, 0xF7, 0xF7), Color(0x2B, 0x2B, 0x2B))
+        }
+        val scrollPane = JBScrollPane(textArea).apply {
+            preferredSize = Dimension(JBUI.scale(480), JBUI.scale(220))
+        }
+        JBPopupFactory.getInstance()
+            .createComponentPopupBuilder(scrollPane, textArea)
+            .setTitle("MCP Server Config")
+            .setResizable(true)
+            .setMovable(true)
+            .setFocusable(true)
+            .createPopup()
+            .showUnderneathOf(anchor)
+    }
+
+    private fun getSelectedModelForType(type: AgentType): String? = when (type) {
+        AgentType.COPILOT -> CopilotSettings.getSelectedModel()
+        AgentType.CLAUDE -> ClaudeSettings.getSelectedModel()
+        else -> GenericSettings(type.id()).getSelectedModel()
+    }
+
+    private fun getDisabledToolsForType(type: AgentType): String = when (type) {
+        AgentType.COPILOT -> CopilotSettings.getDisabledMcpToolIds()
+        AgentType.CLAUDE -> ClaudeSettings.getDisabledMcpToolIds()
+        AgentType.GENERIC -> ""
+        else -> GenericSettings(type.id()).getDisabledMcpToolIds()
+    }
+
+    private fun supportsConfigDir(type: AgentType): Boolean = when (type) {
+        AgentType.COPILOT, AgentType.CLAUDE, AgentType.KIRO -> true
+        else -> false
     }
 
     // ── Shared UI helpers ──
@@ -478,6 +664,8 @@ class AcpConnectPanel(
         } else {
             selectedType.defaultStartCommand()
         }
+
+        refreshCommandPreview()
     }
 
     private fun doConnect() {
