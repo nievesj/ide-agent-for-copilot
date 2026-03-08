@@ -1,8 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
+import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager.AgentType
-import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings
 import com.intellij.openapi.project.Project
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
@@ -15,8 +15,8 @@ import javax.swing.*
 
 /**
  * Pre-connection landing panel shown before ACP is established.
- * Displays MCP server status, agent selector dropdown, optional custom command input,
- * a Connect button, and an auto-connect checkbox.
+ * Displays PSI bridge (MCP tool server) status, agent selector dropdown,
+ * optional custom command input, a Connect button, and an auto-connect checkbox.
  */
 class AcpConnectPanel(
     private val project: Project,
@@ -46,7 +46,7 @@ class AcpConnectPanel(
         centerBox.add(titleLabel)
         centerBox.add(Box.createVerticalStrut(12))
 
-        // MCP server status
+        // MCP tool server status
         mcpStatusLabel.alignmentX = Component.LEFT_ALIGNMENT
         mcpStatusLabel.font = mcpStatusLabel.font.deriveFont(11f)
         centerBox.add(mcpStatusLabel)
@@ -114,15 +114,20 @@ class AcpConnectPanel(
 
         updateCustomCommandVisibility()
         refreshMcpStatus()
+
+        // Subscribe to PSI bridge status changes so the label updates when the server starts
+        project.messageBus.connect().subscribe(
+            PsiBridgeService.STATUS_TOPIC,
+            PsiBridgeService.StatusListener { port ->
+                SwingUtilities.invokeLater { updateMcpLabel(port) }
+            })
     }
 
     private fun updateCustomCommandVisibility() {
-        // Command field is always visible — prefill with the selected agent's default
         val selectedType = agentCombo.selectedItem as? AgentType ?: return
         customCommandLabel.isVisible = true
         customCommandField.isVisible = true
 
-        // Only update text if the user hasn't focused the field (avoid overwriting user edits)
         if (!customCommandField.hasFocus()) {
             val stored = agentManager.getCustomAcpCommandFor(selectedType)
             customCommandField.text = stored
@@ -144,11 +149,8 @@ class AcpConnectPanel(
             return
         }
 
-        // Store the command for this agent type
         agentManager.setCustomAcpCommandFor(selectedType, cmd)
 
-        // For known agents, pass null (let the config do binary discovery);
-        // for GENERIC or when user edited away from the default, pass the custom command.
         val customCommand = if (selectedType == AgentType.GENERIC || cmd != selectedType.defaultStartCommand()) {
             cmd
         } else {
@@ -169,34 +171,27 @@ class AcpConnectPanel(
         }
     }
 
-    fun refreshMcpStatus() {
-        val mcpSettings = McpServerSettings.getInstance(project)
-        val port = mcpSettings.port
-        val autoStart = mcpSettings.isAutoStart
-
-        // Try to check if MCP server is actually running by looking up the service dynamically
-        val running = isMcpServerRunning()
-
-        val statusText = if (running) {
-            "MCP Server: running on port $port"
-        } else if (autoStart) {
-            "MCP Server: configured on port $port (starting...)"
-        } else {
-            "MCP Server: not running"
-        }
-
-        mcpStatusLabel.text = statusText
-        mcpStatusLabel.foreground = if (running) {
-            UIUtil.getLabelInfoForeground()
-        } else {
-            JBColor.GRAY
+    /** Resets the connect button to its default state (enabled, "Connect" label). */
+    fun resetConnectButton() {
+        SwingUtilities.invokeLater {
+            connectButton.isEnabled = true
+            connectButton.text = "Connect"
         }
     }
 
-    /**
-     * Checks if the MCP HTTP server is running via the shared probe utility.
-     */
-    private fun isMcpServerRunning(): Boolean {
-        return McpServerProbe.isRunning(project)
+    fun refreshMcpStatus() {
+        val bridge = PsiBridgeService.getInstance(project)
+        val port = bridge.port
+        updateMcpLabel(port)
+    }
+
+    private fun updateMcpLabel(port: Int) {
+        if (port > 0) {
+            mcpStatusLabel.text = "MCP Tool Server: running on port $port"
+            mcpStatusLabel.foreground = UIUtil.getLabelInfoForeground()
+        } else {
+            mcpStatusLabel.text = "MCP Tool Server: starting..."
+            mcpStatusLabel.foreground = JBColor.GRAY
+        }
     }
 }

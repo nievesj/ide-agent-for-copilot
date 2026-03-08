@@ -16,6 +16,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.util.messages.Topic;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.jetbrains.annotations.NotNull;
@@ -47,6 +48,19 @@ public final class PsiBridgeService implements Disposable {
     // HTTP Constants
     private static final String CONTENT_TYPE_HEADER = "Content-Type";
     private static final String APPLICATION_JSON = "application/json";
+
+    /**
+     * Listener notified when the PSI bridge server starts or stops.
+     */
+    public interface StatusListener {
+        void bridgeStarted(int port);
+    }
+
+    /**
+     * Project-level message bus topic for PSI bridge status changes.
+     */
+    public static final Topic<StatusListener> STATUS_TOPIC =
+        Topic.create("PsiBridgeService.Status", StatusListener.class);
 
     private final Project project;
     private final RunConfigurationService runConfigService;
@@ -167,6 +181,7 @@ public final class PsiBridgeService implements Disposable {
             port = httpServer.getAddress().getPort();
             writeBridgeFile();
             LOG.info("PSI Bridge started on port " + port + " for project: " + project.getBasePath());
+            project.getMessageBus().syncPublisher(STATUS_TOPIC).bridgeStarted(port);
         } catch (Exception e) {
             LOG.error("Failed to start PSI Bridge", e);
             String detail = buildExceptionDetail(e);
