@@ -39,6 +39,7 @@ import java.util.function.Consumer;
 public class AcpClient implements Closeable {
     private static final Logger LOG = Logger.getInstance(AcpClient.class);
     private static final long REQUEST_TIMEOUT_SECONDS = 30;
+    private static final long INITIALIZE_TIMEOUT_SECONDS = 90;
 
     // JSON-RPC field names
     private static final String JSONRPC = "jsonrpc";
@@ -237,7 +238,9 @@ public class AcpClient implements Closeable {
         clientInfo.addProperty("version", "0.1.0");
         params.add("clientInfo", clientInfo);
 
-        JsonObject result = sendRequest("initialize", params);
+        // Use a longer timeout for initialize — the CLI spawns MCP server JVMs
+        // and may need >30s when the system is under load at IDE startup
+        JsonObject result = sendRequest("initialize", params, INITIALIZE_TIMEOUT_SECONDS);
 
         JsonObject agentInfo = result.has("agentInfo") ? result.getAsJsonObject("agentInfo") : null;
         JsonObject agentCapabilities = result.has("agentCapabilities") ? result.getAsJsonObject("agentCapabilities") : null;
@@ -734,6 +737,14 @@ public class AcpClient implements Closeable {
      */
     @NotNull
     private JsonObject sendRequest(@NotNull String method, @NotNull JsonObject params) throws AcpException {
+        return sendRequest(method, params, REQUEST_TIMEOUT_SECONDS);
+    }
+
+    /**
+     * Send a JSON-RPC request and wait for the response with a custom timeout.
+     */
+    @NotNull
+    private JsonObject sendRequest(@NotNull String method, @NotNull JsonObject params, long timeoutSeconds) throws AcpException {
         if (closed) throw new AcpException("ACP client is closed", null, false);
 
         long id = requestIdCounter.getAndIncrement();
@@ -756,11 +767,12 @@ public class AcpClient implements Closeable {
                 writer.flush();
             }
 
-            return future.get(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            return future.get(timeoutSeconds, TimeUnit.SECONDS);
 
         } catch (TimeoutException e) {
             pendingRequests.remove(id);
-            throw new AcpException("ACP request timed out: " + method, e, true);
+            throw new AcpException("ACP request timed out: " + method
+                + " (waited " + timeoutSeconds + "s)", e, true);
         } catch (ExecutionException e) {
             pendingRequests.remove(id);
             Throwable cause = e.getCause();

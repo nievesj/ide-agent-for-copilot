@@ -86,8 +86,7 @@ public abstract class AgentService implements Disposable {
             }
 
             String projectPath = project.getBasePath();
-            int mcpPort = com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings
-                .getInstance(project).getPort();
+            int mcpPort = resolveMcpPort();
             AgentConfig config = resolveStartConfig();
             acpClient = new AcpClient(config, createAgentSettings(), projectPath, mcpPort);
             acpClient.start();
@@ -98,6 +97,37 @@ public abstract class AgentService implements Disposable {
             LOG.error("Failed to start " + getDisplayName() + " ACP client", e);
             throw new RuntimeException("Failed to start " + getDisplayName() + " ACP client", e);
         }
+    }
+
+    /**
+     * Determines the MCP port to pass to the CLI. Ensures a server is actually
+     * running on the returned port, or returns 0 (meaning: skip MCP config).
+     */
+    private int resolveMcpPort() {
+        // 1. Try McpServerControl (McpHttpServer) — the full MCP endpoint
+        McpServerControl mcpServer = McpServerControl.getInstance(project);
+        if (mcpServer != null) {
+            if (mcpServer.isRunning() && mcpServer.getPort() > 0) {
+                LOG.info("MCP server already running on port " + mcpServer.getPort());
+                return mcpServer.getPort();
+            }
+            // Auto-start McpHttpServer so the MCP JAR has something to talk to
+            try {
+                mcpServer.start();
+                if (mcpServer.isRunning() && mcpServer.getPort() > 0) {
+                    LOG.info("Auto-started MCP server on port " + mcpServer.getPort());
+                    return mcpServer.getPort();
+                }
+            } catch (Exception e) {
+                LOG.warn("Failed to auto-start MCP server: " + e.getMessage());
+            }
+        }
+
+        // 2. No McpHttpServer available — MCP JAR needs /mcp endpoint,
+        //    which PsiBridgeService doesn't provide. Skip MCP config.
+        LOG.warn("No MCP server available — IntelliJ code tools will be unavailable for this session. "
+            + "Start the MCP server from the connection panel to enable tools.");
+        return 0;
     }
 
     /**

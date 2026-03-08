@@ -179,6 +179,10 @@ final class CopilotCliLocator {
      * The proxy connects to the MCP HTTP server at the specified port.
      */
     static void addMcpConfigFlags(List<String> cmd, int mcpPort) {
+        if (mcpPort <= 0) {
+            LOG.info("MCP port is " + mcpPort + " — skipping MCP config (no server available)");
+            return;
+        }
         String mcpJarPath = findMcpServerJar();
         if (mcpJarPath == null) {
             LOG.warn(MCP_SERVER_ERROR + ": MCP server JAR not found. IntelliJ code tools will be unavailable.");
