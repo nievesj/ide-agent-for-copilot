@@ -46,7 +46,7 @@ class AcpConnectPanel(
     private lateinit var statusPill: JBPanel<JBPanel<*>>
 
     // ACP controls
-    private lateinit var acpSection: JComponent
+    private var acpSection: JComponent = JBPanel<JBPanel<*>>()
     private lateinit var agentCombo: ComboBox<AgentType>
     private val customCommandField = JBTextField()
     private val connectButton = JButton("Connect")
