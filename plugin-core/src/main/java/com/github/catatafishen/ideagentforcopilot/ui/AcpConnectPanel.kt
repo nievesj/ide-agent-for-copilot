@@ -61,6 +61,7 @@ class AcpConnectPanel(
                 isContentAreaFilled = true
                 isBorderPainted = true
             }
+
             override fun mouseExited(e: java.awt.event.MouseEvent) {
                 isContentAreaFilled = false
                 isBorderPainted = false

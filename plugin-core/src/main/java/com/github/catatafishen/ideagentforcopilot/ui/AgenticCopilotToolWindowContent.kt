@@ -143,10 +143,16 @@ class AgenticCopilotToolWindowContent(
     }
 
     private fun buildAndShowChatPanel() {
+        val addSeparatorNow = {
+            val ts = java.text.SimpleDateFormat("MMM d, yyyy h:mm a").format(java.util.Date())
+            consolePanel.addSessionSeparator(ts, agentManager.activeType.displayName())
+        }
         if (chatPanel == null) {
             chatPanel = createPromptTab()
             mainPanel.add(chatPanel, CARD_CHAT)
-            restoreConversation()
+            restoreConversation(onComplete = addSeparatorNow)
+        } else {
+            addSeparatorNow()
         }
         cardLayout.show(mainPanel, CARD_CHAT)
         agentManager.setAcpConnected(true)
@@ -702,11 +708,6 @@ class AgenticCopilotToolWindowContent(
             statusBanner?.dismissCurrent()
             setSendingState(true)
             setResponseStatus(MSG_THINKING)
-
-            if (currentSessionId == null && consolePanel.hasContent()) {
-                val ts = java.text.SimpleDateFormat("MMM d, yyyy h:mm a").format(java.util.Date())
-                consolePanel.addSessionSeparator(ts, agentManager.activeType.displayName())
-            }
 
             // Collect context items from inline inlays BEFORE clearing the editor
             val contextItems = contextManager.collectInlineContextItems()
@@ -1876,11 +1877,6 @@ class AgenticCopilotToolWindowContent(
         setSendingState(true)
         setResponseStatus(MSG_THINKING)
 
-        if (currentSessionId == null && consolePanel.hasContent()) {
-            val ts = java.text.SimpleDateFormat("MMM d, yyyy h:mm a").format(java.util.Date())
-            consolePanel.addSessionSeparator(ts, agentManager.activeType.displayName())
-        }
-
         // Quick-replies don't carry context items
         consolePanel.addPromptEntry(trimmed, null)
 
@@ -2177,24 +2173,21 @@ class AgenticCopilotToolWindowContent(
         }
     }
 
-    private fun restoreConversation() {
+    private fun restoreConversation(onComplete: () -> Unit = {}) {
         com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 val file = conversationFile()
                 if (!file.exists() || file.length() < 10) {
-                    SwingUtilities.invokeLater {
-                        consolePanel.showPlaceholder("Start a conversation with Copilot...")
-                    }
+                    SwingUtilities.invokeLater { onComplete() }
                     return@executeOnPooledThread
                 }
                 val json = file.readText()
                 SwingUtilities.invokeLater {
                     consolePanel.restoreEntries(json)
+                    onComplete()
                 }
             } catch (_: Exception) {
-                SwingUtilities.invokeLater {
-                    consolePanel.showPlaceholder("Start a conversation with Copilot...")
-                }
+                SwingUtilities.invokeLater { onComplete() }
             }
         }
     }
