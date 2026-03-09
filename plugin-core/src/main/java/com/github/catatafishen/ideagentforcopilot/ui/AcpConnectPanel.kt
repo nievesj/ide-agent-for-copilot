@@ -6,6 +6,7 @@ import com.github.catatafishen.ideagentforcopilot.services.*
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager.AgentType
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.popup.JBPopupFactory
@@ -16,6 +17,7 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextField
+import com.intellij.util.ui.AsyncProcessIcon
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.*
@@ -38,6 +40,10 @@ class AcpConnectPanel(
 
     // MCP controls
     private val mcpStartButton = JButton("Start server")
+    private val mcpSpinner = AsyncProcessIcon("mcp-toggle").apply {
+        isVisible = false
+        toolTipText = "Working…"
+    }
     private val mcpDropdownButton = JButton(AllIcons.General.ArrowDown)
     private val mcpPortField = JBTextField(6)
     private val mcpStatusLabel = JBLabel("Stopped")
@@ -213,10 +219,15 @@ class AcpConnectPanel(
         mcpStartButton.addActionListener { toggleMcpServer() }
         panel.add(mcpStartButton, BorderLayout.CENTER)
 
+        val eastPanel = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.LEFT, 2, 0)).apply {
+            isOpaque = false
+            add(mcpSpinner)
+            add(mcpDropdownButton)
+        }
         mcpDropdownButton.preferredSize = JBUI.size(28, 28)
         mcpDropdownButton.isFocusable = false
         mcpDropdownButton.addActionListener { showMcpDropdown() }
-        panel.add(mcpDropdownButton, BorderLayout.EAST)
+        panel.add(eastPanel, BorderLayout.EAST)
 
         return panel
     }
@@ -615,18 +626,34 @@ class AcpConnectPanel(
             return
         }
 
-        if (mcpServer.isRunning) {
-            mcpServer.stop()
-        } else {
-            val portText = mcpPortField.text.trim()
-            val port = portText.toIntOrNull() ?: McpServerSettings.DEFAULT_PORT
+        val stopping = mcpServer.isRunning
+        mcpStartButton.isEnabled = false
+        mcpStartButton.text = if (stopping) "Stopping…" else "Starting…"
+        mcpStartButton.icon = null
+        mcpDropdownButton.isEnabled = false
+        mcpSpinner.isVisible = true
+        mcpSpinner.resume()
+
+        ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                mcpServer.start(port)
+                if (stopping) {
+                    mcpServer.stop()
+                } else {
+                    val portText = mcpPortField.text.trim()
+                    val port = portText.toIntOrNull() ?: McpServerSettings.DEFAULT_PORT
+                    mcpServer.start(port)
+                }
             } catch (e: Exception) {
-                showError("Failed to start MCP server: ${e.message}")
+                SwingUtilities.invokeLater { showError("MCP server error: ${e.message}") }
+            } finally {
+                SwingUtilities.invokeLater {
+                    mcpSpinner.suspend()
+                    mcpSpinner.isVisible = false
+                    mcpDropdownButton.isEnabled = true
+                    refreshMcpState()
+                }
             }
         }
-        refreshMcpState()
     }
 
     private fun addToolCallEntry(toolName: String, durationMs: Long, success: Boolean) {
