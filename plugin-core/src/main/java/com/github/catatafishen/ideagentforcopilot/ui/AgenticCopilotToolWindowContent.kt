@@ -657,15 +657,23 @@ class AgenticCopilotToolWindowContent(
             editor.contentComponent.border = JBUI.Borders.empty(4, 6)
             editor.setBorder(null)
 
-            // Auto-scroll the outer JBScrollPane to keep the caret visible while typing
+            // Auto-scroll the outer JBScrollPane to keep the caret visible while typing.
+            // EditorTextField has an internal JViewport that swallows scrollRectToVisible calls
+            // made on editor.contentComponent — they never reach the outer scroll pane.
+            // Fix: convert the caret rect to promptTextArea coordinates so the call is handled
+            // by the outer JViewport (promptTextArea is its direct view child).
             editor.caretModel.addCaretListener(object : com.intellij.openapi.editor.event.CaretListener {
                 override fun caretPositionChanged(event: com.intellij.openapi.editor.event.CaretEvent) {
                     SwingUtilities.invokeLater {
                         val caretOffset = editor.caretModel.offset
                         val caretPoint = editor.offsetToXY(caretOffset)
                         val lineHeight = editor.lineHeight
-                        val rect = java.awt.Rectangle(caretPoint.x, caretPoint.y, 1, lineHeight)
-                        editor.contentComponent.scrollRectToVisible(rect)
+                        val converted = SwingUtilities.convertPoint(
+                            editor.contentComponent, caretPoint, promptTextArea
+                        )
+                        promptTextArea.scrollRectToVisible(
+                            java.awt.Rectangle(converted.x, converted.y, 1, lineHeight)
+                        )
                     }
                 }
             })
