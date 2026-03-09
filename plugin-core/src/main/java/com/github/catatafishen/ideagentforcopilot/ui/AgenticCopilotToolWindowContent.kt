@@ -331,7 +331,7 @@ class AgenticCopilotToolWindowContent(
             onFixed = onFixed,
         ) { diag ->
             val isCLINotFound = "copilot cli not found" in diag.lowercase() ||
-                    ("not found" in diag.lowercase() && "copilot" in diag.lowercase())
+                ("not found" in diag.lowercase() && "copilot" in diag.lowercase())
             when {
                 isCLINotFound -> {
                     val cmd = if (System.getProperty("os.name").lowercase().contains("win"))
@@ -412,7 +412,7 @@ class AgenticCopilotToolWindowContent(
     private fun createPsiBridgeBanner(): com.intellij.ui.InlineBanner {
         val banner = com.intellij.ui.InlineBanner(
             "IntelliJ code tools unavailable \u2014 PSI bridge is not running. " +
-                    "Make sure a project is open and the IDE Agent for Copilot plugin is active, then restart IntelliJ.",
+                "Make sure a project is open and the IDE Agent for Copilot plugin is active, then restart IntelliJ.",
             com.intellij.ui.EditorNotificationPanel.Status.Warning
         )
         banner.isVisible = false
@@ -506,10 +506,10 @@ class AgenticCopilotToolWindowContent(
         val bridge = com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project)
         if (!bridge.isRunning) {
             return "PSI bridge HTTP server is not running.\n\n" +
-                    "Possible causes:\n" +
-                    "  • The plugin failed to initialize — check Help → Show Log for errors\n" +
-                    "  • The server could not bind to a port\n" +
-                    "  • The project is being disposed"
+                "Possible causes:\n" +
+                "  • The plugin failed to initialize — check Help → Show Log for errors\n" +
+                "  • The server could not bind to a port\n" +
+                "  • The project is being disposed"
         }
         val port = bridge.port
         if (port <= 0) {
@@ -525,9 +525,9 @@ class AgenticCopilotToolWindowContent(
                 conn.responseCode
             } catch (e: Exception) {
                 return "PSI bridge reports running on port $port\n" +
-                        "but the HTTP server is not responding.\n\n" +
-                        "Connection error: ${e.javaClass.simpleName}: ${e.message}\n\n" +
-                        "The bridge may have crashed. Check Help → Show Log,\nthen close and reopen the project."
+                    "but the HTTP server is not responding.\n\n" +
+                    "Connection error: ${e.javaClass.simpleName}: ${e.message}\n\n" +
+                    "The bridge may have crashed. Check Help → Show Log,\nthen close and reopen the project."
             }
             if (code == 200) null else "PSI bridge returned HTTP $code from /health (port $port)."
         } catch (e: Exception) {
@@ -1227,7 +1227,7 @@ class AgenticCopilotToolWindowContent(
             group.add(object : AnAction(
                 "Startup Instructions",
                 "Disabled: Copilot ignores MCP instructions. Use copilot-instructions.md instead. " +
-                        "See github.com/github/copilot-cli/issues/1486",
+                    "See github.com/github/copilot-cli/issues/1486",
                 com.intellij.icons.AllIcons.Actions.IntentionBulbGrey
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -1242,7 +1242,7 @@ class AgenticCopilotToolWindowContent(
             group.add(object : AnAction(
                 "Restore Default Instructions",
                 "Disabled: Copilot ignores MCP instructions. Use copilot-instructions.md instead. " +
-                        "See github.com/github/copilot-cli/issues/1486",
+                    "See github.com/github/copilot-cli/issues/1486",
                 com.intellij.icons.AllIcons.Actions.Rollback
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -2060,7 +2060,7 @@ class AgenticCopilotToolWindowContent(
         }
 
         val isRecoverable = e is InterruptedException || e.cause is InterruptedException ||
-                (e is AcpException && e.isRecoverable)
+            (e is AcpException && e.isRecoverable)
         if (!isRecoverable) {
             currentSessionId = null
             updateSessionInfo()
@@ -2236,15 +2236,15 @@ class AgenticCopilotToolWindowContent(
     }
 
     /**
-     * Registers an [IdeEventQueue] dispatcher so that pressing paste (Ctrl/Cmd+V or Shift+Insert)
+     * Registers an [IdeEventQueue] **preprocessor** so that pressing paste (Ctrl/Cmd+V or Shift+Insert)
      * while the scratch-type popup is visible cancels the popup and inserts the text directly
      * into the prompt editor instead.
      *
-     * We use [IdeEventQueue.addDispatcher] rather than [java.awt.Toolkit.addAWTEventListener]
-     * because the AWTEventListener `consume()` call does NOT prevent IntelliJ's event queue
-     * from delivering the event to components — the popup's speedsearch still receives the
-     * keystroke. IdeEventQueue dispatchers run before normal dispatch and returning `true`
-     * genuinely suppresses the event.
+     * We use [IdeEventQueue.addPreprocessor] rather than [IdeEventQueue.addDispatcher] because
+     * the popup's own event dispatcher (registered by [com.intellij.ide.IdePopupManager]) runs
+     * before regular dispatchers — so using `addDispatcher` lets the popup's speed-search text
+     * field consume the Ctrl+V keystroke before our handler sees it. Preprocessors run before
+     * popup dispatchers, so the paste is reliably intercepted.
      */
     private fun registerPasteToSkip(popup: com.intellij.openapi.ui.popup.JBPopup, text: String) {
         val pasteStrokes = setOf(
@@ -2255,15 +2255,27 @@ class AgenticCopilotToolWindowContent(
             )
         )
 
+        // Track whether we consumed a KEY_PRESSED paste so we also swallow the follow-up
+        // KEY_TYPED and KEY_RELEASED events from the same keystroke.
+        var swallowFollowUp = false
+
         val disposable = com.intellij.openapi.util.Disposer.newDisposable("pasteToSkip")
-        com.intellij.ide.IdeEventQueue.getInstance().addDispatcher(
+        com.intellij.ide.IdeEventQueue.getInstance().addPreprocessor(
             com.intellij.ide.IdeEventQueue.EventDispatcher { event ->
                 if (event !is java.awt.event.KeyEvent) return@EventDispatcher false
-                if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return@EventDispatcher false
                 if (!popup.isVisible) return@EventDispatcher false
+
+                // After consuming a KEY_PRESSED paste, swallow KEY_TYPED and KEY_RELEASED
+                if (swallowFollowUp && event.id != java.awt.event.KeyEvent.KEY_PRESSED) {
+                    if (event.id == java.awt.event.KeyEvent.KEY_RELEASED) swallowFollowUp = false
+                    return@EventDispatcher true
+                }
+
+                if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return@EventDispatcher false
                 val stroke = javax.swing.KeyStroke.getKeyStrokeForEvent(event)
                 if (stroke !in pasteStrokes) return@EventDispatcher false
 
+                swallowFollowUp = true
                 popup.cancel()
                 com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
                     val editor = promptTextArea.editor ?: return@runWriteCommandAction
