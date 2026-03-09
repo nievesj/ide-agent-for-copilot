@@ -2243,35 +2243,46 @@ class AgenticCopilotToolWindowContent(
     }
 
     /**
-     * Registers paste keyboard shortcuts on a popup so that pressing paste
-     * while the popup is visible cancels it and inserts the text directly
+     * Registers a global AWTEventListener so that pressing paste (Ctrl/Cmd+V or Shift+Insert)
+     * while the scratch-type popup is visible cancels the popup and inserts the text directly
      * into the prompt editor instead.
+     *
+     * Swing input-map bindings on popup.content are not reliable here because the
+     * LRUPopupBuilder list popup intercepts key events internally (for speedsearch) before
+     * the normal Swing dispatch chain reaches our input map. The AWTEventListener fires
+     * before any component-level processing and can consume the event.
      */
     private fun registerPasteToSkip(popup: com.intellij.openapi.ui.popup.JBPopup, text: String) {
-        val content = popup.content ?: return
-        val inputMap = content.getInputMap(javax.swing.JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
-        val actionMap = content.actionMap
-
-        for (stroke in arrayOf(
+        val pasteStrokes = setOf(
             javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.CTRL_DOWN_MASK),
             javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.META_DOWN_MASK),
             javax.swing.KeyStroke.getKeyStroke(
-                java.awt.event.KeyEvent.VK_INSERT,
-                java.awt.event.InputEvent.SHIFT_DOWN_MASK
+                java.awt.event.KeyEvent.VK_INSERT, java.awt.event.InputEvent.SHIFT_DOWN_MASK
             )
-        )) {
-            inputMap.put(stroke, "pasteDirectlyToPrompt")
+        )
+        val listener = java.awt.event.AWTEventListener { event ->
+            if (event !is java.awt.event.KeyEvent) return@AWTEventListener
+            if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return@AWTEventListener
+            if (!popup.isVisible) return@AWTEventListener
+            val stroke = javax.swing.KeyStroke.getKeyStrokeForEvent(event)
+            if (stroke !in pasteStrokes) return@AWTEventListener
+
+            event.consume()
+            popup.cancel()
+            com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+                val editor = promptTextArea.editor ?: return@runWriteCommandAction
+                val offset = editor.caretModel.offset
+                editor.document.insertString(offset, text)
+                editor.caretModel.moveToOffset(offset + text.length)
+            }
         }
 
-        actionMap.put("pasteDirectlyToPrompt", object : javax.swing.AbstractAction() {
-            override fun actionPerformed(e: java.awt.event.ActionEvent) {
-                popup.cancel()
-                com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
-                    val editor = promptTextArea.editor ?: return@runWriteCommandAction
-                    val offset = editor.caretModel.offset
-                    editor.document.insertString(offset, text)
-                    editor.caretModel.moveToOffset(offset + text.length)
-                }
+        java.awt.Toolkit.getDefaultToolkit()
+            .addAWTEventListener(listener, java.awt.AWTEvent.KEY_EVENT_MASK)
+
+        popup.addListener(object : com.intellij.openapi.ui.popup.JBPopupListener {
+            override fun onClosed(event: com.intellij.openapi.ui.popup.LightweightWindowEvent) {
+                java.awt.Toolkit.getDefaultToolkit().removeAWTEventListener(listener)
             }
         })
     }
