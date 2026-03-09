@@ -65,7 +65,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     @Volatile
     private var htmlPageFuture: java.util.concurrent.CompletableFuture<String>? = null
     private val deferredRestoreJson = mutableListOf<com.google.gson.JsonElement>()
-    private val pendingPermissionCallbacks = java.util.concurrent.ConcurrentHashMap<String, (Boolean) -> Unit>()
+    private val pendingPermissionCallbacks = java.util.concurrent.ConcurrentHashMap<String, (com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse) -> Unit>()
 
     // Periodic JCEF repaint during streaming to avoid partial-update artifacts
     private val repaintTimer = javax.swing.Timer(150) {
@@ -166,12 +166,16 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
             val permissionResponseQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
             permissionResponseQuery.addHandler { data ->
-                // data format: "reqId:true" or "reqId:false"
+                // data format: "reqId:deny", "reqId:once", or "reqId:session"
                 val colonIdx = data.lastIndexOf(':')
                 if (colonIdx > 0) {
                     val reqId = data.substring(0, colonIdx)
-                    val allowed = data.substring(colonIdx + 1) == "true"
-                    pendingPermissionCallbacks.remove(reqId)?.invoke(allowed)
+                    val response = when (data.substring(colonIdx + 1)) {
+                        "once" -> com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse.ALLOW_ONCE
+                        "session" -> com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse.ALLOW_SESSION
+                        else -> com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse.DENY
+                    }
+                    pendingPermissionCallbacks.remove(reqId)?.invoke(response)
                 }
                 null
             }
@@ -1264,7 +1268,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     // ── Permission requests ────────────────────────────────────────
 
     override fun showPermissionRequest(
-        reqId: String, toolDisplayName: String, description: String, onRespond: (Boolean) -> Unit
+        reqId: String, toolDisplayName: String, description: String, onRespond: (com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse) -> Unit
     ) {
         pendingPermissionCallbacks[reqId] = onRespond
         val safeId = escJs(reqId)

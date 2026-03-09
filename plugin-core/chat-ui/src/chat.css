@@ -1059,6 +1059,17 @@ permission-request {
     border-color: #5cb85c !important;
 }
 
+.perm-allow-session {
+    background: rgba(80, 140, 220, 0.12) !important;
+    color: #5b9bd5 !important;
+    border-color: rgba(80, 140, 220, 0.3) !important;
+}
+
+.perm-allow-session:hover {
+    background: rgba(80, 140, 220, 0.22) !important;
+    border-color: #5b9bd5 !important;
+}
+
 .perm-deny {
     background: rgba(220, 80, 80, 0.10) !important;
     color: #d9534f !important;

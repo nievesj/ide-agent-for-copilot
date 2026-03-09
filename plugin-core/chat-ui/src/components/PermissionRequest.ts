@@ -1,6 +1,6 @@
 /**
  * Permission request actions element — rendered below the question bubble.
- * Contains Allow/Deny buttons, replaced with result text on resolve.
+ * Contains Deny / Allow / Allow for session buttons, replaced with result text on resolve.
  */
 export default class PermissionRequest extends HTMLElement {
     private _init = false;
@@ -19,31 +19,38 @@ export default class PermissionRequest extends HTMLElement {
         const reqId = this.getAttribute('req-id') || '';
         this.className = 'perm-actions';
 
-        const allowBtn = document.createElement('button');
-        allowBtn.type = 'button';
-        allowBtn.className = 'quick-reply-btn perm-allow';
-        allowBtn.textContent = 'Allow';
-        allowBtn.onclick = () => this._respond(reqId, true);
-
         const denyBtn = document.createElement('button');
         denyBtn.type = 'button';
         denyBtn.className = 'quick-reply-btn perm-deny';
         denyBtn.textContent = 'Deny';
-        denyBtn.onclick = () => this._respond(reqId, false);
+        denyBtn.onclick = () => this._respond(reqId, 'deny', '\u2717 Denied');
 
-        this.appendChild(allowBtn);
+        const allowBtn = document.createElement('button');
+        allowBtn.type = 'button';
+        allowBtn.className = 'quick-reply-btn perm-allow';
+        allowBtn.textContent = 'Allow';
+        allowBtn.onclick = () => this._respond(reqId, 'once', '\u2713 Allowed');
+
+        const sessionBtn = document.createElement('button');
+        sessionBtn.type = 'button';
+        sessionBtn.className = 'quick-reply-btn perm-allow-session';
+        sessionBtn.textContent = 'Allow for session';
+        sessionBtn.onclick = () => this._respond(reqId, 'session', '\u2713 Allowed for session');
+
         this.appendChild(denyBtn);
+        this.appendChild(allowBtn);
+        this.appendChild(sessionBtn);
     }
 
-    private _respond(reqId: string, allowed: boolean): void {
+    private _respond(reqId: string, mode: 'deny' | 'once' | 'session', label: string): void {
         this.querySelectorAll('button').forEach(b => (b as HTMLButtonElement).disabled = true);
 
-        // Replace buttons with result text
         const result = document.createElement('div');
+        const allowed = mode !== 'deny';
         result.className = 'perm-result ' + (allowed ? 'perm-allowed' : 'perm-denied');
-        result.textContent = allowed ? '\u2713 Allowed' : '\u2717 Denied';
+        result.textContent = label;
         this.replaceChildren(result);
 
-        (globalThis as any)._bridge?.permissionResponse(`${reqId}:${allowed}`);
+        (globalThis as any)._bridge?.permissionResponse(`${reqId}:${mode}`);
     }
 }

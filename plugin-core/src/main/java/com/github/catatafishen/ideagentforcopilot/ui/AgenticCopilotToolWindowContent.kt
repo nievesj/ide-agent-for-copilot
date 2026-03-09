@@ -1755,7 +1755,7 @@ class AgenticCopilotToolWindowContent(
             ApplicationManager.getApplication().invokeLater {
                 consolePanel.showPermissionRequest(
                     req.reqId.toString(), req.displayName, req.description
-                ) { allowed -> req.respond(allowed) }
+                ) { response -> req.respond(response) }
                 notifyPermissionRequestIfUnfocused(req.displayName)
             }
         }
@@ -2341,6 +2341,7 @@ class AgenticCopilotToolWindowContent(
         billing.billingCycleStartUsed = -1
         billing.resetLocalCounter()
         if (::processingTimerPanel.isInitialized) processingTimerPanel.resetSession()
+        com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).clearSessionAllowedTools()
         consolePanel.clear()
         consolePanel.showPlaceholder("New conversation started.")
         addTimelineEvent(EventType.SESSION_START, "New conversation started")
@@ -2363,6 +2364,7 @@ class AgenticCopilotToolWindowContent(
         billing.billingCycleStartUsed = -1
         billing.resetLocalCounter()
         if (::processingTimerPanel.isInitialized) processingTimerPanel.resetSession()
+        com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).clearSessionAllowedTools()
         addTimelineEvent(EventType.SESSION_START, "New session started (history kept)")
         updateSessionInfo()
     }

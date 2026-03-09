@@ -67,20 +67,22 @@ public final class PsiBridgeService implements Disposable {
      * Project-level message bus topic for PSI bridge status changes.
      */
     public static final Topic<StatusListener> STATUS_TOPIC =
-            Topic.create("PsiBridgeService.Status", StatusListener.class);
+        Topic.create("PsiBridgeService.Status", StatusListener.class);
 
     /**
      * Project-level message bus topic for tool call events (fire-and-forget notifications).
      */
     public static final Topic<ToolCallListener> TOOL_CALL_TOPIC =
-            Topic.create("PsiBridgeService.ToolCall", ToolCallListener.class);
+        Topic.create("PsiBridgeService.ToolCall", ToolCallListener.class);
 
     private final Project project;
     private final RunConfigurationService runConfigService;
     private final Map<String, ToolHandler> toolRegistry = new LinkedHashMap<>();
     private final FileTools fileTools;
     private final java.util.concurrent.atomic.AtomicBoolean permissionPending =
-            new java.util.concurrent.atomic.AtomicBoolean(false);
+        new java.util.concurrent.atomic.AtomicBoolean(false);
+    private final java.util.Set<String> sessionAllowedTools =
+        java.util.concurrent.ConcurrentHashMap.newKeySet();
     private HttpServer httpServer;
     private int port;
 
@@ -95,17 +97,17 @@ public final class PsiBridgeService implements Disposable {
 
         // Register all tools from handler groups
         for (AbstractToolHandler handler : List.of(
-                new CodeNavigationTools(project),
-                fileTools,
-                new CodeQualityTools(project),
-                refactoringTools,
-                new SymbolEditingTools(project),
-                new TestTools(project, refactoringTools),
-                new ProjectTools(project),
-                new GitTools(project, gitToolHandler),
-                new InfrastructureTools(project),
-                new TerminalTools(project),
-                new EditorTools(project)
+            new CodeNavigationTools(project),
+            fileTools,
+            new CodeQualityTools(project),
+            refactoringTools,
+            new SymbolEditingTools(project),
+            new TestTools(project, refactoringTools),
+            new ProjectTools(project),
+            new GitTools(project, gitToolHandler),
+            new InfrastructureTools(project),
+            new TerminalTools(project),
+            new EditorTools(project)
         )) {
             toolRegistry.putAll(handler.getTools());
         }
@@ -126,6 +128,14 @@ public final class PsiBridgeService implements Disposable {
     @SuppressWarnings("unused") // Public API - may be used by external integrations
     public int getPort() {
         return port;
+    }
+
+    /**
+     * Clears the session-scoped "Allow for session" permission cache.
+     * Called when the ACP session is closed or restarted.
+     */
+    public void clearSessionAllowedTools() {
+        sessionAllowedTools.clear();
     }
 
     /**
@@ -209,15 +219,15 @@ public final class PsiBridgeService implements Disposable {
             LOG.error("Failed to start PSI Bridge", e);
             String detail = buildExceptionDetail(e);
             com.intellij.notification.Notification notification =
-                    com.intellij.notification.NotificationGroupManager.getInstance()
-                            .getNotificationGroup("Copilot Notifications")
-                            .createNotification(
-                                    "IDE Agent for Copilot: PSI bridge failed to start",
-                                    "IntelliJ code tools will be unavailable.\n" + detail,
-                                    com.intellij.notification.NotificationType.ERROR);
+                com.intellij.notification.NotificationGroupManager.getInstance()
+                    .getNotificationGroup("Copilot Notifications")
+                    .createNotification(
+                        "IDE Agent for Copilot: PSI bridge failed to start",
+                        "IntelliJ code tools will be unavailable.\n" + detail,
+                        com.intellij.notification.NotificationType.ERROR);
             notification.addAction(com.intellij.notification.NotificationAction.createSimple(
-                    "Open IDE Log", () -> com.intellij.ide.actions.RevealFileAction.openFile(
-                            new java.io.File(com.intellij.openapi.application.PathManager.getLogPath(), "idea.log"))));
+                "Open IDE Log", () -> com.intellij.ide.actions.RevealFileAction.openFile(
+                    new java.io.File(com.intellij.openapi.application.PathManager.getLogPath(), "idea.log"))));
             notification.notify(project);
         }
     }
@@ -296,7 +306,7 @@ public final class PsiBridgeService implements Disposable {
         long duration = System.currentTimeMillis() - startTimeMs;
         try {
             project.getMessageBus().syncPublisher(TOOL_CALL_TOPIC)
-                    .toolCalled(toolName, duration, success);
+                .toolCalled(toolName, duration, success);
         } catch (Exception e) {
             LOG.debug("Failed to fire tool call event", e);
         }
@@ -375,7 +385,7 @@ public final class PsiBridgeService implements Disposable {
         JsonObject request = JsonParser.parseString(body).getAsJsonObject();
         String toolName = request.get("name").getAsString();
         JsonObject arguments = request.has("arguments")
-                ? request.getAsJsonObject("arguments") : new JsonObject();
+            ? request.getAsJsonObject("arguments") : new JsonObject();
 
         LOG.info("PSI Bridge tool call: " + toolName + " args=" + arguments);
         long toolCallStart = System.currentTimeMillis();
@@ -448,6 +458,12 @@ public final class PsiBridgeService implements Disposable {
             return "Permission denied: tool '" + toolName + "' is disabled in Tool Permissions settings.";
         }
 
+        // Session-scoped allow: if user previously chose "Allow for session", skip the prompt
+        if (sessionAllowedTools.contains(toolName)) {
+            LOG.info("PSI Bridge: session-allowed for " + toolName);
+            return null;
+        }
+
         // ASK: show a permission bubble in the chat panel and block until user responds
         permissionPending.set(true);
         try {
@@ -465,19 +481,20 @@ public final class PsiBridgeService implements Disposable {
         String reqId = java.util.UUID.randomUUID().toString();
 
         com.github.catatafishen.ideagentforcopilot.ui.ChatConsolePanel chatPanel =
-                com.github.catatafishen.ideagentforcopilot.ui.ChatConsolePanel.Companion.getInstance(project);
+            com.github.catatafishen.ideagentforcopilot.ui.ChatConsolePanel.Companion.getInstance(project);
 
-        boolean allowed;
+        com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse response;
         if (chatPanel != null) {
-            java.util.concurrent.CompletableFuture<Boolean> future = new java.util.concurrent.CompletableFuture<>();
+            java.util.concurrent.CompletableFuture<com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse> future =
+                new java.util.concurrent.CompletableFuture<>();
             ApplicationManager.getApplication().invokeLater(() ->
-                    chatPanel.showPermissionRequest(reqId, displayName, argsJson, result -> {
-                        future.complete(result);
-                        return kotlin.Unit.INSTANCE;
-                    })
+                chatPanel.showPermissionRequest(reqId, displayName, argsJson, result -> {
+                    future.complete(result);
+                    return kotlin.Unit.INSTANCE;
+                })
             );
             try {
-                allowed = future.get(120, java.util.concurrent.TimeUnit.SECONDS);
+                response = future.get(120, java.util.concurrent.TimeUnit.SECONDS);
             } catch (java.util.concurrent.TimeoutException e) {
                 LOG.info("PSI Bridge: ASK timed out for " + toolName);
                 return "Permission request timed out for tool '" + toolName + "'.";
@@ -490,18 +507,24 @@ public final class PsiBridgeService implements Disposable {
             boolean[] result = {false};
             ApplicationManager.getApplication().invokeAndWait(() -> {
                 String message = "<html><b>Allow: " + StringUtil.escapeXmlEntities(displayName) + "</b><br><br>"
-                        + buildArgSummary(arguments) + "</html>";
+                    + buildArgSummary(arguments) + "</html>";
                 int choice = Messages.showYesNoDialog(
-                        project, message, "Tool Permission Request",
-                        "Allow", "Deny", Messages.getQuestionIcon()
+                    project, message, "Tool Permission Request",
+                    "Allow", "Deny", Messages.getQuestionIcon()
                 );
                 result[0] = choice == Messages.YES;
             });
-            allowed = result[0];
+            response = result[0]
+                ? com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse.ALLOW_ONCE
+                : com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse.DENY;
         }
 
-        if (allowed) {
-            LOG.info("PSI Bridge: ASK approved by user for " + toolName);
+        if (response == com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse.ALLOW_SESSION) {
+            sessionAllowedTools.add(toolName);
+            LOG.info("PSI Bridge: ASK approved for session for " + toolName);
+            return null;
+        } else if (response == com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse.ALLOW_ONCE) {
+            LOG.info("PSI Bridge: ASK approved (once) for " + toolName);
             return null;
         } else {
             LOG.info("PSI Bridge: ASK denied by user for " + toolName);
@@ -554,11 +577,11 @@ public final class PsiBridgeService implements Disposable {
                 break;
             }
             String val = e.getValue().isJsonPrimitive()
-                    ? e.getValue().getAsString() : e.getValue().toString();
+                ? e.getValue().getAsString() : e.getValue().toString();
             if (val.length() > 100) val = val.substring(0, 97) + "…";
             sb.append("<tr><td><b>").append(StringUtil.escapeXmlEntities(e.getKey()))
-                    .append(":</b>&nbsp;</td><td>").append(StringUtil.escapeXmlEntities(val))
-                    .append("</td></tr>");
+                .append(":</b>&nbsp;</td><td>").append(StringUtil.escapeXmlEntities(val))
+                .append("</td></tr>");
         }
         sb.append("</table>");
         return sb.toString();
@@ -567,7 +590,7 @@ public final class PsiBridgeService implements Disposable {
     private static boolean isSuccessfulWrite(String toolName, String result) {
         return switch (toolName) {
             case "write_file", "intellij_write_file", "edit_text" ->
-                    result.startsWith("Edited:") || result.startsWith("Written:");
+                result.startsWith("Edited:") || result.startsWith("Written:");
             case "replace_symbol_body" -> result.startsWith("Replaced lines ");
             case "insert_before_symbol" -> result.startsWith("Inserted ") && result.contains(" before ");
             case "insert_after_symbol" -> result.startsWith("Inserted ") && result.contains(" after ");

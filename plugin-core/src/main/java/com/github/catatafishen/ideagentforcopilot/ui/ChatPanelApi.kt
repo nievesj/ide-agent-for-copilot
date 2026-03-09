@@ -87,8 +87,8 @@ interface ChatPanelApi : Disposable {
     // ── Permission requests ────────────────────────────────────────
 
     /**
-     * Show a permission request bubble in the chat pane with Allow / Deny buttons.
-     * [reqId] is a unique ID for this request. [onRespond] is called with true=allow, false=deny.
+     * Show a permission request bubble in the chat pane with Deny / Allow / Allow for Session buttons.
+     * [reqId] is a unique ID for this request. [onRespond] is called with the user's choice.
      */
-    fun showPermissionRequest(reqId: String, toolDisplayName: String, description: String, onRespond: (Boolean) -> Unit)
+    fun showPermissionRequest(reqId: String, toolDisplayName: String, description: String, onRespond: (com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse) -> Unit)
 }

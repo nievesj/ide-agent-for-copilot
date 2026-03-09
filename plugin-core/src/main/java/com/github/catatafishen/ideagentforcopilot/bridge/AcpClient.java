@@ -110,7 +110,8 @@ public class AcpClient implements Closeable {
 
     // Permission request listener and pending ASK map
     private volatile java.util.function.Consumer<PermissionRequest> permissionRequestListener;
-    private final ConcurrentHashMap<Long, CompletableFuture<Boolean>> pendingPermissionAsks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, CompletableFuture<PermissionResponse>> pendingPermissionAsks = new ConcurrentHashMap<>();
+    private final java.util.Set<String> sessionAllowedTools = ConcurrentHashMap.newKeySet();
 
     // PermissionRequest is in separate file: PermissionRequest.java
 
@@ -1095,6 +1096,12 @@ public class AcpClient implements Closeable {
             perm = ToolPermission.ALLOW;
         }
 
+        // Session-scoped allow: if user previously chose "Allow for session", skip the prompt
+        if (perm == ToolPermission.ASK && sessionAllowedTools.contains(toolId)) {
+            LOG.info("ACP request_permission: session-allowed for " + toolId);
+            perm = ToolPermission.ALLOW;
+        }
+
         if (perm == ToolPermission.DENY) {
             String rejectOptionId = findRejectOption(reqParams);
             LOG.info("ACP request_permission: DENYING " + permKind + " (tool=" + toolId + "), option=" + rejectOptionId);
@@ -1111,7 +1118,7 @@ public class AcpClient implements Closeable {
             lastDeniedKind = permKind;
             sendPermissionResponse(reqId, rejectOptionId);
         } else if (perm == ToolPermission.ASK) {
-            // ASK: fire permission request to UI and block until user responds (60s timeout)
+            // ASK: fire permission request to UI and block until user responds (120s timeout)
             var listener = permissionRequestListener;
             if (listener == null) {
                 // No UI listener registered — fall back to auto-deny for safety
@@ -1120,27 +1127,31 @@ public class AcpClient implements Closeable {
                 sendPermissionResponse(reqId, rejectOptionId);
                 return;
             }
-            CompletableFuture<Boolean> future = new CompletableFuture<>();
+            CompletableFuture<PermissionResponse> future = new CompletableFuture<>();
             pendingPermissionAsks.put(reqId, future);
             ToolRegistry.ToolEntry toolEntry = ToolRegistry.findById(toolId);
             String displayName = toolEntry != null ? toolEntry.displayName : permKind;
             PermissionRequest req = new PermissionRequest(reqId, toolId, displayName, formattedPermission,
                 future::complete);
             listener.accept(req);
-            boolean allowed;
+            PermissionResponse response;
             try {
-                allowed = future.get(60, java.util.concurrent.TimeUnit.SECONDS);
+                response = future.get(120, java.util.concurrent.TimeUnit.SECONDS);
             } catch (Exception e) {
                 LOG.info("ACP request_permission: ASK timed out / cancelled for " + toolId + " — denying");
-                allowed = false;
+                response = PermissionResponse.DENY;
             } finally {
                 pendingPermissionAsks.remove(reqId);
             }
-            if (allowed) {
-                String allowOptionId = findAllowOption(reqParams);
-                LOG.info("ACP request_permission: ASK approved by user for " + toolId);
+            if (response == PermissionResponse.ALLOW_SESSION) {
+                sessionAllowedTools.add(toolId);
+                LOG.info("ACP request_permission: ASK approved for session for " + toolId);
+                fireDebugEvent("PERMISSION_APPROVED", formattedPermission, "session-approved");
+                sendPermissionResponse(reqId, findAllowOption(reqParams));
+            } else if (response == PermissionResponse.ALLOW_ONCE) {
+                LOG.info("ACP request_permission: ASK approved (once) for " + toolId);
                 fireDebugEvent("PERMISSION_APPROVED", formattedPermission, "user-approved");
-                sendPermissionResponse(reqId, allowOptionId);
+                sendPermissionResponse(reqId, findAllowOption(reqParams));
             } else {
                 String rejectOptionId = findRejectOption(reqParams);
                 LOG.info("ACP request_permission: ASK denied by user for " + toolId);
@@ -1428,6 +1439,7 @@ public class AcpClient implements Closeable {
     @Override
     public void close() {
         closed = true;
+        sessionAllowedTools.clear();
         failAllPendingRequests();
         if (writer != null) {
             try {
