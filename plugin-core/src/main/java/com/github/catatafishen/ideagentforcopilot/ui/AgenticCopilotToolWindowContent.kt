@@ -5,6 +5,7 @@ import com.github.catatafishen.ideagentforcopilot.bridge.AcpException
 import com.github.catatafishen.ideagentforcopilot.bridge.Model
 import com.github.catatafishen.ideagentforcopilot.bridge.ResourceReference
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
+import com.github.catatafishen.ideagentforcopilot.settings.BillingSettings
 import com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.*
@@ -800,7 +801,9 @@ class AgenticCopilotToolWindowContent(
 
         val rightGroup = DefaultActionGroup()
         rightGroup.add(ProcessingIndicatorAction())
-        rightGroup.add(billing.createUsageGraphAction())
+        if (BillingSettings.getInstance().isShowCopilotUsage()) {
+            rightGroup.add(billing.createUsageGraphAction())
+        }
 
         val rightToolbar = ActionManager.getInstance().createActionToolbar(
             "CopilotRight", rightGroup, true

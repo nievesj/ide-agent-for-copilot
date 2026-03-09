@@ -238,6 +238,12 @@
       id="com.github.catatafishen.ideagentforcopilot.projectFiles"
       displayName="Project Files"/>
 
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.other"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.BillingConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.billing"
+      displayName="Billing Data"/>
+
     <!-- Start PSI Bridge when the project opens -->
     <postStartupActivity
       implementation="com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeStartup"/>
