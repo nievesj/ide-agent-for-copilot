@@ -693,14 +693,15 @@ final class GitToolHandler {
         java.util.regex.Pattern.compile("^commit ([0-9a-f]{40})$", java.util.regex.Pattern.MULTILINE);
 
     /**
-     * Opens the Git Log tool window and navigates to the newly created commit (HEAD).
-     * <p>
-     * Uses {@link PlatformApiCompat#showRevisionInLogAfterRefresh} to register a
-     * {@code DataPackChangeListener} and trigger a VCS log refresh. Navigation happens
+     * After a successful commit, open the Git Log tab and navigate to the
+     * new HEAD commit. Runs the hash lookup on a pooled thread and navigates
      * only after the log has indexed the new commit, avoiding the
      * "Commit or reference 'xxx' not found" notification.
+     * Respects the "Follow Agent" setting — does nothing if disabled.
      */
     private void showNewCommitInLog() {
+        if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
+
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
                 String fullHash = runGit("rev-parse", "HEAD").trim();
@@ -726,8 +727,10 @@ final class GitToolHandler {
     /**
      * Extracts the first full commit hash from a git-log result and navigates
      * to it in the VCS Log tab, so the user can follow what the agent is reading.
+     * Respects the "Follow Agent" setting — does nothing if disabled.
      */
     private void showFirstCommitInLog(String gitOutput) {
+        if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
         if (gitOutput == null || gitOutput.isEmpty()) return;
         // Try "commit <hash>" line first (medium/full format), then any 40-char hex
         String hash = null;
