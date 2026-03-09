@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi
 
-import com.github.catatafishen.ideagentforcopilot.bridge.InstructionsManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
@@ -27,7 +26,8 @@ class PsiBridgeStartup : ProjectActivity {
         // Auto-start MCP HTTP server (required for agent CLI to access tools)
         if (mcpSettings.isAutoStart) {
             try {
-                val mcpServer = com.github.catatafishen.ideagentforcopilot.services.McpServerControl.getInstance(project)
+                val mcpServer =
+                    com.github.catatafishen.ideagentforcopilot.services.McpServerControl.getInstance(project)
                 mcpServer?.start()
                 LOG.info("MCP server auto-started on port ${mcpSettings.port} (${mcpSettings.transportMode.displayName})")
             } catch (e: Exception) {

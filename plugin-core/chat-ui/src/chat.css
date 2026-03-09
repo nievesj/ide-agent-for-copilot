@@ -280,6 +280,11 @@ working-indicator .working-text {
     flex-shrink: 0;
 }
 
+/* User message timestamp: push to the right edge of the meta strip */
+.prompt-row .meta .ts {
+    order: 10;
+}
+
 .chip-strip {
     display: flex;
     gap: var(--sp-2);
