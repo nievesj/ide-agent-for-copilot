@@ -331,7 +331,7 @@ class AgenticCopilotToolWindowContent(
             onFixed = onFixed,
         ) { diag ->
             val isCLINotFound = "copilot cli not found" in diag.lowercase() ||
-                ("not found" in diag.lowercase() && "copilot" in diag.lowercase())
+                    ("not found" in diag.lowercase() && "copilot" in diag.lowercase())
             when {
                 isCLINotFound -> {
                     val cmd = if (System.getProperty("os.name").lowercase().contains("win"))
@@ -412,7 +412,7 @@ class AgenticCopilotToolWindowContent(
     private fun createPsiBridgeBanner(): com.intellij.ui.InlineBanner {
         val banner = com.intellij.ui.InlineBanner(
             "IntelliJ code tools unavailable \u2014 PSI bridge is not running. " +
-                "Make sure a project is open and the IDE Agent for Copilot plugin is active, then restart IntelliJ.",
+                    "Make sure a project is open and the IDE Agent for Copilot plugin is active, then restart IntelliJ.",
             com.intellij.ui.EditorNotificationPanel.Status.Warning
         )
         banner.isVisible = false
@@ -506,10 +506,10 @@ class AgenticCopilotToolWindowContent(
         val bridge = com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project)
         if (!bridge.isRunning) {
             return "PSI bridge HTTP server is not running.\n\n" +
-                "Possible causes:\n" +
-                "  • The plugin failed to initialize — check Help → Show Log for errors\n" +
-                "  • The server could not bind to a port\n" +
-                "  • The project is being disposed"
+                    "Possible causes:\n" +
+                    "  • The plugin failed to initialize — check Help → Show Log for errors\n" +
+                    "  • The server could not bind to a port\n" +
+                    "  • The project is being disposed"
         }
         val port = bridge.port
         if (port <= 0) {
@@ -525,9 +525,9 @@ class AgenticCopilotToolWindowContent(
                 conn.responseCode
             } catch (e: Exception) {
                 return "PSI bridge reports running on port $port\n" +
-                    "but the HTTP server is not responding.\n\n" +
-                    "Connection error: ${e.javaClass.simpleName}: ${e.message}\n\n" +
-                    "The bridge may have crashed. Check Help → Show Log,\nthen close and reopen the project."
+                        "but the HTTP server is not responding.\n\n" +
+                        "Connection error: ${e.javaClass.simpleName}: ${e.message}\n\n" +
+                        "The bridge may have crashed. Check Help → Show Log,\nthen close and reopen the project."
             }
             if (code == 200) null else "PSI bridge returned HTTP $code from /health (port $port)."
         } catch (e: Exception) {
@@ -1227,7 +1227,7 @@ class AgenticCopilotToolWindowContent(
             group.add(object : AnAction(
                 "Startup Instructions",
                 "Disabled: Copilot ignores MCP instructions. Use copilot-instructions.md instead. " +
-                    "See github.com/github/copilot-cli/issues/1486",
+                        "See github.com/github/copilot-cli/issues/1486",
                 com.intellij.icons.AllIcons.Actions.IntentionBulbGrey
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -1242,7 +1242,7 @@ class AgenticCopilotToolWindowContent(
             group.add(object : AnAction(
                 "Restore Default Instructions",
                 "Disabled: Copilot ignores MCP instructions. Use copilot-instructions.md instead. " +
-                    "See github.com/github/copilot-cli/issues/1486",
+                        "See github.com/github/copilot-cli/issues/1486",
                 com.intellij.icons.AllIcons.Actions.Rollback
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -2060,7 +2060,7 @@ class AgenticCopilotToolWindowContent(
         }
 
         val isRecoverable = e is InterruptedException || e.cause is InterruptedException ||
-            (e is AcpException && e.isRecoverable)
+                (e is AcpException && e.isRecoverable)
         if (!isRecoverable) {
             currentSessionId = null
             updateSessionInfo()
@@ -2236,14 +2236,15 @@ class AgenticCopilotToolWindowContent(
     }
 
     /**
-     * Registers a global AWTEventListener so that pressing paste (Ctrl/Cmd+V or Shift+Insert)
+     * Registers an [IdeEventQueue] dispatcher so that pressing paste (Ctrl/Cmd+V or Shift+Insert)
      * while the scratch-type popup is visible cancels the popup and inserts the text directly
      * into the prompt editor instead.
      *
-     * Swing input-map bindings on popup.content are not reliable here because the
-     * LRUPopupBuilder list popup intercepts key events internally (for speedsearch) before
-     * the normal Swing dispatch chain reaches our input map. The AWTEventListener fires
-     * before any component-level processing and can consume the event.
+     * We use [IdeEventQueue.addDispatcher] rather than [java.awt.Toolkit.addAWTEventListener]
+     * because the AWTEventListener `consume()` call does NOT prevent IntelliJ's event queue
+     * from delivering the event to components — the popup's speedsearch still receives the
+     * keystroke. IdeEventQueue dispatchers run before normal dispatch and returning `true`
+     * genuinely suppresses the event.
      */
     private fun registerPasteToSkip(popup: com.intellij.openapi.ui.popup.JBPopup, text: String) {
         val pasteStrokes = setOf(
@@ -2253,29 +2254,31 @@ class AgenticCopilotToolWindowContent(
                 java.awt.event.KeyEvent.VK_INSERT, java.awt.event.InputEvent.SHIFT_DOWN_MASK
             )
         )
-        val listener = java.awt.event.AWTEventListener { event ->
-            if (event !is java.awt.event.KeyEvent) return@AWTEventListener
-            if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return@AWTEventListener
-            if (!popup.isVisible) return@AWTEventListener
-            val stroke = javax.swing.KeyStroke.getKeyStrokeForEvent(event)
-            if (stroke !in pasteStrokes) return@AWTEventListener
 
-            event.consume()
-            popup.cancel()
-            com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
-                val editor = promptTextArea.editor ?: return@runWriteCommandAction
-                val offset = editor.caretModel.offset
-                editor.document.insertString(offset, text)
-                editor.caretModel.moveToOffset(offset + text.length)
-            }
-        }
+        val disposable = com.intellij.openapi.util.Disposer.newDisposable("pasteToSkip")
+        com.intellij.ide.IdeEventQueue.getInstance().addDispatcher(
+            com.intellij.ide.IdeEventQueue.EventDispatcher { event ->
+                if (event !is java.awt.event.KeyEvent) return@EventDispatcher false
+                if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return@EventDispatcher false
+                if (!popup.isVisible) return@EventDispatcher false
+                val stroke = javax.swing.KeyStroke.getKeyStrokeForEvent(event)
+                if (stroke !in pasteStrokes) return@EventDispatcher false
 
-        java.awt.Toolkit.getDefaultToolkit()
-            .addAWTEventListener(listener, java.awt.AWTEvent.KEY_EVENT_MASK)
+                popup.cancel()
+                com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+                    val editor = promptTextArea.editor ?: return@runWriteCommandAction
+                    val offset = editor.caretModel.offset
+                    editor.document.insertString(offset, text)
+                    editor.caretModel.moveToOffset(offset + text.length)
+                }
+                true
+            },
+            disposable
+        )
 
         popup.addListener(object : com.intellij.openapi.ui.popup.JBPopupListener {
             override fun onClosed(event: com.intellij.openapi.ui.popup.LightweightWindowEvent) {
-                java.awt.Toolkit.getDefaultToolkit().removeAWTEventListener(listener)
+                com.intellij.openapi.util.Disposer.dispose(disposable)
             }
         })
     }
