@@ -62,9 +62,13 @@ public final class AgentProfile {
     private boolean excludeAgentBuiltInTools;
     private PermissionInjectionMethod permissionInjectionMethod = PermissionInjectionMethod.NONE;
 
-    private boolean ensureCopilotInstructions;
+    /**
+     * Relative path (from project root) to the agent-instructions file that plugin context
+     * should be prepended to on launch (e.g. {@code ".copilot/copilot-instructions.md"} or
+     * {@code "CLAUDE.md"}). Empty/null means skip file injection (rely on MCP instructions field).
+     */
+    private String prependInstructionsTo;
     private boolean ensureCopilotAgents;
-    private boolean ensureClaudeInstructions;
 
     public AgentProfile() {
         this.id = UUID.randomUUID().toString();
@@ -111,9 +115,8 @@ public final class AgentProfile {
         copy.usePluginPermissions = usePluginPermissions;
         copy.excludeAgentBuiltInTools = excludeAgentBuiltInTools;
         copy.permissionInjectionMethod = permissionInjectionMethod;
-        copy.ensureCopilotInstructions = ensureCopilotInstructions;
+        copy.prependInstructionsTo = prependInstructionsTo;
         copy.ensureCopilotAgents = ensureCopilotAgents;
-        copy.ensureClaudeInstructions = ensureClaudeInstructions;
         return copy;
     }
 
@@ -139,9 +142,8 @@ public final class AgentProfile {
         this.usePluginPermissions = other.usePluginPermissions;
         this.excludeAgentBuiltInTools = other.excludeAgentBuiltInTools;
         this.permissionInjectionMethod = other.permissionInjectionMethod;
-        this.ensureCopilotInstructions = other.ensureCopilotInstructions;
+        this.prependInstructionsTo = other.prependInstructionsTo;
         this.ensureCopilotAgents = other.ensureCopilotAgents;
-        this.ensureClaudeInstructions = other.ensureClaudeInstructions;
     }
 
     // ── Getters / Setters ────────────────────────────────────────────────────
@@ -319,12 +321,13 @@ public final class AgentProfile {
         this.permissionInjectionMethod = permissionInjectionMethod;
     }
 
-    public boolean isEnsureCopilotInstructions() {
-        return ensureCopilotInstructions;
+    @Nullable
+    public String getPrependInstructionsTo() {
+        return prependInstructionsTo;
     }
 
-    public void setEnsureCopilotInstructions(boolean ensureCopilotInstructions) {
-        this.ensureCopilotInstructions = ensureCopilotInstructions;
+    public void setPrependInstructionsTo(@Nullable String prependInstructionsTo) {
+        this.prependInstructionsTo = prependInstructionsTo;
     }
 
     public boolean isEnsureCopilotAgents() {
@@ -333,14 +336,6 @@ public final class AgentProfile {
 
     public void setEnsureCopilotAgents(boolean ensureCopilotAgents) {
         this.ensureCopilotAgents = ensureCopilotAgents;
-    }
-
-    public boolean isEnsureClaudeInstructions() {
-        return ensureClaudeInstructions;
-    }
-
-    public void setEnsureClaudeInstructions(boolean ensureClaudeInstructions) {
-        this.ensureClaudeInstructions = ensureClaudeInstructions;
     }
 
     /**

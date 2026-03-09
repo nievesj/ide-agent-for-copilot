@@ -211,8 +211,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             new AgentMode("agent", "Agent"),
             new AgentMode("plan", "Plan")
         ));
-        p.setEnsureCopilotInstructions(true);
         p.setEnsureCopilotAgents(true);
+        p.setPrependInstructionsTo(".copilot/copilot-instructions.md");
         p.setPermissionInjectionMethod(PermissionInjectionMethod.CLI_FLAGS);
         return p;
     }
@@ -274,9 +274,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         public boolean requiresResourceDuplication;
         public String modelUsageField = "";
         public String supportedModes = "";
-        public boolean ensureCopilotInstructions;
         public boolean ensureCopilotAgents;
-        public boolean ensureClaudeInstructions;
+        public String prependInstructionsTo = "";
         public boolean usePluginPermissions = true;
         public boolean excludeAgentBuiltInTools;
         public String permissionInjectionMethod = "NONE";
@@ -301,9 +300,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             e.requiresResourceDuplication = p.isRequiresResourceDuplication();
             e.modelUsageField = p.getModelUsageField() != null ? p.getModelUsageField() : "";
             e.supportedModes = serializeModes(p.getSupportedModes());
-            e.ensureCopilotInstructions = p.isEnsureCopilotInstructions();
             e.ensureCopilotAgents = p.isEnsureCopilotAgents();
-            e.ensureClaudeInstructions = p.isEnsureClaudeInstructions();
+            e.prependInstructionsTo = p.getPrependInstructionsTo() != null ? p.getPrependInstructionsTo() : "";
             e.usePluginPermissions = p.isUsePluginPermissions();
             e.excludeAgentBuiltInTools = p.isExcludeAgentBuiltInTools();
             e.permissionInjectionMethod = p.getPermissionInjectionMethod().name();
@@ -334,9 +332,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             p.setRequiresResourceDuplication(requiresResourceDuplication);
             p.setModelUsageField(modelUsageField);
             p.setSupportedModes(deserializeModes(supportedModes));
-            p.setEnsureCopilotInstructions(ensureCopilotInstructions);
             p.setEnsureCopilotAgents(ensureCopilotAgents);
-            p.setEnsureClaudeInstructions(ensureClaudeInstructions);
+            p.setPrependInstructionsTo(prependInstructionsTo.isEmpty() ? null : prependInstructionsTo);
             p.setUsePluginPermissions(usePluginPermissions);
             p.setExcludeAgentBuiltInTools(excludeAgentBuiltInTools);
             try {

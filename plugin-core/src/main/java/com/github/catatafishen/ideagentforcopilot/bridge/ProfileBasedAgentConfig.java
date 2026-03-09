@@ -53,14 +53,12 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
 
     @Override
     public void prepareForLaunch(@Nullable String projectBasePath) {
-        if (profile.isEnsureCopilotInstructions()) {
-            CopilotInstructionsManager.ensureInstructions(projectBasePath);
+        String prependTarget = profile.getPrependInstructionsTo();
+        if (prependTarget != null && !prependTarget.isEmpty()) {
+            InstructionsManager.ensureInstructions(projectBasePath, prependTarget);
         }
         if (profile.isEnsureCopilotAgents()) {
             CopilotAgentsManager.ensureAgents(projectBasePath);
-        }
-        if (profile.isEnsureClaudeInstructions()) {
-            ClaudeInstructionsManager.ensureInstructions(projectBasePath);
         }
     }
 

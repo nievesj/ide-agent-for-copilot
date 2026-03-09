@@ -54,9 +54,8 @@ public final class AgentProfilesConfigurable implements Configurable {
     private JBCheckBox requiresResourceDuplicationCb;
     private JBTextField modelUsageFieldField;
     private JBTextField supportedModesField;
-    private JBCheckBox ensureCopilotInstructionsCb;
+    private JBTextField prependInstructionsToField;
     private JBCheckBox ensureCopilotAgentsCb;
-    private JBCheckBox ensureClaudeInstructionsCb;
     private JBCheckBox usePluginPermissionsCb;
     private JBCheckBox excludeAgentBuiltInToolsCb;
 
@@ -160,9 +159,9 @@ public final class AgentProfilesConfigurable implements Configurable {
         modelUsageFieldField = new JBTextField();
         supportedModesField = new JBTextField();
 
-        ensureCopilotInstructionsCb = new JBCheckBox("Ensure Copilot instruction files on launch");
+        prependInstructionsToField = new JBTextField();
+
         ensureCopilotAgentsCb = new JBCheckBox("Ensure Copilot agents config on launch");
-        ensureClaudeInstructionsCb = new JBCheckBox("Ensure Claude instruction files on launch");
 
         var usePluginPermissionsCb = new JBCheckBox("Use plugin-level tool permissions");
         this.usePluginPermissionsCb = usePluginPermissionsCb;
@@ -218,9 +217,9 @@ public final class AgentProfilesConfigurable implements Configurable {
             .addTooltip("Send excludedTools in session/new to remove the agent's built-in tools (view, edit, bash, etc.). Only works with agents that honour this parameter (e.g., OpenCode). Copilot CLI ignores it.")
             .addSeparator()
             .addComponent(new JBLabel("<html><b>Pre-launch Hooks</b></html>"))
-            .addComponent(ensureCopilotInstructionsCb)
+            .addLabeledComponent("Prepend instructions to (relative path):", prependInstructionsToField)
+            .addTooltip("Relative path from project root to prepend plugin context to on launch (e.g. \".copilot/copilot-instructions.md\" or \"CLAUDE.md\"). Leave empty to skip file injection.")
             .addComponent(ensureCopilotAgentsCb)
-            .addComponent(ensureClaudeInstructionsCb)
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
 
@@ -334,9 +333,8 @@ public final class AgentProfilesConfigurable implements Configurable {
             requiresResourceDuplicationCb.setSelected(p.isRequiresResourceDuplication());
             modelUsageFieldField.setText(p.getModelUsageField() != null ? p.getModelUsageField() : "");
             supportedModesField.setText(serializeModes(p.getSupportedModes()));
-            ensureCopilotInstructionsCb.setSelected(p.isEnsureCopilotInstructions());
+            prependInstructionsToField.setText(p.getPrependInstructionsTo() != null ? p.getPrependInstructionsTo() : "");
             ensureCopilotAgentsCb.setSelected(p.isEnsureCopilotAgents());
-            ensureClaudeInstructionsCb.setSelected(p.isEnsureClaudeInstructions());
             usePluginPermissionsCb.setSelected(p.isUsePluginPermissions());
             excludeAgentBuiltInToolsCb.setSelected(p.isExcludeAgentBuiltInTools());
         } finally {
@@ -363,9 +361,9 @@ public final class AgentProfilesConfigurable implements Configurable {
         String modelField = modelUsageFieldField.getText().trim();
         p.setModelUsageField(modelField.isEmpty() ? null : modelField);
         p.setSupportedModes(deserializeModes(supportedModesField.getText()));
-        p.setEnsureCopilotInstructions(ensureCopilotInstructionsCb.isSelected());
+        String prependTarget = prependInstructionsToField.getText().trim();
+        p.setPrependInstructionsTo(prependTarget.isEmpty() ? null : prependTarget);
         p.setEnsureCopilotAgents(ensureCopilotAgentsCb.isSelected());
-        p.setEnsureClaudeInstructions(ensureClaudeInstructionsCb.isSelected());
         p.setUsePluginPermissions(usePluginPermissionsCb.isSelected());
         p.setExcludeAgentBuiltInTools(excludeAgentBuiltInToolsCb.isSelected());
 
@@ -462,9 +460,8 @@ public final class AgentProfilesConfigurable implements Configurable {
             && a.isRequiresResourceDuplication() == b.isRequiresResourceDuplication()
             && java.util.Objects.equals(a.getModelUsageField(), b.getModelUsageField())
             && a.getSupportedModes().equals(b.getSupportedModes())
-            && a.isEnsureCopilotInstructions() == b.isEnsureCopilotInstructions()
+            && java.util.Objects.equals(a.getPrependInstructionsTo(), b.getPrependInstructionsTo())
             && a.isEnsureCopilotAgents() == b.isEnsureCopilotAgents()
-            && a.isEnsureClaudeInstructions() == b.isEnsureClaudeInstructions()
             && a.isUsePluginPermissions() == b.isUsePluginPermissions()
             && a.isExcludeAgentBuiltInTools() == b.isExcludeAgentBuiltInTools();
     }
