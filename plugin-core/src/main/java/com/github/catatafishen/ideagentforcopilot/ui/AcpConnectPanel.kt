@@ -41,7 +41,7 @@ class AcpConnectPanel(
         isVisible = false
         toolTipText = "Working…"
     }
-    private val mcpDropdownButton = JButton(AllIcons.General.ArrowDown)
+    private val mcpAutoStartCheckbox = JCheckBox("Auto-start on IDE open")
     private val mcpStatusLabel = JBLabel("Stopped")
     private val mcpUrlCopyButton = JButton(AllIcons.Actions.Copy).apply {
         toolTipText = "Copy MCP URL"
@@ -73,7 +73,7 @@ class AcpConnectPanel(
     private var acpSection: JComponent = JBPanel<JBPanel<*>>()
     private val profileCombo = ComboBox<AgentProfile>()
     private val connectButton = JButton("Connect")
-    private val connectDropdownButton = JButton(AllIcons.General.ArrowDown)
+    private val acpAutoConnectCheckbox = JCheckBox("Auto-connect on startup")
     private val acpHintLabel = JBLabel("Start the tool server above first").apply {
         foreground = JBUI.CurrentTheme.ContextHelp.FOREGROUND
         font = JBUI.Fonts.smallFont()
@@ -146,8 +146,20 @@ class AcpConnectPanel(
         section.add(createStatusPill())
         section.add(Box.createVerticalStrut(JBUI.scale(14)))
 
-        // Start/Stop split button
-        section.add(createMcpSplitButton())
+        // Start/Stop button
+        section.add(createMcpButton())
+        section.add(Box.createVerticalStrut(JBUI.scale(6)))
+
+        // Auto-start option
+        mcpAutoStartCheckbox.apply {
+            isOpaque = false
+            font = JBUI.Fonts.smallFont()
+            foreground = JBUI.CurrentTheme.ContextHelp.FOREGROUND
+            alignmentX = LEFT_ALIGNMENT
+            isSelected = McpServerSettings.getInstance(project).isAutoStart
+            addActionListener { McpServerSettings.getInstance(project).isAutoStart = isSelected }
+        }
+        section.add(mcpAutoStartCheckbox)
 
         return section
     }
@@ -191,7 +203,7 @@ class AcpConnectPanel(
         return pill
     }
 
-    private fun createMcpSplitButton(): JComponent {
+    private fun createMcpButton(): JComponent {
         val panel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             isOpaque = false
             alignmentX = LEFT_ALIGNMENT
@@ -205,11 +217,7 @@ class AcpConnectPanel(
         val eastPanel = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.LEFT, 2, 0)).apply {
             isOpaque = false
             add(mcpSpinner)
-            add(mcpDropdownButton)
         }
-        mcpDropdownButton.preferredSize = JBUI.size(28, 28)
-        mcpDropdownButton.isFocusable = false
-        mcpDropdownButton.addActionListener { showMcpDropdown() }
         panel.add(eastPanel, BorderLayout.EAST)
 
         return panel
@@ -240,7 +248,19 @@ class AcpConnectPanel(
         section.add(Box.createVerticalStrut(JBUI.scale(12)))
 
         // Connect split button
-        section.add(createAcpSplitButton())
+        section.add(createAcpButton())
+        section.add(Box.createVerticalStrut(JBUI.scale(6)))
+
+        // Auto-connect option
+        acpAutoConnectCheckbox.apply {
+            isOpaque = false
+            font = JBUI.Fonts.smallFont()
+            foreground = JBUI.CurrentTheme.ContextHelp.FOREGROUND
+            alignmentX = LEFT_ALIGNMENT
+            isSelected = agentManager.isAutoConnect
+            addActionListener { agentManager.isAutoConnect = isSelected }
+        }
+        section.add(acpAutoConnectCheckbox)
         section.add(Box.createVerticalStrut(JBUI.scale(8)))
 
         // Status banner
@@ -250,7 +270,7 @@ class AcpConnectPanel(
         return section
     }
 
-    private fun createAcpSplitButton(): JComponent {
+    private fun createAcpButton(): JComponent {
         val panel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             isOpaque = false
             alignmentX = LEFT_ALIGNMENT
@@ -261,21 +281,10 @@ class AcpConnectPanel(
         connectButton.addActionListener { doConnect() }
         panel.add(connectButton, BorderLayout.CENTER)
 
-        connectDropdownButton.preferredSize = JBUI.size(28, 28)
-        connectDropdownButton.isFocusable = false
-        connectDropdownButton.addActionListener { showAcpDropdown() }
-        panel.add(connectDropdownButton, BorderLayout.EAST)
-
         return panel
     }
 
     private fun createProfileSelector(): JComponent {
-        val panel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
-            isOpaque = false
-            alignmentX = LEFT_ALIGNMENT
-            maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
-        }
-
         refreshProfileCombo()
         profileCombo.renderer = object : DefaultListCellRenderer() {
             override fun getListCellRendererComponent(
@@ -286,13 +295,9 @@ class AcpConnectPanel(
                 return this
             }
         }
-
-        panel.add(JBLabel("Agent:").apply {
-            border = JBUI.Borders.emptyRight(8)
-        }, BorderLayout.WEST)
-        panel.add(profileCombo, BorderLayout.CENTER)
-
-        return panel
+        profileCombo.alignmentX = LEFT_ALIGNMENT
+        profileCombo.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
+        return profileCombo
     }
 
     private fun refreshProfileCombo() {
@@ -320,7 +325,7 @@ class AcpConnectPanel(
         panel.add(JBLabel("\u2460\u2461"[step - 1].toString() + "  " + title).apply {
             font = JBUI.Fonts.label(16f).asBold()
             alignmentX = LEFT_ALIGNMENT
-            border = JBUI.Borders.empty(4, 0)
+            border = JBUI.Borders.empty(12, 0, 4, 0)
         })
         panel.add(Box.createVerticalStrut(JBUI.scale(4)))
         panel.add(JBLabel(description).apply {
@@ -330,37 +335,6 @@ class AcpConnectPanel(
         })
 
         return panel
-    }
-
-    // ── Dropdown popups ──
-
-    private fun showMcpDropdown() {
-        val mcpSettings = McpServerSettings.getInstance(project)
-        val checkbox = JCheckBox("Auto-start on IDE open").apply {
-            isSelected = mcpSettings.isAutoStart
-            border = JBUI.Borders.empty(6, 10)
-            addActionListener { mcpSettings.isAutoStart = isSelected }
-        }
-        JBPopupFactory.getInstance()
-            .createComponentPopupBuilder(checkbox, checkbox)
-            .setFocusable(true)
-            .setRequestFocus(true)
-            .createPopup()
-            .showUnderneathOf(mcpDropdownButton)
-    }
-
-    private fun showAcpDropdown() {
-        val checkbox = JCheckBox("Auto-connect on startup").apply {
-            isSelected = agentManager.isAutoConnect
-            border = JBUI.Borders.empty(6, 10)
-            addActionListener { agentManager.isAutoConnect = isSelected }
-        }
-        JBPopupFactory.getInstance()
-            .createComponentPopupBuilder(checkbox, checkbox)
-            .setFocusable(true)
-            .setRequestFocus(true)
-            .createPopup()
-            .showUnderneathOf(connectDropdownButton)
     }
 
     // ── MCP state management ──
@@ -452,7 +426,6 @@ class AcpConnectPanel(
         mcpStartButton.isEnabled = false
         mcpStartButton.text = if (stopping) "Stopping…" else "Starting…"
         mcpStartButton.icon = null
-        mcpDropdownButton.isEnabled = false
         mcpSpinner.isVisible = true
         mcpSpinner.resume()
 
@@ -470,7 +443,6 @@ class AcpConnectPanel(
                 SwingUtilities.invokeLater {
                     mcpSpinner.suspend()
                     mcpSpinner.isVisible = false
-                    mcpDropdownButton.isEnabled = true
                     refreshMcpState()
                 }
             }

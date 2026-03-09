@@ -1322,6 +1322,10 @@ class AgenticCopilotToolWindowContent(
                         selectedModelIndex = index
                         agentManager.settings.setSelectedModel(model.id)
                         LOG.info("Model selected: ${model.id} (index=$index)")
+                        SwingUtilities.invokeLater {
+                            consolePanel.setCurrentModel(model.id)
+                            consolePanel.setPromptStats(model.id, getModelMultiplier(model.id))
+                        }
                         ApplicationManager.getApplication().executeOnPooledThread {
                             try {
                                 val client = agentManager.client
