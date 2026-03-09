@@ -115,4 +115,13 @@ public interface AgentConfig {
     default boolean shouldExcludeBuiltInTools() {
         return false;
     }
+
+    /**
+     * Returns the permission injection method for this agent.
+     * Controls how per-tool ALLOW/ASK/DENY settings are communicated to the agent process.
+     */
+    @NotNull
+    default com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod getPermissionInjectionMethod() {
+        return com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod.NONE;
+    }
 }

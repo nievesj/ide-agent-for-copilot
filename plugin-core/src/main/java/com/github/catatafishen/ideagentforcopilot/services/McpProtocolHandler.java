@@ -88,6 +88,7 @@ public final class McpProtocolHandler {
             tool.addProperty("name", entry.id);
             tool.addProperty("description", entry.description);
             tool.add("inputSchema", ToolSchemas.getInputSchema(entry.id));
+            tool.add("annotations", ToolRegistry.getMcpAnnotations(entry.id));
             tools.add(tool);
         }
 
@@ -110,7 +111,7 @@ public final class McpProtocolHandler {
         }
 
         JsonObject arguments = params.has("arguments")
-                ? params.getAsJsonObject("arguments") : new JsonObject();
+            ? params.getAsJsonObject("arguments") : new JsonObject();
 
         LOG.info("MCP tool call: " + toolName);
 
@@ -160,8 +161,8 @@ public final class McpProtocolHandler {
 
     private static JsonObject respondError(JsonObject request, int code, String message) {
         return makeErrorResponse(
-                request != null && request.has("id") ? request.get("id") : null,
-                code, message
+            request != null && request.has("id") ? request.get("id") : null,
+            code, message
         );
     }
 

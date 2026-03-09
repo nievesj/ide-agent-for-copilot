@@ -157,6 +157,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         stored.setRequiresResourceDuplication(defaults.isRequiresResourceDuplication());
         stored.setExcludeAgentBuiltInTools(defaults.isExcludeAgentBuiltInTools());
         stored.setUsePluginPermissions(defaults.isUsePluginPermissions());
+        stored.setPermissionInjectionMethod(defaults.getPermissionInjectionMethod());
     }
 
     @Nullable
@@ -212,6 +213,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         ));
         p.setEnsureCopilotInstructions(true);
         p.setEnsureCopilotAgents(true);
+        p.setPermissionInjectionMethod(PermissionInjectionMethod.CLI_FLAGS);
         return p;
     }
 
@@ -237,6 +239,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setRequiresResourceDuplication(false);
         p.setExcludeAgentBuiltInTools(true);
         p.setUsePluginPermissions(false);
+        p.setPermissionInjectionMethod(PermissionInjectionMethod.CONFIG_JSON);
         return p;
     }
 
@@ -276,6 +279,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         public boolean ensureClaudeInstructions;
         public boolean usePluginPermissions = true;
         public boolean excludeAgentBuiltInTools;
+        public String permissionInjectionMethod = "NONE";
 
         @NotNull
         static ProfileEntry fromProfile(@NotNull AgentProfile p) {
@@ -302,6 +306,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             e.ensureClaudeInstructions = p.isEnsureClaudeInstructions();
             e.usePluginPermissions = p.isUsePluginPermissions();
             e.excludeAgentBuiltInTools = p.isExcludeAgentBuiltInTools();
+            e.permissionInjectionMethod = p.getPermissionInjectionMethod().name();
             return e;
         }
 
@@ -334,6 +339,11 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             p.setEnsureClaudeInstructions(ensureClaudeInstructions);
             p.setUsePluginPermissions(usePluginPermissions);
             p.setExcludeAgentBuiltInTools(excludeAgentBuiltInTools);
+            try {
+                p.setPermissionInjectionMethod(PermissionInjectionMethod.valueOf(permissionInjectionMethod));
+            } catch (IllegalArgumentException e) {
+                p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
+            }
             return p;
         }
 

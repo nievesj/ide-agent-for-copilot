@@ -60,6 +60,7 @@ public final class AgentProfile {
 
     private boolean usePluginPermissions = true;
     private boolean excludeAgentBuiltInTools;
+    private PermissionInjectionMethod permissionInjectionMethod = PermissionInjectionMethod.NONE;
 
     private boolean ensureCopilotInstructions;
     private boolean ensureCopilotAgents;
@@ -109,6 +110,7 @@ public final class AgentProfile {
         copy.supportedModes = new ArrayList<>(supportedModes);
         copy.usePluginPermissions = usePluginPermissions;
         copy.excludeAgentBuiltInTools = excludeAgentBuiltInTools;
+        copy.permissionInjectionMethod = permissionInjectionMethod;
         copy.ensureCopilotInstructions = ensureCopilotInstructions;
         copy.ensureCopilotAgents = ensureCopilotAgents;
         copy.ensureClaudeInstructions = ensureClaudeInstructions;
@@ -136,6 +138,7 @@ public final class AgentProfile {
         this.supportedModes = new ArrayList<>(other.supportedModes);
         this.usePluginPermissions = other.usePluginPermissions;
         this.excludeAgentBuiltInTools = other.excludeAgentBuiltInTools;
+        this.permissionInjectionMethod = other.permissionInjectionMethod;
         this.ensureCopilotInstructions = other.ensureCopilotInstructions;
         this.ensureCopilotAgents = other.ensureCopilotAgents;
         this.ensureClaudeInstructions = other.ensureClaudeInstructions;
@@ -305,6 +308,15 @@ public final class AgentProfile {
 
     public void setExcludeAgentBuiltInTools(boolean excludeAgentBuiltInTools) {
         this.excludeAgentBuiltInTools = excludeAgentBuiltInTools;
+    }
+
+    @NotNull
+    public PermissionInjectionMethod getPermissionInjectionMethod() {
+        return permissionInjectionMethod;
+    }
+
+    public void setPermissionInjectionMethod(@NotNull PermissionInjectionMethod permissionInjectionMethod) {
+        this.permissionInjectionMethod = permissionInjectionMethod;
     }
 
     public boolean isEnsureCopilotInstructions() {

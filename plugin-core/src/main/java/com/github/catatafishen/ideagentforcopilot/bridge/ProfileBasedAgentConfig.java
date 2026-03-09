@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.bridge;
 
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
+import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -132,6 +133,11 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
             addMcpConfigFlag(cmd, mcpPort);
         }
 
+        // Permission injection via CLI flags (e.g., Copilot CLI --allow-tool / --deny-tool)
+        if (profile.getPermissionInjectionMethod() == PermissionInjectionMethod.CLI_FLAGS) {
+            addPermissionCliFlags(cmd);
+        }
+
         ProcessBuilder pb = new ProcessBuilder(cmd);
 
         // MCP injection via environment variable
@@ -140,6 +146,10 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
             if (!envVarName.isEmpty()) {
                 String resolved = resolveMcpTemplate(mcpPort);
                 if (resolved != null) {
+                    // For CONFIG_JSON permission injection, merge permissions into the JSON
+                    if (profile.getPermissionInjectionMethod() == PermissionInjectionMethod.CONFIG_JSON) {
+                        resolved = mergePermissionsIntoConfig(resolved);
+                    }
                     pb.environment().put(envVarName, resolved);
                     LOG.info(profile.getDisplayName() + " MCP config injected via env var " + envVarName);
                 }
@@ -186,6 +196,11 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     @Override
     public boolean shouldExcludeBuiltInTools() {
         return profile.isExcludeAgentBuiltInTools();
+    }
+
+    @Override
+    public @NotNull PermissionInjectionMethod getPermissionInjectionMethod() {
+        return profile.getPermissionInjectionMethod();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -311,6 +326,71 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         } catch (IOException e) {
             LOG.warn("Failed to write MCP config file", e);
         }
+    }
+
+    /**
+     * Adds {@code --allow-tool} and {@code --deny-tool} CLI flags based on plugin tool permission settings.
+     * Tools set to ALLOW get {@code --allow-tool}, DENY get {@code --deny-tool}, ASK gets no flag
+     * (the agent's default behavior is to prompt the user).
+     */
+    private void addPermissionCliFlags(@NotNull List<String> cmd) {
+        var settings = new com.github.catatafishen.ideagentforcopilot.services.GenericSettings(profile.getId());
+        int allowCount = 0;
+        int denyCount = 0;
+        for (var entry : com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getAllTools()) {
+            if (entry.isBuiltIn) continue;
+            var perm = settings.getToolPermission(entry.id);
+            if (perm == com.github.catatafishen.ideagentforcopilot.services.ToolPermission.ALLOW) {
+                cmd.add("--allow-tool");
+                cmd.add(entry.id);
+                allowCount++;
+            } else if (perm == com.github.catatafishen.ideagentforcopilot.services.ToolPermission.DENY) {
+                cmd.add("--deny-tool");
+                cmd.add(entry.id);
+                denyCount++;
+            }
+        }
+        if (allowCount > 0 || denyCount > 0) {
+            LOG.info("Permission CLI flags: " + allowCount + " allowed, " + denyCount + " denied");
+        }
+    }
+
+    /**
+     * Merges a {@code "permission"} block into an existing JSON config string.
+     * Reads per-tool permissions from plugin settings and adds them as
+     * {@code "permission": {"toolId": "allow|ask|deny", ...}}.
+     */
+    @NotNull
+    private String mergePermissionsIntoConfig(@NotNull String configJson) {
+        try {
+            var parsed = com.google.gson.JsonParser.parseString(configJson).getAsJsonObject();
+            var permObj = buildPermissionJsonObject();
+            if (permObj.size() > 0) {
+                parsed.add("permission", permObj);
+                LOG.info("Merged " + permObj.size() + " tool permissions into agent config JSON");
+            }
+            return new com.google.gson.Gson().toJson(parsed);
+        } catch (Exception e) {
+            LOG.warn("Failed to merge permissions into config JSON — using original", e);
+            return configJson;
+        }
+    }
+
+    /**
+     * Builds a JSON object mapping tool IDs to their permission mode (allow/ask/deny).
+     * Only includes non-built-in tools with non-default (non-ALLOW) permissions,
+     * plus any ALLOW entries that were explicitly configured.
+     */
+    @NotNull
+    private com.google.gson.JsonObject buildPermissionJsonObject() {
+        var settings = new com.github.catatafishen.ideagentforcopilot.services.GenericSettings(profile.getId());
+        var permObj = new com.google.gson.JsonObject();
+        for (var entry : com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getAllTools()) {
+            if (entry.isBuiltIn) continue;
+            var perm = settings.getToolPermission(entry.id);
+            permObj.addProperty(entry.id, perm.name().toLowerCase(java.util.Locale.ROOT));
+        }
+        return permObj;
     }
 
     /**

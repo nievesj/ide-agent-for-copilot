@@ -184,6 +184,35 @@ public final class ToolRegistry {
         new ToolEntry("http_request", "HTTP Request", "Make an HTTP request (GET/POST/PUT/PATCH/DELETE) to a URL", Category.OTHER, false, false, false)
     ));
 
+    // Tools that only read data and never modify state
+    private static final java.util.Set<String> READ_ONLY_TOOLS = java.util.Set.of(
+        "intellij_read_file", "open_in_editor", "show_diff", "reload_from_disk",
+        "search_symbols", "search_text", "find_references", "go_to_declaration",
+        "get_file_outline", "get_class_outline", "get_type_hierarchy",
+        "find_implementations", "get_call_hierarchy",
+        "run_inspections", "run_qodana", "run_sonarqube_analysis",
+        "get_problems", "get_highlights", "get_compilation_errors",
+        "get_coverage",
+        "list_run_configurations", "read_run_output", "list_terminals", "read_terminal_output",
+        "git_status", "git_diff", "git_log", "git_show", "git_blame", "get_file_history",
+        "get_project_info", "list_project_files", "get_indexing_status",
+        "get_documentation", "download_sources",
+        "get_active_file", "get_open_editors", "list_themes",
+        "search_conversation_history", "get_notifications", "read_ide_log",
+        "list_scratch_files"
+    );
+
+    // Tools that can permanently delete or irreversibly modify data
+    private static final java.util.Set<String> DESTRUCTIVE_TOOLS = java.util.Set.of(
+        "delete_file", "git_reset", "git_push", "git_rebase"
+    );
+
+    // Tools that interact with systems outside the IDE
+    private static final java.util.Set<String> OPEN_WORLD_TOOLS = java.util.Set.of(
+        "run_command", "run_in_terminal", "write_terminal_input",
+        "http_request", "git_push", "git_pull", "git_fetch"
+    );
+
     private ToolRegistry() {
     }
 
@@ -214,5 +243,23 @@ public final class ToolRegistry {
             if (e.isBuiltIn) ids.add(e.id);
         }
         return ids;
+    }
+
+    /**
+     * Returns MCP tool annotations for a given tool ID.
+     * Annotations follow the MCP 2025-03-26 spec: readOnlyHint, destructiveHint,
+     * idempotentHint, openWorldHint. Agents use these hints to decide permission
+     * behavior (e.g., auto-allow read-only tools, prompt for destructive ones).
+     */
+    public static com.google.gson.JsonObject getMcpAnnotations(@org.jetbrains.annotations.NotNull String toolId) {
+        ToolEntry entry = findById(toolId);
+        com.google.gson.JsonObject ann = new com.google.gson.JsonObject();
+        if (entry != null) {
+            ann.addProperty("title", entry.displayName);
+        }
+        ann.addProperty("readOnlyHint", READ_ONLY_TOOLS.contains(toolId));
+        ann.addProperty("destructiveHint", DESTRUCTIVE_TOOLS.contains(toolId));
+        ann.addProperty("openWorldHint", OPEN_WORLD_TOOLS.contains(toolId));
+        return ann;
     }
 }
