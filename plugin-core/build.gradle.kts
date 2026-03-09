@@ -202,13 +202,13 @@ tasks.register("deployToMainIde") {
         }
         logger.lifecycle("✅ Files deployed to $installDir")
 
-        // Step 2: Try dynamic reload via PSI bridge (best-effort)
-        // The bridge listens on a random port — scan common ranges.
+        // Step 2: Try dynamic reload via PSI bridge (best-effort).
+        // Read port from ~/.copilot/psi-bridge.json first; fall back to port scan.
         logger.lifecycle("🔄 Attempting dynamic reload...")
         var reloaded = false
-        val ports = (36400..36450).toList() + listOf(8642, 8643)
-        for (port in ports) {
-            try {
+
+        fun tryReloadOnPort(port: Int): Boolean {
+            return try {
                 val healthResult = providers.exec {
                     commandLine(
                         "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
@@ -217,29 +217,61 @@ tasks.register("deployToMainIde") {
                     )
                     isIgnoreExitValue = true
                 }
-                if (healthResult.standardOutput.asText.get().trim() == "200") {
-                    val reloadResult = providers.exec {
-                        commandLine(
-                            "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
-                            "-X", "POST", "http://127.0.0.1:$port/reload-plugin",
-                            "-H", "Content-Type: application/json",
-                            "-d", """{"zipPath":"${latestZip.absolutePath}"}""",
-                            "--connect-timeout", "3", "--max-time", "5"
-                        )
-                        isIgnoreExitValue = true
-                    }
-                    if (reloadResult.standardOutput.asText.get().trim() == "200") {
-                        logger.lifecycle("🔄 Reload requested on port $port — if it fails, restart IDE to apply")
+                if (healthResult.standardOutput.asText.get().trim() != "200") return false
+                val reloadResult = providers.exec {
+                    commandLine(
+                        "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+                        "-X", "POST", "http://127.0.0.1:$port/reload-plugin",
+                        "-H", "Content-Type: application/json",
+                        "-d", """{"zipPath":"${latestZip.absolutePath}"}""",
+                        "--connect-timeout", "3", "--max-time", "5"
+                    )
+                    isIgnoreExitValue = true
+                }
+                reloadResult.standardOutput.asText.get().trim() == "200"
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        // Try the known port from the port file first
+        val bridgeFile = File(System.getProperty("user.home"), ".copilot/psi-bridge.json")
+        if (bridgeFile.exists()) {
+            try {
+                @Suppress("UNCHECKED_CAST")
+                val registry = groovy.json.JsonSlurper().parseText(bridgeFile.readText()) as Map<String, Any>
+                val projectKey = project.rootDir.absolutePath
+                // Try exact project match first, then any entry
+                val candidates = listOfNotNull(
+                    (registry[projectKey] as? Map<*, *>)?.get("port"),
+                    registry.values.filterIsInstance<Map<*, *>>().firstOrNull()?.get("port")
+                ).mapNotNull { (it as? Number)?.toInt() }.distinct()
+                for (port in candidates) {
+                    if (tryReloadOnPort(port)) {
+                        logger.lifecycle("🔄 Restart scheduled via port $port — IDE will restart")
                         reloaded = true
                         break
                     }
                 }
-            } catch (_: Exception) {
-                // Port not reachable, try next
+            } catch (e: Exception) {
+                logger.lifecycle("⚠️  Could not read psi-bridge.json: ${e.message}")
             }
         }
+
+        // Fall back to port scan if port file didn't work
         if (!reloaded) {
-            logger.lifecycle("ℹ️  No running PSI bridge found — restart IDE to apply")
+            val ports = (36400..36450).toList() + listOf(8642, 8643)
+            for (port in ports) {
+                if (tryReloadOnPort(port)) {
+                    logger.lifecycle("🔄 Restart scheduled via port $port — IDE will restart")
+                    reloaded = true
+                    break
+                }
+            }
+        }
+
+        if (!reloaded) {
+            logger.lifecycle("ℹ️  No running PSI bridge found — restart IDE manually to apply")
         }
     }
 }

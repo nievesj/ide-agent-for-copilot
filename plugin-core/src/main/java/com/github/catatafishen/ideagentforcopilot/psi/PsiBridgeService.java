@@ -200,6 +200,7 @@ public final class PsiBridgeService implements Disposable {
             httpServer.start();
             port = httpServer.getAddress().getPort();
             LOG.info("PSI Bridge started on port " + port + " for project: " + project.getBasePath());
+            writePortFile(port);
             project.getMessageBus().syncPublisher(STATUS_TOPIC).bridgeStarted(port);
         } catch (Exception e) {
             LOG.error("Failed to start PSI Bridge", e);
@@ -227,6 +228,7 @@ public final class PsiBridgeService implements Disposable {
             httpServer = null;
             port = 0;
             LOG.info("PSI Bridge stopped for project: " + project.getBasePath());
+            removePortFile();
             project.getMessageBus().syncPublisher(STATUS_TOPIC).bridgeStarted(0);
         }
     }
@@ -236,6 +238,53 @@ public final class PsiBridgeService implements Disposable {
      */
     public synchronized boolean isRunning() {
         return httpServer != null;
+    }
+
+    /**
+     * Writes {@code ~/.copilot/psi-bridge.json} so the deploy Gradle task can find
+     * the bridge port without guessing. Format: {@code {"<projectPath>": {"port": N}}}.
+     * Entries from other open projects are preserved.
+     */
+    private void writePortFile(int activePort) {
+        String projectPath = project.getBasePath();
+        if (projectPath == null) return;
+        try {
+            Path bridgeFile = Path.of(System.getProperty("user.home"), ".copilot", "psi-bridge.json");
+            Files.createDirectories(bridgeFile.getParent());
+            JsonObject registry = new JsonObject();
+            if (Files.exists(bridgeFile)) {
+                try {
+                    registry = JsonParser.parseString(Files.readString(bridgeFile)).getAsJsonObject();
+                } catch (Exception ignored) {
+                    registry = new JsonObject();
+                }
+            }
+            JsonObject entry = new JsonObject();
+            entry.addProperty("port", activePort);
+            registry.add(projectPath, entry);
+            Files.writeString(bridgeFile, GSON.toJson(registry));
+        } catch (Exception e) {
+            LOG.warn("Could not write psi-bridge.json", e);
+        }
+    }
+
+    /** Removes this project's entry from {@code ~/.copilot/psi-bridge.json}. */
+    private void removePortFile() {
+        String projectPath = project.getBasePath();
+        if (projectPath == null) return;
+        try {
+            Path bridgeFile = Path.of(System.getProperty("user.home"), ".copilot", "psi-bridge.json");
+            if (!Files.exists(bridgeFile)) return;
+            JsonObject registry = JsonParser.parseString(Files.readString(bridgeFile)).getAsJsonObject();
+            registry.remove(projectPath);
+            if (registry.isEmpty()) {
+                Files.deleteIfExists(bridgeFile);
+            } else {
+                Files.writeString(bridgeFile, GSON.toJson(registry));
+            }
+        } catch (Exception e) {
+            LOG.warn("Could not update psi-bridge.json on stop", e);
+        }
     }
 
     private void fireToolCallEvent(String toolName, long startTimeMs, boolean success) {

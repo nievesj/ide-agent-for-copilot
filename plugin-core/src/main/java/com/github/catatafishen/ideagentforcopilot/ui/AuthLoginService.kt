@@ -190,10 +190,6 @@ internal class AuthLoginService(private val project: Project) {
         return ParseResult(code, url)
     }
 
-    /**
-     * Opens a "Copilot Sign In" terminal tab and runs the auth command.
-     * Used as a fallback when inline auth cannot parse the device code.
-     */
     fun startCopilotLogin() {
         val resolvedCommand = resolveAuthCommand().joinToString(" ")
         runAuthInEmbeddedTerminal(project, resolvedCommand, "Copilot Sign In") {

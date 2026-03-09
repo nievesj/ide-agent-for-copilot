@@ -88,26 +88,55 @@ fi
 echo "✅ Files deployed"
 
 # Step 5: Try dynamic reload via PSI bridge (best-effort)
-# The bridge listens on a random port — scan common ranges.
+# Read port from ~/.copilot/psi-bridge.json first; fall back to port scan.
 echo "🔄 Attempting dynamic reload..."
 RELOADED=false
-for PORT in $(seq 36400 36450) 8642 8643; do
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-        "http://127.0.0.1:$PORT/health" \
+
+try_reload_on_port() {
+    local port="$1"
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+        "http://127.0.0.1:$port/health" \
         --connect-timeout 0.3 --max-time 1 2>/dev/null || echo "000")
-    if [[ "$HTTP_CODE" == "200" ]]; then
-        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST "http://127.0.0.1:$PORT/reload-plugin" \
-            -H "Content-Type: application/json" \
-            -d "{\"zipPath\":\"$LATEST_ZIP_ABS\"}" \
-            --connect-timeout 3 --max-time 5 2>/dev/null || echo "000")
-        if [[ "$HTTP_CODE" == "200" ]]; then
-            echo "🔄 Reload requested on port $PORT — if it fails, restart IDE to apply"
+    if [[ "$http_code" != "200" ]]; then return 1; fi
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+        -X POST "http://127.0.0.1:$port/reload-plugin" \
+        -H "Content-Type: application/json" \
+        -d "{\"zipPath\":\"$LATEST_ZIP_ABS\"}" \
+        --connect-timeout 3 --max-time 5 2>/dev/null || echo "000")
+    [[ "$http_code" == "200" ]]
+}
+
+# Try port file first
+BRIDGE_FILE="$HOME/.copilot/psi-bridge.json"
+if [[ -f "$BRIDGE_FILE" ]] && command -v python3 &>/dev/null; then
+    KNOWN_PORT=$(python3 -c "
+import json, sys
+with open('$BRIDGE_FILE') as f:
+    reg = json.load(f)
+# Try exact project path, then first entry
+key = '$(pwd)'
+entry = reg.get(key) or next(iter(reg.values()), None)
+if entry and 'port' in entry:
+    print(entry['port'])
+" 2>/dev/null || echo "")
+    if [[ -n "$KNOWN_PORT" ]] && try_reload_on_port "$KNOWN_PORT"; then
+        echo "🔄 Restart scheduled via port $KNOWN_PORT — IDE will restart"
+        RELOADED=true
+    fi
+fi
+
+# Fall back to port scan
+if [[ "$RELOADED" != "true" ]]; then
+    for PORT in $(seq 36400 36450) 8642 8643; do
+        if try_reload_on_port "$PORT"; then
+            echo "🔄 Restart scheduled via port $PORT — IDE will restart"
             RELOADED=true
             break
         fi
-    fi
-done
+    done
+fi
+
 if [[ "$RELOADED" != "true" ]]; then
-    echo "ℹ️  No running PSI bridge found — restart IDE to apply"
+    echo "ℹ️  No running PSI bridge found — restart IDE manually to apply"
 fi
