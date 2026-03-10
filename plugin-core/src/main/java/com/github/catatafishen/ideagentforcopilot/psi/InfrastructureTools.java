@@ -265,8 +265,11 @@ class InfrastructureTools extends AbstractToolHandler {
 
             String text = textRef.get();
             if (text == null || text.isEmpty()) {
+                var consoleClass = target.getExecutionConsole() != null
+                    ? target.getExecutionConsole().getClass().getName() : "null";
                 return "Tab '" + target.getDisplayName()
-                    + "' has no text content (console may still be loading or is an unsupported type).";
+                    + "' has no text content (console type: " + consoleClass
+                    + "). The run may still be in progress or the console type is unsupported.";
             }
             return formatRunOutput(target.getDisplayName(), text, maxChars);
         } catch (Exception e) {
@@ -278,10 +281,14 @@ class InfrastructureTools extends AbstractToolHandler {
      * Flush deferred console output and extract text. Must be called on EDT.
      */
     private String readConsoleTextOnEdt(com.intellij.execution.ui.ExecutionConsole console) {
+        LOG.info("readConsoleTextOnEdt: raw console type = " + console.getClass().getName());
         // Unwrap delegate wrappers (e.g. JavaConsoleWithProfilerWidget in Ultimate)
         var unwrapped = unwrapConsoleDelegate(console);
+        LOG.info("readConsoleTextOnEdt: unwrapped console type = " + unwrapped.getClass().getName());
         flushConsoleOutput(unwrapped);
-        return extractConsoleText(unwrapped);
+        String result = extractConsoleText(unwrapped);
+        LOG.info("readConsoleTextOnEdt: extracted text length = " + (result == null ? "null" : result.length()));
+        return result;
     }
 
     /**
@@ -386,9 +393,11 @@ class InfrastructureTools extends AbstractToolHandler {
 
     private String extractTestRunnerResults(Object viewer,
                                             com.intellij.execution.ui.ExecutionConsole console) throws Exception {
+        LOG.info("extractTestRunnerResults: viewer type = " + viewer.getClass().getName());
         StringBuilder testOutput = new StringBuilder();
         var getAllTests = viewer.getClass().getMethod("getAllTests");
         var tests = (java.util.List<?>) getAllTests.invoke(viewer);
+        LOG.info("extractTestRunnerResults: getAllTests count = " + (tests == null ? "null" : tests.size()));
         if (tests != null && !tests.isEmpty()) {
             testOutput.append("=== Test Results ===\n");
             for (var test : tests) {
