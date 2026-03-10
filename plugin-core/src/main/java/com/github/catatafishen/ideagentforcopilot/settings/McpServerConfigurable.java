@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.options.Configurable;
@@ -34,6 +35,7 @@ public final class McpServerConfigurable implements Configurable {
     private JSpinner portSpinner;
     private ComboBox<TransportMode> transportModeCombo;
     private JBCheckBox autoStartCheckbox;
+    private JBCheckBox followModeCheckbox;
     private JPanel mainPanel;
 
     public McpServerConfigurable(@NotNull Project project) {
@@ -61,6 +63,13 @@ public final class McpServerConfigurable implements Configurable {
         autoStartCheckbox = new JBCheckBox("Start MCP server automatically when project opens",
             settings.isAutoStart());
 
+        followModeCheckbox = new JBCheckBox(
+            "Follow Agent \u2014 open files and highlight regions as the agent reads or edits them",
+            ActiveAgentManager.getFollowAgentFiles(project));
+        followModeCheckbox.setToolTipText(
+            "Works independently of the connected agent \u2014 any external agent accessing "
+                + "the MCP server will trigger follow-mode when this is enabled.");
+
         JButton restartButton = new JButton("Restart MCP Server");
         restartButton.setToolTipText("Stop and restart the MCP server to pick up tool registration changes");
         restartButton.addActionListener(e -> restartMcpServer(restartButton));
@@ -85,6 +94,8 @@ public final class McpServerConfigurable implements Configurable {
             .addLabeledComponent("Transport mode:", transportModeCombo)
             .addComponent(autoStartCheckbox)
             .addSeparator()
+            .addComponent(followModeCheckbox)
+            .addSeparator()
             .addComponent(buttonRow)
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
@@ -99,7 +110,8 @@ public final class McpServerConfigurable implements Configurable {
         McpServerSettings settings = McpServerSettings.getInstance(project);
         if ((Integer) portSpinner.getValue() != settings.getPort()) return true;
         if (transportModeCombo.getSelectedItem() != settings.getTransportMode()) return true;
-        return autoStartCheckbox.isSelected() != settings.isAutoStart();
+        if (autoStartCheckbox.isSelected() != settings.isAutoStart()) return true;
+        return followModeCheckbox.isSelected() != ActiveAgentManager.getFollowAgentFiles(project);
     }
 
     @Override
@@ -108,6 +120,7 @@ public final class McpServerConfigurable implements Configurable {
         settings.setPort((Integer) portSpinner.getValue());
         settings.setTransportMode((TransportMode) transportModeCombo.getSelectedItem());
         settings.setAutoStart(autoStartCheckbox.isSelected());
+        ActiveAgentManager.setFollowAgentFiles(project, followModeCheckbox.isSelected());
     }
 
     @Override
@@ -116,6 +129,7 @@ public final class McpServerConfigurable implements Configurable {
         portSpinner.setValue(settings.getPort());
         transportModeCombo.setSelectedItem(settings.getTransportMode());
         autoStartCheckbox.setSelected(settings.isAutoStart());
+        followModeCheckbox.setSelected(ActiveAgentManager.getFollowAgentFiles(project));
     }
 
     @Override
@@ -124,6 +138,7 @@ public final class McpServerConfigurable implements Configurable {
         portSpinner = null;
         transportModeCombo = null;
         autoStartCheckbox = null;
+        followModeCheckbox = null;
     }
 
     private void copyMcpConfig(JButton button) {
@@ -185,7 +200,7 @@ public final class McpServerConfigurable implements Configurable {
                         showRestartError(button, "Failed to start: " + ex.getMessage());
                         return;
                     }
-                    ApplicationManager.getApplication().invokeLater(() -> resetRestartButton(button, null));
+                    ApplicationManager.getApplication().invokeLater(() -> resetRestartButton(button));
                 }, 500, TimeUnit.MILLISECONDS);
 
             } catch (ClassNotFoundException ex) {
@@ -193,9 +208,6 @@ public final class McpServerConfigurable implements Configurable {
                     + "Install the 'IDE MCP Server' plugin to use the HTTP server.";
                 LOG.info(msg);
                 showRestartError(button, msg);
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                showRestartError(button, "Restart interrupted.");
             } catch (Exception ex) {
                 LOG.error("Failed to restart MCP server", ex);
                 showRestartError(button, "Failed to restart: " + ex.getMessage());
@@ -205,16 +217,14 @@ public final class McpServerConfigurable implements Configurable {
 
     private void showRestartError(JButton button, String message) {
         ApplicationManager.getApplication().invokeLater(() -> {
-            resetRestartButton(button, null);
+            resetRestartButton(button);
             Messages.showErrorDialog(mainPanel, message, "MCP Server Restart Failed");
         });
     }
 
-    private void resetRestartButton(JButton button, @Nullable String errorMessage) {
+    private void resetRestartButton(JButton button) {
         button.setText("Restart MCP Server");
         button.setEnabled(true);
-        button.setToolTipText(errorMessage != null
-            ? errorMessage
-            : "Stop and restart the MCP server to pick up tool registration changes");
+        button.setToolTipText("Stop and restart the MCP server to pick up tool registration changes");
     }
 }

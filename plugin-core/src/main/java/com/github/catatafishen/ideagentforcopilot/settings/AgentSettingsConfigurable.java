@@ -4,7 +4,6 @@ import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.services.AgentUiSettings;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
-import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
@@ -13,6 +12,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import java.awt.*;
 
 /**
  * Settings page for the currently active agent's configuration.
@@ -25,7 +25,6 @@ public final class AgentSettingsConfigurable implements Configurable {
     private final Project project;
     private JSpinner timeoutSpinner;
     private JSpinner maxToolCallsSpinner;
-    private JBCheckBox followModeCheckbox;
     private JPanel mainPanel;
 
     public AgentSettingsConfigurable(@NotNull Project project) {
@@ -50,22 +49,16 @@ public final class AgentSettingsConfigurable implements Configurable {
         timeoutSpinner.setMaximumSize(spinnerSize);
         maxToolCallsSpinner.setMaximumSize(spinnerSize);
 
-        followModeCheckbox = new JBCheckBox(
-            "Follow Agent \u2014 open files and highlight regions as the agent reads or edits them",
-            ActiveAgentManager.getFollowAgentFiles(project));
-
         mainPanel = FormBuilder.createFormBuilder()
-            .addComponent(new JBLabel("<html>Settings for the <b>" + agentName + "</b> agent. "
-                + "Switch agents by disconnecting and reconnecting from the Connect screen.</html>"))
-            .addSeparator()
-            .addLabeledComponent("Prompt timeout (seconds):", timeoutSpinner)
-            .addTooltip("Time before an inactive agent session is considered timed out (30\u20133600).")
-            .addLabeledComponent("Max tool calls per turn:", maxToolCallsSpinner)
-            .addTooltip("Limit how many tools the agent can call in a single turn. 0 = unlimited.")
-            .addSeparator()
-            .addComponent(followModeCheckbox)
-            .addComponentFillVertically(new JPanel(), 0)
-            .getPanel();
+                .addComponent(new JBLabel("<html>Settings for the <b>" + agentName + "</b> agent. "
+                        + "Switch agents by disconnecting and reconnecting from the Connect screen.</html>"))
+                .addSeparator()
+                .addLabeledComponent("Prompt timeout (seconds):", timeoutSpinner)
+                .addTooltip("Time before an inactive agent session is considered timed out (30\u20133600).")
+                .addLabeledComponent("Max tool calls per turn:", maxToolCallsSpinner)
+                .addTooltip("Limit how many tools the agent can call in a single turn. 0 = unlimited.")
+                .addComponentFillVertically(new JPanel(), 0)
+                .getPanel();
         mainPanel.setBorder(JBUI.Borders.empty(8));
 
         reset();
@@ -76,8 +69,7 @@ public final class AgentSettingsConfigurable implements Configurable {
     public boolean isModified() {
         AgentUiSettings settings = ActiveAgentManager.getInstance(project).getSettings();
         if ((int) timeoutSpinner.getValue() != settings.getPromptTimeout()) return true;
-        if ((int) maxToolCallsSpinner.getValue() != settings.getMaxToolCallsPerTurn()) return true;
-        return followModeCheckbox.isSelected() != ActiveAgentManager.getFollowAgentFiles(project);
+        return (int) maxToolCallsSpinner.getValue() != settings.getMaxToolCallsPerTurn();
     }
 
     @Override
@@ -85,7 +77,6 @@ public final class AgentSettingsConfigurable implements Configurable {
         AgentUiSettings settings = ActiveAgentManager.getInstance(project).getSettings();
         settings.setPromptTimeout((int) timeoutSpinner.getValue());
         settings.setMaxToolCallsPerTurn((int) maxToolCallsSpinner.getValue());
-        ActiveAgentManager.setFollowAgentFiles(project, followModeCheckbox.isSelected());
     }
 
     @Override
@@ -93,7 +84,6 @@ public final class AgentSettingsConfigurable implements Configurable {
         AgentUiSettings settings = ActiveAgentManager.getInstance(project).getSettings();
         timeoutSpinner.setValue(settings.getPromptTimeout());
         maxToolCallsSpinner.setValue(settings.getMaxToolCallsPerTurn());
-        followModeCheckbox.setSelected(ActiveAgentManager.getFollowAgentFiles(project));
     }
 
     @Override
@@ -101,6 +91,5 @@ public final class AgentSettingsConfigurable implements Configurable {
         mainPanel = null;
         timeoutSpinner = null;
         maxToolCallsSpinner = null;
-        followModeCheckbox = null;
     }
 }
