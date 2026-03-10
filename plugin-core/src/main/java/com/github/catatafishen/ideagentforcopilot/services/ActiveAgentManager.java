@@ -75,11 +75,9 @@ public final class ActiveAgentManager implements Disposable {
     @NotNull
     public String getActiveProfileId() {
         String stored = PropertiesComponent.getInstance(project).getValue(KEY_ACTIVE_PROFILE);
-        if (stored != null && !stored.isEmpty()) {
-            // Verify the profile still exists
-            if (AgentProfileManager.getInstance().getProfile(stored) != null) {
-                return stored;
-            }
+        if (stored != null && !stored.isEmpty()
+            && AgentProfileManager.getInstance().getProfile(stored) != null) {
+            return stored;
         }
         return AgentProfileManager.COPILOT_PROFILE_ID;
     }

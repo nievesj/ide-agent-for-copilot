@@ -65,7 +65,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     @Volatile
     private var htmlPageFuture: java.util.concurrent.CompletableFuture<String>? = null
     private val deferredRestoreJson = mutableListOf<com.google.gson.JsonElement>()
-    private val pendingPermissionCallbacks = java.util.concurrent.ConcurrentHashMap<String, (com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse) -> Unit>()
+    private val pendingPermissionCallbacks =
+        java.util.concurrent.ConcurrentHashMap<String, (com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse) -> Unit>()
 
     // Periodic JCEF repaint during streaming to avoid partial-update artifacts
     private val repaintTimer = javax.swing.Timer(150) {
@@ -520,7 +521,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 }
 
                 is EntryData.SessionSeparator -> {
-                    obj.addProperty("type", "separator"); obj.addProperty("timestamp", e.timestamp); obj.addProperty("agent", e.agent)
+                    obj.addProperty("type", "separator"); obj.addProperty(
+                        "timestamp",
+                        e.timestamp
+                    ); obj.addProperty("agent", e.agent)
                 }
             }
             arr.add(obj)
@@ -613,7 +617,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 )
             )
 
-            "separator" -> entries.add(EntryData.SessionSeparator(obj["timestamp"]?.asString ?: "", obj["agent"]?.asString ?: ""))
+            "separator" -> entries.add(
+                EntryData.SessionSeparator(
+                    obj["timestamp"]?.asString ?: "",
+                    obj["agent"]?.asString ?: ""
+                )
+            )
         }
     }
 
@@ -864,7 +873,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                                 afterDetails.append("<div id='$id' class='subagent-indent subagent-c$ci turn-hidden'><message-bubble>$resultHtml</message-bubble></div>")
                             }
 
-                            else -> {}
+                            else -> { /* exhaustive: no action for unknown entry types */
+                            }
                         }
                         i++
                     }
@@ -1268,7 +1278,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     // ── Permission requests ────────────────────────────────────────
 
     override fun showPermissionRequest(
-        reqId: String, toolDisplayName: String, description: String, onRespond: (com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse) -> Unit
+        reqId: String,
+        toolDisplayName: String,
+        description: String,
+        onRespond: (com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse) -> Unit
     ) {
         pendingPermissionCallbacks[reqId] = onRespond
         val safeId = escJs(reqId)

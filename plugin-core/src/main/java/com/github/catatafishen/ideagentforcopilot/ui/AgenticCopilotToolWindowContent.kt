@@ -426,10 +426,6 @@ class AgenticCopilotToolWindowContent(
         )
         banner.isVisible = false
 
-        // Runs check on a pooled thread, then updates the banner on the EDT.
-        // lastDiag is stored so Details\u2026 always shows the freshest result.
-        var lastDiag: String? = null
-
         // Scheduler used for adaptive polling: 5 s while bridge is down, 30 s while healthy.
         // scheduledFuture tracks the next pending check so Recheck can cancel it (avoids duplicate chains).
         val scheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
@@ -443,7 +439,6 @@ class AgenticCopilotToolWindowContent(
                 {
                     val diag = psiBridgeDiagnostics()
                     SwingUtilities.invokeLater {
-                        lastDiag = diag
                         banner.isVisible = diag != null
                     }
                     scheduleNext(diag != null)
@@ -457,7 +452,6 @@ class AgenticCopilotToolWindowContent(
             ApplicationManager.getApplication().executeOnPooledThread {
                 val diag = psiBridgeDiagnostics()
                 SwingUtilities.invokeLater {
-                    lastDiag = diag
                     banner.isVisible = diag != null
                 }
                 scheduleNext(diag != null)
@@ -468,7 +462,6 @@ class AgenticCopilotToolWindowContent(
             ApplicationManager.getApplication().executeOnPooledThread {
                 val diag = psiBridgeDiagnostics()
                 SwingUtilities.invokeLater {
-                    lastDiag = diag
                     banner.isVisible = diag != null
                     com.intellij.openapi.ui.Messages.showMessageDialog(
                         project,
@@ -487,7 +480,6 @@ class AgenticCopilotToolWindowContent(
             {
                 val diag = psiBridgeDiagnostics()
                 SwingUtilities.invokeLater {
-                    lastDiag = diag
                     banner.isVisible = diag != null
                 }
                 scheduleNext(diag != null)
@@ -1195,7 +1187,8 @@ class AgenticCopilotToolWindowContent(
                     e.presentation.isEnabled = false
                 }
 
-                override fun actionPerformed(e: AnActionEvent) {}
+                override fun actionPerformed(e: AnActionEvent) { /* disabled — no-op */
+                }
             })
 
             // Restore default — also disabled for the same reason
@@ -1210,7 +1203,8 @@ class AgenticCopilotToolWindowContent(
                     e.presentation.isEnabled = false
                 }
 
-                override fun actionPerformed(e: AnActionEvent) {}
+                override fun actionPerformed(e: AnActionEvent) { /* disabled — no-op */
+                }
             })
 
             val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
@@ -1272,7 +1266,8 @@ class AgenticCopilotToolWindowContent(
                         e.presentation.isEnabled = false
                     }
 
-                    override fun actionPerformed(e: AnActionEvent) {}
+                    override fun actionPerformed(e: AnActionEvent) { /* disabled — no-op */
+                    }
                 })
             }
         }
@@ -2352,35 +2347,6 @@ class AgenticCopilotToolWindowContent(
         com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).clearSessionAllowedTools()
         addTimelineEvent(EventType.SESSION_START, "New session started (history kept)")
         updateSessionInfo()
-    }
-
-    /**
-     * Switch to a different AI agent. Preserves chat history, shows a session separator
-     * and an auto-dismissing banner to confirm the switch, then reloads available models.
-     */
-    private fun switchToAgent(profileId: String) {
-        val previousName = agentManager.activeProfile.displayName
-        agentManager.switchAgent(profileId)
-        val newProfile = agentManager.activeProfile
-
-        // Archive old conversation before resetting, then keep chat visible
-        archiveConversation()
-        resetSessionKeepingHistory()
-
-        // Visual divider so the user sees where the new agent context starts
-        if (consolePanel.hasContent()) {
-            val ts = java.text.SimpleDateFormat("MMM d, yyyy h:mm a").format(java.util.Date())
-            consolePanel.addSessionSeparator(ts, newProfile.displayName)
-        }
-
-        loadModelsAsync { models ->
-            loadedModels = models
-            restoreModelSelection(models)
-            // Banner after models load so the user knows the switch succeeded
-            statusBanner?.showInfo("Connected to ${newProfile.displayName}")
-        }
-
-        LOG.info("Agent switched from $previousName to ${newProfile.displayName}")
     }
 
     private fun restoreModelSelection(models: List<Model>) {
