@@ -155,6 +155,11 @@ val nvmNodeBin: String? by lazy {
         ?.absolutePath
 }
 
+// Full path to npm from nvm, or bare "npm" if nvm is not available.
+// Using a full path ensures Gradle doesn't resolve the executable from the
+// system PATH before our environment override takes effect.
+val npmCmd: String by lazy { nvmNodeBin?.let { "$it/npm" } ?: "npm" }
+
 fun ExecSpec.withNvmNode() {
     nvmNodeBin?.let { binDir ->
         environment("PATH", "$binDir:${System.getenv("PATH")}")
@@ -169,7 +174,7 @@ val buildChatUi by tasks.registering {
     doLast {
         exec {
             workingDir = file("chat-ui")
-            commandLine("npm", "run", "build")
+            commandLine(npmCmd, "run", "build")
             withNvmNode()
         }
         copy {
@@ -189,7 +194,7 @@ val jsTest by tasks.registering {
     doLast {
         exec {
             workingDir = file("js-tests")
-            commandLine("npm", "test")
+            commandLine(npmCmd, "test")
             withNvmNode()
         }
     }
