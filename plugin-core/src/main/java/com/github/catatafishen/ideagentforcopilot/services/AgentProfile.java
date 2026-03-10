@@ -23,6 +23,8 @@ public final class AgentProfile {
     private String id;
     private String displayName;
     private boolean builtIn;
+    private boolean experimental;
+    private String description;
 
     // ── Binary Discovery ─────────────────────────────────────────────────────
 
@@ -104,6 +106,8 @@ public final class AgentProfile {
         copy.id = UUID.randomUUID().toString();
         copy.displayName = displayName + " (Copy)";
         copy.builtIn = false;
+        copy.experimental = false;
+        copy.description = description;
         copy.binaryName = binaryName;
         copy.alternateNames = new ArrayList<>(alternateNames);
         copy.installHint = installHint;
@@ -137,6 +141,8 @@ public final class AgentProfile {
         copy.id = this.id;
         copy.displayName = this.displayName;
         copy.builtIn = this.builtIn;
+        copy.experimental = this.experimental;
+        copy.description = this.description;
         copy.binaryName = binaryName;
         copy.alternateNames = new ArrayList<>(alternateNames);
         copy.installHint = installHint;
@@ -164,6 +170,8 @@ public final class AgentProfile {
      */
     public void copyFrom(@NotNull AgentProfile other) {
         this.displayName = other.displayName;
+        this.experimental = other.experimental;
+        this.description = other.description;
         this.binaryName = other.binaryName;
         this.alternateNames = new ArrayList<>(other.alternateNames);
         this.installHint = other.installHint;
@@ -211,6 +219,23 @@ public final class AgentProfile {
 
     public void setBuiltIn(boolean builtIn) {
         this.builtIn = builtIn;
+    }
+
+    public boolean isExperimental() {
+        return experimental;
+    }
+
+    public void setExperimental(boolean experimental) {
+        this.experimental = experimental;
+    }
+
+    @Nullable
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(@Nullable String description) {
+        this.description = description;
     }
 
     @NotNull

@@ -134,19 +134,13 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         }
     }
 
-    /**
-     * Refreshes code-managed fields on a built-in profile that was loaded from
-     * persisted state. User-customisable fields (custom binary path, model selection)
-     * are preserved; fields that track internal transport details (MCP config template,
-     * ACP args, install hint) are overwritten from the code-defined defaults so that
-     * bug-fixes (e.g. changing the MCP server type from "streamable-http" to "http")
-     * take effect without requiring the user to manually reset the profile.
-     */
     private void refreshBuiltInProfile(@NotNull String id) {
         AgentProfile stored = profiles.get(id);
         AgentProfile defaults = createDefaultProfile(id);
         if (stored == null || defaults == null || !stored.isBuiltIn()) return;
 
+        stored.setExperimental(defaults.isExperimental());
+        stored.setDescription(defaults.getDescription());
         stored.setAcpArgs(defaults.getAcpArgs());
         stored.setMcpConfigTemplate(defaults.getMcpConfigTemplate());
         stored.setMcpMethod(defaults.getMcpMethod());
@@ -231,6 +225,9 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setId(OPENCODE_PROFILE_ID);
         p.setDisplayName("OpenCode");
         p.setBuiltIn(true);
+        p.setExperimental(true);
+        p.setDescription("Experimental profile — OpenCode ACP support is community-maintained. "
+            + "Install: npm i -g opencode-ai");
         p.setBinaryName("opencode");
         p.setInstallHint("Install with: npm i -g opencode-ai");
         p.setAcpArgs(List.of("acp"));
@@ -257,6 +254,13 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setId(CLAUDE_CODE_PROFILE_ID);
         p.setDisplayName("Claude Code");
         p.setBuiltIn(true);
+        p.setExperimental(true);
+        p.setDescription("Experimental profile — requires the claude-code-acp adapter "
+            + "(npm install -g @zed-industries/claude-code-acp). "
+            + "MCP tools are NOT auto-injected for this profile. "
+            + "To use IDE tools with Claude Code, add the MCP server manually:\n"
+            + "  claude mcp add intellij-ide-tools -s project -- java -jar <path-to-mcp-server.jar> --port <port>\n"
+            + "See docs/STANDALONE-MCP.md for detailed setup instructions.");
         p.setBinaryName("claude-code-acp");
         p.setAlternateNames(List.of());
         p.setInstallHint("Install with: npm install -g @zed-industries/claude-code-acp");
@@ -289,6 +293,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         public String id = "";
         public String displayName = "";
         public boolean builtIn;
+        public boolean experimental;
+        public String description = "";
         public String binaryName = "";
         public String alternateNames = "";
         public String installHint = "";
@@ -315,6 +321,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             e.id = p.getId();
             e.displayName = p.getDisplayName();
             e.builtIn = p.isBuiltIn();
+            e.experimental = p.isExperimental();
+            e.description = p.getDescription() != null ? p.getDescription() : "";
             e.binaryName = p.getBinaryName();
             e.alternateNames = String.join(",", p.getAlternateNames());
             e.installHint = p.getInstallHint();
@@ -343,6 +351,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             p.setId(id);
             p.setDisplayName(displayName);
             p.setBuiltIn(builtIn);
+            p.setExperimental(experimental);
+            p.setDescription(description.isEmpty() ? null : description);
             p.setBinaryName(binaryName);
             p.setAlternateNames(splitComma(alternateNames));
             p.setInstallHint(installHint);

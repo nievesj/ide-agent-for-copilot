@@ -49,6 +49,7 @@ public final class AgentProfilesConfigurable implements Configurable {
 
     // ── General tab ──
     private JBTextField nameField;
+    private JBTextArea descriptionArea;
     private JBTextField binaryNameField;
     private JBTextField alternateNamesField;
     private JBTextField installHintField;
@@ -161,6 +162,12 @@ public final class AgentProfilesConfigurable implements Configurable {
     @NotNull
     private JPanel buildEditorPanel() {
         nameField = new JBTextField();
+        descriptionArea = new JBTextArea(3, 40);
+        descriptionArea.setLineWrap(true);
+        descriptionArea.setWrapStyleWord(true);
+        descriptionArea.setEditable(false);
+        descriptionArea.setBackground(null);
+        descriptionArea.setFont(com.intellij.util.ui.UIUtil.getLabelFont());
         binaryNameField = new JBTextField();
         alternateNamesField = new JBTextField();
         installHintField = new JBTextField();
@@ -217,9 +224,10 @@ public final class AgentProfilesConfigurable implements Configurable {
     }
 
     private JPanel buildGeneralTab() {
-        return FormBuilder.createFormBuilder()
-            .addLabeledComponent("Display name:", nameField)
-            .addComponent(new TitledSeparator("Binary Discovery"))
+        FormBuilder builder = FormBuilder.createFormBuilder()
+            .addLabeledComponent("Display name:", nameField);
+        builder.addLabeledComponent("Notes:", new JBScrollPane(descriptionArea));
+        builder.addComponent(new TitledSeparator("Binary Discovery"))
             .addLabeledComponent("Binary name:", binaryNameField)
             .addTooltip("Primary executable name to search for (e.g., \"copilot\", \"opencode\")")
             .addLabeledComponent("Alternate names (comma-separated):", alternateNamesField)
@@ -228,8 +236,8 @@ public final class AgentProfilesConfigurable implements Configurable {
             .addTooltip("Shown when the binary cannot be found")
             .addLabeledComponent("Custom binary path:", customBinaryPathField)
             .addTooltip("Override auto-discovery with an absolute path")
-            .addComponentFillVertically(new JPanel(), 0)
-            .getPanel();
+            .addComponentFillVertically(new JPanel(), 0);
+        return builder.getPanel();
     }
 
     private JPanel buildAcpTab() {
@@ -291,7 +299,7 @@ public final class AgentProfilesConfigurable implements Configurable {
         listModel.clear();
         for (int i = 0; i < workingCopies.size(); i++) {
             AgentProfile p = workingCopies.get(i);
-            listModel.addElement(new ProfileListEntry(p.getDisplayName(), p.isBuiltIn(), i));
+            listModel.addElement(new ProfileListEntry(p.getDisplayName(), p.isBuiltIn(), p.isExperimental(), i));
         }
     }
 
@@ -370,6 +378,9 @@ public final class AgentProfilesConfigurable implements Configurable {
         loading = true;
         try {
             nameField.setText(p.getDisplayName());
+            descriptionArea.setText(p.getDescription() != null ? p.getDescription() : "");
+            descriptionArea.setEditable(!p.isBuiltIn());
+            descriptionArea.setCaretPosition(0);
             binaryNameField.setText(p.getBinaryName());
             alternateNamesField.setText(String.join(", ", p.getAlternateNames()));
             installHintField.setText(p.getInstallHint());
@@ -401,6 +412,7 @@ public final class AgentProfilesConfigurable implements Configurable {
             listModel.set(currentIndex, new ProfileListEntry(
                 workingCopies.get(currentIndex).getDisplayName(),
                 workingCopies.get(currentIndex).isBuiltIn(),
+                workingCopies.get(currentIndex).isExperimental(),
                 currentIndex));
         }
     }
@@ -411,6 +423,8 @@ public final class AgentProfilesConfigurable implements Configurable {
      */
     private void writeFormTo(@NotNull AgentProfile target) {
         target.setDisplayName(nameField.getText().trim());
+        String desc = descriptionArea.getText().trim();
+        target.setDescription(desc.isEmpty() ? null : desc);
         target.setBinaryName(binaryNameField.getText().trim());
         target.setAlternateNames(splitComma(alternateNamesField.getText()));
         target.setInstallHint(installHintField.getText().trim());
@@ -548,10 +562,12 @@ public final class AgentProfilesConfigurable implements Configurable {
         return result;
     }
 
-    private record ProfileListEntry(String displayName, boolean builtIn, int index) {
+    private record ProfileListEntry(String displayName, boolean builtIn, boolean experimental, int index) {
         @Override
         public String toString() {
-            return builtIn ? displayName + " (built-in)" : displayName;
+            String suffix = builtIn ? " (built-in)" : "";
+            if (experimental) suffix += " ⚠ experimental";
+            return displayName + suffix;
         }
     }
 }
