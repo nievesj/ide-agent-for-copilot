@@ -14,7 +14,7 @@
 
     <h3>How It Works</h3>
     <p>The plugin starts an MCP-compatible HTTP server on a configurable port. Point any
-    MCP client (Claude Desktop, Cursor, your own agent) at it and get access to 70+ IDE tools.</p>
+    MCP client (Claude Code, Claude Desktop, Cursor, your own agent) at it and get access to 92 IDE tools.</p>
 
     <h3>Capabilities</h3>
     <ul>

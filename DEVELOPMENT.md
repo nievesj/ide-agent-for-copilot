@@ -59,9 +59,9 @@ directory. This is the plugin published to the JetBrains Marketplace.
 | **Plugin ID** | `com.github.catatafishen.idemcpserver` |
 | **Output** | `standalone-mcp/build/distributions/ide-mcp-server-<version>.zip` |
 
-A standalone plugin that exposes the IDE as an MCP HTTP server — no Copilot integration.
-Any MCP client (Claude Desktop, Cursor, custom agents) can connect via HTTP and use
-70+ IDE tools. Includes its own settings UI, toolbar toggle, and server lifecycle management.
+A standalone plugin that exposes the IDE as an MCP HTTP server — no agent chat integration.
+Any MCP client (Claude Code, Claude Desktop, Cursor, custom agents) can connect via HTTP and use
+92 IDE tools. Includes its own settings UI, toolbar toggle, and server lifecycle management.
 Supports both Streamable HTTP and SSE transport modes.
 
 **Contents:** standalone-mcp classes + repackaged `plugin-core.jar` (without plugin-core's `plugin.xml`) + `mcp-server.jar`

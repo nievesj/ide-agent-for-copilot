@@ -8,7 +8,7 @@ tools you use.
 
 ## Status
 
-**Working** — Plugin is functional with multi-agent support (GitHub Copilot, opencode, custom profiles).
+**Working** — Plugin is functional with multi-agent support (GitHub Copilot, opencode, Claude Code, custom profiles).
 
 ### What Works
 
@@ -121,7 +121,7 @@ intellij-copilot-plugin/
 
 - **JDK 21** (for plugin development)
 - **IntelliJ IDEA 2025.3+** (any JetBrains IDE)
-- **An ACP-compatible agent CLI** (e.g., GitHub Copilot CLI, opencode)
+- **An ACP-compatible agent CLI** (e.g., GitHub Copilot CLI, opencode, Claude Code via [claude-code-acp](https://www.npmjs.com/package/@zed-industries/claude-code-acp))
 
 ## Quick Start
 
@@ -184,6 +184,7 @@ be removed and the entry marked as ✅.
 - [Development Guide](DEVELOPMENT.md) — Build, deploy, architecture details
 - [Quick Start](QUICK-START.md) — Fast setup instructions
 - [Features](FEATURES.md) — Complete tool documentation
+- [Standalone MCP Server](docs/STANDALONE-MCP.md) — Use IDE tools with any MCP client
 - [Testing](TESTING.md) — Test running and coverage
 - [Roadmap](ROADMAP.md) — Project phases and future work
 - [Release Notes](RELEASE_NOTES.md) — Current release details

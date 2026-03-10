@@ -29,9 +29,9 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
 
     public static final String COPILOT_PROFILE_ID = "copilot";
     public static final String OPENCODE_PROFILE_ID = "opencode";
+    public static final String CLAUDE_CODE_PROFILE_ID = "claude-code";
 
     private final Map<String, AgentProfile> profiles = new LinkedHashMap<>();
-
 
     public AgentProfileManager() {
         ensureDefaults();
@@ -127,6 +127,11 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         } else {
             refreshBuiltInProfile(OPENCODE_PROFILE_ID);
         }
+        if (!profiles.containsKey(CLAUDE_CODE_PROFILE_ID)) {
+            profiles.put(CLAUDE_CODE_PROFILE_ID, createClaudeCodeProfile());
+        } else {
+            refreshBuiltInProfile(CLAUDE_CODE_PROFILE_ID);
+        }
     }
 
     /**
@@ -162,6 +167,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         return switch (id) {
             case COPILOT_PROFILE_ID -> createCopilotProfile();
             case OPENCODE_PROFILE_ID -> createOpenCodeProfile();
+            case CLAUDE_CODE_PROFILE_ID -> createClaudeCodeProfile();
             default -> null;
         };
     }
@@ -182,6 +188,14 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     @NotNull
     public static AgentProfile createDefaultOpenCodeProfile() {
         return createOpenCodeProfile();
+    }
+
+    /**
+     * Creates the default Claude Code profile. Public for use in tests.
+     */
+    @NotNull
+    public static AgentProfile createDefaultClaudeCodeProfile() {
+        return createClaudeCodeProfile();
     }
 
     @NotNull
@@ -234,6 +248,27 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setExcludeAgentBuiltInTools(true);
         p.setUsePluginPermissions(false);
         p.setPermissionInjectionMethod(PermissionInjectionMethod.CONFIG_JSON);
+        return p;
+    }
+
+    @NotNull
+    private static AgentProfile createClaudeCodeProfile() {
+        AgentProfile p = new AgentProfile();
+        p.setId(CLAUDE_CODE_PROFILE_ID);
+        p.setDisplayName("Claude Code");
+        p.setBuiltIn(true);
+        p.setBinaryName("claude-code-acp");
+        p.setAlternateNames(List.of());
+        p.setInstallHint("Install with: npm install -g @zed-industries/claude-code-acp");
+        p.setAcpArgs(List.of());
+        p.setMcpMethod(McpInjectionMethod.NONE);
+        p.setSupportsMcpConfigFlag(false);
+        p.setSupportsModelFlag(false);
+        p.setSupportsConfigDir(false);
+        p.setRequiresResourceDuplication(false);
+        p.setExcludeAgentBuiltInTools(false);
+        p.setUsePluginPermissions(true);
+        p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
         return p;
     }
 
