@@ -16,12 +16,14 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
+import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.AsyncProcessIcon
 import com.intellij.util.ui.JBUI
 import java.awt.*
 import java.awt.datatransfer.StringSelection
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.TimeUnit
 import javax.swing.*
 import javax.swing.border.CompoundBorder
 
@@ -129,6 +131,14 @@ class AcpConnectPanel(
 
         subscribeToBridgeEvents()
         refreshMcpState()
+
+        // If autostart is enabled and the server hasn't started yet, show a loading indicator
+        // so the user can't click "Start server" while it's already being auto-started.
+        val mcpSettings = McpServerSettings.getInstance(project)
+        val mcpServerControl = McpServerControl.getInstance(project)
+        if (mcpSettings.isAutoStart && mcpServerControl != null && !mcpServerControl.isRunning) {
+            showAutoStartLoading()
+        }
     }
 
     // ── Section builders ──
@@ -363,6 +373,10 @@ class AcpConnectPanel(
     }
 
     private fun refreshMcpState() {
+        // Always stop the spinner — we're reflecting a settled state
+        mcpSpinner.suspend()
+        mcpSpinner.isVisible = false
+
         val mcpServer = McpServerControl.getInstance(project)
         if (mcpServer == null) {
             mcpStartButton.isEnabled = false
@@ -448,12 +462,29 @@ class AcpConnectPanel(
                 SwingUtilities.invokeLater { showError("MCP server error: ${e.message}") }
             } finally {
                 SwingUtilities.invokeLater {
-                    mcpSpinner.suspend()
-                    mcpSpinner.isVisible = false
                     refreshMcpState()
                 }
             }
         }
+    }
+
+    /**
+     * Enters a loading state when auto-start is in progress (server not yet running).
+     * A 5-second timeout resets the button if STATUS_TOPIC never fires (e.g., startup failed).
+     */
+    private fun showAutoStartLoading() {
+        mcpStartButton.isEnabled = false
+        mcpStartButton.text = "Starting\u2026"
+        mcpStartButton.icon = null
+        mcpSpinner.isVisible = true
+        mcpSpinner.resume()
+        AppExecutorUtil.getAppScheduledExecutorService().schedule({
+            SwingUtilities.invokeLater {
+                if (mcpSpinner.isVisible) {
+                    refreshMcpState()
+                }
+            }
+        }, 5, TimeUnit.SECONDS)
     }
 
     private fun addToolCallEntry(toolName: String, durationMs: Long, success: Boolean) {
