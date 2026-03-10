@@ -4,7 +4,7 @@
     <projectService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.MacroToolRegistrar"/>
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
+      parentId="com.github.catatafishen.ideagentforcopilot.mcp"
       instance="com.github.catatafishen.ideagentforcopilot.settings.MacroToolConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.macroTools"
       displayName="Macro Tools"/>
