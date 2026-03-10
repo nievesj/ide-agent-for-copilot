@@ -132,8 +132,10 @@ class CodeNavigationTools extends AbstractToolHandler {
     }
 
     private static String resolveTag(ProjectFileIndex fileIndex, VirtualFile vf) {
-        if (fileIndex.isExcluded(vf)) return "excluded ";
-        if (fileIndex.isInGeneratedSources(vf)) return "generated ";
+        if (fileIndex.isInGeneratedSources(vf)) {
+            // A generated root can be either production-generated or test-generated
+            return fileIndex.isInTestSourceContent(vf) ? "generated-test " : "generated ";
+        }
         if (fileIndex.isInTestSourceContent(vf)) return "test ";
         if (fileIndex.isInSourceContent(vf)) return "source ";
         return "";
