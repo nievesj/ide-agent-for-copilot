@@ -39,6 +39,7 @@ internal sealed class EntryData {
         val timestamp: String = "",
         val contextFiles: List<Triple<String, String, Int>>? = null
     ) : EntryData()
+
     class Text(val raw: StringBuilder = StringBuilder()) : EntryData()
     class Thinking(val raw: StringBuilder = StringBuilder()) : EntryData()
     class ToolCall(
@@ -133,6 +134,11 @@ internal val TOOL_SUBTITLE_KEY = mapOf(
     "web_search" to "query",
     "web_fetch" to "url",
 )
+
+private val MCP_PREFIX_REGEX = Regex("^(?i)(intellij-code-tools|github-mcp-server)[-_]")
+
+/** Strips MCP server name prefixes from a raw tool name, handling both dash and underscore separators. */
+internal fun stripMcpPrefix(title: String): String = title.replace(MCP_PREFIX_REGEX, "")
 
 internal val TOOL_DISPLAY_INFO = mapOf(
     // Code Navigation

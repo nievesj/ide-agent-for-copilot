@@ -302,7 +302,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val entry = EntryData.ToolCall(title, arguments, resolvedKind)
         entries.add(entry)
         val did = domId(id)
-        val baseName = title.substringAfterLast("-")
+        val baseName = stripMcpPrefix(title)
         toolCallNames[did] = baseName
         toolCallEntries[did] = entry
         val info = TOOL_DISPLAY_INFO[baseName]
@@ -327,7 +327,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun addSubAgentToolCall(subAgentId: String, toolId: String, title: String, arguments: String?) {
         val saDid = domId(subAgentId)
         val toolDid = domId(toolId)
-        val baseName = title.substringAfterLast("-")
+        val baseName = stripMcpPrefix(title)
         val info = TOOL_DISPLAY_INFO[baseName]
         val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
         val short = formatToolSubtitle(baseName, arguments)
@@ -670,7 +670,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 if (currentTurnId.isEmpty()) currentTurnId = "t${turnCounter++}"
                 val title = obj["title"]?.asString ?: ""
                 val args = obj["args"]?.asString
-                val baseName = title.substringAfterLast("-")
+                val baseName = stripMcpPrefix(title)
                 val info = TOOL_DISPLAY_INFO[baseName]
                 val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
                 val short = formatToolSubtitle(baseName, args)
@@ -842,7 +842,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                                 val title = e["title"]?.asString ?: ""
                                 val args = e["args"]?.asString
                                 val kind = e["kind"]?.asString ?: "other"
-                                val baseName = title.substringAfterLast("-")
+                                val baseName = stripMcpPrefix(title)
                                 val info = TOOL_DISPLAY_INFO[baseName]
                                 val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
                                 val short = formatToolSubtitle(baseName, args)
