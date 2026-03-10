@@ -295,7 +295,6 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
      * If the binary is NVM-managed, prepend the corresponding node binary to the command.
      */
     private void addNodeAndCommand(@NotNull List<String> cmd, @NotNull String binaryPath) {
-        String binaryName = profile.getBinaryName();
         if (binaryPath.contains("/.nvm/versions/node/") && binaryPath.contains("/bin/")) {
             String nodeDir = binaryPath.substring(0, binaryPath.lastIndexOf("/bin/"));
             String nodePath = nodeDir + "/bin/node";

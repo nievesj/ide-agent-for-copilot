@@ -28,6 +28,7 @@ public class CodeQualityJavaSupport {
 
     public static String suppress(Project project, PsiElement element, String inspectionId, Document document) {
         var target = findSuppressTarget(element);
+        if (target == null) return "No suppressible element found at this location";
         return suppressJava(project, target, inspectionId, document);
     }
 

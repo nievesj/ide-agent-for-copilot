@@ -307,6 +307,7 @@ class FileTools extends AbstractToolHandler {
                 markup.removeHighlighter(hl);
                 if (inlay != null) inlay.dispose();
             } catch (Exception ignored) {
+                // Safe to ignore: highlighter cleanup is non-critical
             }
         }, 2500);
     }

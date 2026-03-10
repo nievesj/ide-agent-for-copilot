@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.psi;
 import com.google.gson.JsonObject;
 import com.intellij.ide.actionMacro.ActionMacro;
 import com.intellij.ide.actionMacro.ActionMacroManager;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -29,7 +28,6 @@ import java.util.concurrent.TimeoutException;
  */
 public final class MacroToolHandler implements ToolHandler {
 
-    private static final Logger LOG = Logger.getInstance(MacroToolHandler.class);
     private static final int MACRO_TIMEOUT_SECONDS = 30;
 
     private final Project project;

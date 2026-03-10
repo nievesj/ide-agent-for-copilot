@@ -2,12 +2,9 @@ package com.github.catatafishen.ideagentforcopilot.psi;
 
 import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.ComponentManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
@@ -31,7 +28,7 @@ import java.util.Map;
 @Service(Service.Level.PROJECT)
 public final class PsiBridgeService implements Disposable {
     private static final Logger LOG = Logger.getInstance(PsiBridgeService.class);
-    private static final Gson GSON = new GsonBuilder().create();
+
 
     /**
      * Listener notified after each MCP tool call completes.
@@ -230,7 +227,7 @@ public final class PsiBridgeService implements Disposable {
         String argsJson = arguments.toString();
         String reqId = java.util.UUID.randomUUID().toString();
 
-        com.github.catatafishen.ideagentforcopilot.ui.ChatConsolePanel chatPanel =
+        com.github.catatafishen.ideagentforcopilot.ui uy.ChatConsolePanel chatPanel =
             com.github.catatafishen.ideagentforcopilot.ui.ChatConsolePanel.Companion.getInstance(project);
 
         com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse response;

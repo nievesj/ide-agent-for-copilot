@@ -1117,7 +1117,7 @@ class CodeQualityTools extends AbstractToolHandler {
                     dataContext, presentation, "QodanaTool",
                     com.intellij.openapi.actionSystem.ActionUiKind.NONE, null);
 
-                var updateResult = com.intellij.openapi.actionSystem.ex.ActionUtil.updateAction(qodanaAction, event);
+                com.intellij.openapi.actionSystem.ex.ActionUtil.updateAction(qodanaAction, event);
                 if (!event.getPresentation().isEnabled()) {
                     resultFuture.complete("Error: Qodana action is not available. " +
                         "The project may not be fully loaded yet, or Qodana may already be running.");

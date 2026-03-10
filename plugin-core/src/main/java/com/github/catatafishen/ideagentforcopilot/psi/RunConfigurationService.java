@@ -293,10 +293,6 @@ public final class RunConfigurationService {
         return null;
     }
 
-    private com.intellij.execution.configurations.ConfigurationType findConfigurationType(String type) {
-        return PlatformApiCompat.findConfigurationType(type);
-    }
-
     private void applyConfigProperties(RunConfiguration config, JsonObject args) {
         List<String> ignore = new ArrayList<>();
         if (args.has("env")) applyEnvVars(config, args.getAsJsonObject("env"), ignore);

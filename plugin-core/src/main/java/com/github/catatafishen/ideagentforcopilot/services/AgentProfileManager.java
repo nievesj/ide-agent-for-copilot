@@ -32,7 +32,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     public static final String OPENCODE_PROFILE_ID = "opencode";
 
     private final Map<String, AgentProfile> profiles = new LinkedHashMap<>();
-    private volatile boolean initialized;
+
 
     public AgentProfileManager() {
         ensureDefaults();
@@ -113,7 +113,6 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
                 AgentProfile profile = entry.toProfile();
                 profiles.put(profile.getId(), profile);
             }
-            initialized = true;
             ensureDefaults();
         }
     }
@@ -129,7 +128,6 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         } else {
             refreshBuiltInProfile(OPENCODE_PROFILE_ID);
         }
-        initialized = true;
     }
 
     /**

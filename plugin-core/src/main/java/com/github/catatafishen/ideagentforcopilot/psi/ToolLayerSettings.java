@@ -1,7 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
 import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
-import com.intellij.openapi.components.ComponentManager;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -30,7 +29,7 @@ public interface ToolLayerSettings {
      */
     @NotNull
     static ToolLayerSettings getInstance(@NotNull Project project) {
-        ToolLayerSettings service = ((ComponentManager) project).getService(ToolLayerSettings.class);
+        ToolLayerSettings service = PlatformApiCompat.getService(project, ToolLayerSettings.class);
         return service != null ? service : DefaultToolLayerSettings.FALLBACK;
     }
 
