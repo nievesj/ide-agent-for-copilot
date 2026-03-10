@@ -507,42 +507,10 @@ class AgenticCopilotToolWindowContent(
     }
 
     /**
-     * Checks PSI bridge availability. Returns a multi-line diagnostic string on failure, or null if healthy.
-     * Queries PsiBridgeService directly — no bridge file needed.
-     * Safe to call on a background thread.
+     * PSI bridge is now called directly in-process — no HTTP server to check.
+     * Always returns null (healthy).
      */
-    private fun psiBridgeDiagnostics(): String? {
-        val bridge = com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project)
-        if (!bridge.isRunning) {
-            return "PSI bridge HTTP server is not running.\n\n" +
-                "Possible causes:\n" +
-                "  • The plugin failed to initialize — check Help → Show Log for errors\n" +
-                "  • The server could not bind to a port\n" +
-                "  • The project is being disposed"
-        }
-        val port = bridge.port
-        if (port <= 0) {
-            return "PSI bridge reports running but port is $port."
-        }
-        return try {
-            val url = java.net.URI.create("http://127.0.0.1:$port/health").toURL()
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 1500
-            conn.readTimeout = 1500
-            conn.requestMethod = "GET"
-            val code = try {
-                conn.responseCode
-            } catch (e: Exception) {
-                return "PSI bridge reports running on port $port\n" +
-                    "but the HTTP server is not responding.\n\n" +
-                    "Connection error: ${e.javaClass.simpleName}: ${e.message}\n\n" +
-                    "The bridge may have crashed. Check Help → Show Log,\nthen close and reopen the project."
-            }
-            if (code == 200) null else "PSI bridge returned HTTP $code from /health (port $port)."
-        } catch (e: Exception) {
-            "Failed to check PSI bridge health:\n${e.javaClass.simpleName}: ${e.message}"
-        }
-    }
+    private fun psiBridgeDiagnostics(): String? = null
 
     private fun createPromptTab(): JComponent {
         val panel = JBPanel<JBPanel<*>>(BorderLayout())

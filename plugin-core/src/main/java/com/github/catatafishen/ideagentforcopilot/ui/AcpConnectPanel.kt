@@ -3,6 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.ui
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile
+import com.github.catatafishen.ideagentforcopilot.services.McpHttpServer
 import com.github.catatafishen.ideagentforcopilot.services.McpServerControl
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings
 import com.intellij.icons.AllIcons
@@ -343,8 +344,8 @@ class AcpConnectPanel(
         val connection = project.messageBus.connect()
 
         connection.subscribe(
-            PsiBridgeService.STATUS_TOPIC,
-            PsiBridgeService.StatusListener { _ ->
+            McpHttpServer.STATUS_TOPIC,
+            McpHttpServer.StatusListener {
                 SwingUtilities.invokeLater { refreshMcpState() }
             })
 

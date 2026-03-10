@@ -14,16 +14,12 @@ import java.nio.file.Path
 class PsiBridgeStartup : ProjectActivity {
 
     override suspend fun execute(project: Project) {
-        LOG.info("Starting PSI Bridge for project: ${project.name}")
+        LOG.info("Initializing plugin for project: ${project.name}")
 
         createAgentWorkspace(project)
 
-        val mcpSettings = com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings.getInstance(project)
-        if (mcpSettings.isBridgeAutoStart) {
-            PsiBridgeService.getInstance(project).start(mcpSettings.bridgePort)
-        }
-
         // Auto-start MCP HTTP server (required for agent CLI to access tools)
+        val mcpSettings = com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings.getInstance(project)
         if (mcpSettings.isAutoStart) {
             try {
                 val mcpServer =

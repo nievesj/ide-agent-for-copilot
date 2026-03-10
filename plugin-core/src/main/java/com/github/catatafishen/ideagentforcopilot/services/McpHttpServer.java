@@ -1,11 +1,11 @@
 package com.github.catatafishen.ideagentforcopilot.services;
 
-import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService;
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
 import com.github.catatafishen.ideagentforcopilot.settings.TransportMode;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.util.messages.Topic;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.jetbrains.annotations.NotNull;
@@ -31,6 +31,19 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     private static final String CONTENT_TYPE = "Content-Type";
     private static final String APPLICATION_JSON = "application/json";
 
+    /**
+     * Fired on the project message bus when the MCP server starts or stops.
+     */
+    public static final Topic<StatusListener> STATUS_TOPIC =
+        Topic.create("McpHttpServer.Status", StatusListener.class);
+
+    /**
+     * Listener notified when the MCP HTTP server starts or stops.
+     */
+    public interface StatusListener {
+        void serverStatusChanged();
+    }
+
     private final Project project;
     private HttpServer httpServer;
     private McpProtocolHandler protocolHandler;
@@ -53,12 +66,6 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         int port = settings.getPort();
         activeTransportMode = settings.getTransportMode();
 
-        // Ensure PsiBridgeService (tool execution engine) is running
-        PsiBridgeService bridge = PsiBridgeService.getInstance(project);
-        if (!bridge.isRunning()) {
-            bridge.start();
-        }
-
         protocolHandler = new McpProtocolHandler(project);
         httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
         httpServer.createContext("/health", this::handleHealth);
@@ -77,6 +84,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         running = true;
         LOG.info("MCP server started on port " + port + " (" + activeTransportMode.getDisplayName()
             + ") for project: " + project.getBasePath());
+        project.getMessageBus().syncPublisher(STATUS_TOPIC).serverStatusChanged();
     }
 
     /**
@@ -100,6 +108,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         running = false;
         activeConnections.set(0);
         LOG.info("MCP HTTP server stopped for project: " + project.getBasePath());
+        project.getMessageBus().syncPublisher(STATUS_TOPIC).serverStatusChanged();
     }
 
     public boolean isRunning() {

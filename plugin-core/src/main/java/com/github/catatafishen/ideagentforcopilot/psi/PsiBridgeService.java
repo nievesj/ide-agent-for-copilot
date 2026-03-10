@@ -4,10 +4,8 @@ import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.ComponentManager;
@@ -17,27 +15,17 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.messages.Topic;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Executors;
 
 /**
- * Lightweight HTTP bridge exposing IntelliJ PSI/AST analysis to the MCP server.
- * The MCP server (running as a separate process) delegates tool calls here for
- * accurate code intelligence instead of regex-based scanning.
- * <p>
- * Architecture: Copilot Agent → MCP Server (stdio) → PSI Bridge (HTTP) → IntelliJ PSI
+ * Executes MCP tool calls inside IntelliJ, providing PSI/AST-backed code intelligence.
+ * Called directly by {@link com.github.catatafishen.ideagentforcopilot.services.McpProtocolHandler}
+ * via Java method call — no HTTP required.
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
 @Service(Service.Level.PROJECT)
@@ -45,29 +33,12 @@ public final class PsiBridgeService implements Disposable {
     private static final Logger LOG = Logger.getInstance(PsiBridgeService.class);
     private static final Gson GSON = new GsonBuilder().create();
 
-    // HTTP Constants
-    private static final String CONTENT_TYPE_HEADER = "Content-Type";
-    private static final String APPLICATION_JSON = "application/json";
-
-    /**
-     * Listener notified when the PSI bridge server starts or stops.
-     */
-    public interface StatusListener {
-        void bridgeStarted(int port);
-    }
-
     /**
      * Listener notified after each MCP tool call completes.
      */
     public interface ToolCallListener {
         void toolCalled(String toolName, long durationMs, boolean success);
     }
-
-    /**
-     * Project-level message bus topic for PSI bridge status changes.
-     */
-    public static final Topic<StatusListener> STATUS_TOPIC =
-        Topic.create("PsiBridgeService.Status", StatusListener.class);
 
     /**
      * Project-level message bus topic for tool call events (fire-and-forget notifications).
@@ -83,8 +54,6 @@ public final class PsiBridgeService implements Disposable {
         new java.util.concurrent.atomic.AtomicBoolean(false);
     private final java.util.Set<String> sessionAllowedTools =
         java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private HttpServer httpServer;
-    private int port;
 
     public PsiBridgeService(@NotNull Project project) {
         this.project = project;
@@ -125,11 +94,6 @@ public final class PsiBridgeService implements Disposable {
         return ((ComponentManager) project).getService(PsiBridgeService.class);
     }
 
-    @SuppressWarnings("unused") // Public API - may be used by external integrations
-    public int getPort() {
-        return port;
-    }
-
     /**
      * Clears the session-scoped "Allow for session" permission cache.
      * Called when the ACP session is closed or restarted.
@@ -161,7 +125,31 @@ public final class PsiBridgeService implements Disposable {
         long startMs = System.currentTimeMillis();
         boolean success = true;
         try {
-            return handler.handle(arguments);
+            String denied = checkPluginToolPermission(toolName, arguments);
+            if (denied != null) {
+                fireToolCallEvent(toolName, startMs, false);
+                return denied;
+            }
+
+            String result = handler.handle(arguments);
+
+            // Piggyback highlights after successful write operations
+            if (isSuccessfulWrite(toolName, result)) {
+                String filePath = null;
+                if (arguments.has("path")) {
+                    filePath = arguments.get("path").getAsString();
+                } else if (arguments.has("file")) {
+                    filePath = arguments.get("file").getAsString();
+                }
+                if (filePath != null) {
+                    LOG.info("Auto-highlights: piggybacking on write to " + filePath);
+                    result = appendAutoHighlights(result, filePath);
+                }
+            }
+            return result;
+        } catch (com.intellij.openapi.application.ex.ApplicationUtil.CannotRunReadActionException e) {
+            success = false;
+            return "Error: IDE is busy, please retry. " + e.getMessage();
         } catch (Exception e) {
             LOG.warn("Tool call error: " + toolName, e);
             success = false;
@@ -194,114 +182,6 @@ public final class PsiBridgeService implements Disposable {
         return toolRegistry.remove(id) != null;
     }
 
-    public synchronized void start() {
-        start(0);
-    }
-
-    /**
-     * Starts the PSI bridge HTTP server on the given port (0 = OS-assigned random port).
-     */
-    public synchronized void start(int requestedPort) {
-        if (httpServer != null) return;
-        try {
-            httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", requestedPort), 0);
-            httpServer.createContext("/tools/call", this::handleToolCall);
-            httpServer.createContext("/tools/list", this::handleToolsList);
-            httpServer.createContext("/tools/status", this::handleToolStatus);
-            httpServer.createContext("/health", this::handleHealth);
-            httpServer.setExecutor(Executors.newFixedThreadPool(8));
-            httpServer.start();
-            port = httpServer.getAddress().getPort();
-            LOG.info("PSI Bridge started on port " + port + " for project: " + project.getBasePath());
-            writePortFile(port);
-            project.getMessageBus().syncPublisher(STATUS_TOPIC).bridgeStarted(port);
-        } catch (Exception e) {
-            LOG.error("Failed to start PSI Bridge", e);
-            String detail = buildExceptionDetail(e);
-            com.intellij.notification.Notification notification =
-                com.intellij.notification.NotificationGroupManager.getInstance()
-                    .getNotificationGroup("Copilot Notifications")
-                    .createNotification(
-                        "IDE Agent for Copilot: PSI bridge failed to start",
-                        "IntelliJ code tools will be unavailable.\n" + detail,
-                        com.intellij.notification.NotificationType.ERROR);
-            notification.addAction(com.intellij.notification.NotificationAction.createSimple(
-                "Open IDE Log", () -> com.intellij.ide.actions.RevealFileAction.openFile(
-                    new java.io.File(com.intellij.openapi.application.PathManager.getLogPath(), "idea.log"))));
-            notification.notify(project);
-        }
-    }
-
-    /**
-     * Stops the PSI bridge HTTP server. Can be restarted with {@link #start(int)}.
-     */
-    public synchronized void stop() {
-        if (httpServer != null) {
-            httpServer.stop(0);
-            httpServer = null;
-            port = 0;
-            LOG.info("PSI Bridge stopped for project: " + project.getBasePath());
-            removePortFile();
-            project.getMessageBus().syncPublisher(STATUS_TOPIC).bridgeStarted(0);
-        }
-    }
-
-    /**
-     * Returns true if the server is currently running.
-     */
-    public synchronized boolean isRunning() {
-        return httpServer != null;
-    }
-
-    /**
-     * Writes {@code ~/.copilot/psi-bridge.json} so the deploy Gradle task can find
-     * the bridge port without guessing. Format: {@code {"<projectPath>": {"port": N}}}.
-     * Entries from other open projects are preserved.
-     */
-    private void writePortFile(int activePort) {
-        String projectPath = project.getBasePath();
-        if (projectPath == null) return;
-        try {
-            Path bridgeFile = Path.of(System.getProperty("user.home"), ".copilot", "psi-bridge.json");
-            Files.createDirectories(bridgeFile.getParent());
-            JsonObject registry = new JsonObject();
-            if (Files.exists(bridgeFile)) {
-                try {
-                    registry = JsonParser.parseString(Files.readString(bridgeFile)).getAsJsonObject();
-                } catch (Exception ignored) {
-                    registry = new JsonObject();
-                }
-            }
-            JsonObject entry = new JsonObject();
-            entry.addProperty("port", activePort);
-            registry.add(projectPath, entry);
-            Files.writeString(bridgeFile, GSON.toJson(registry));
-        } catch (Exception e) {
-            LOG.warn("Could not write psi-bridge.json", e);
-        }
-    }
-
-    /**
-     * Removes this project's entry from {@code ~/.copilot/psi-bridge.json}.
-     */
-    private void removePortFile() {
-        String projectPath = project.getBasePath();
-        if (projectPath == null) return;
-        try {
-            Path bridgeFile = Path.of(System.getProperty("user.home"), ".copilot", "psi-bridge.json");
-            if (!Files.exists(bridgeFile)) return;
-            JsonObject registry = JsonParser.parseString(Files.readString(bridgeFile)).getAsJsonObject();
-            registry.remove(projectPath);
-            if (registry.isEmpty()) {
-                Files.deleteIfExists(bridgeFile);
-            } else {
-                Files.writeString(bridgeFile, GSON.toJson(registry));
-            }
-        } catch (Exception e) {
-            LOG.warn("Could not update psi-bridge.json on stop", e);
-        }
-    }
-
     private void fireToolCallEvent(String toolName, long startTimeMs, boolean success) {
         long duration = System.currentTimeMillis() - startTimeMs;
         try {
@@ -310,136 +190,6 @@ public final class PsiBridgeService implements Disposable {
         } catch (Exception e) {
             LOG.debug("Failed to fire tool call event", e);
         }
-    }
-
-    /**
-     * Builds a concise but informative error summary from an exception chain.
-     */
-    private static String buildExceptionDetail(Throwable t) {
-        StringBuilder sb = new StringBuilder();
-        Throwable cause = t;
-        int depth = 0;
-        while (cause != null && depth < 4) {
-            if (depth > 0) sb.append("\nCaused by: ");
-            String name = cause.getClass().getSimpleName();
-            String msg = cause.getMessage();
-            sb.append(name);
-            if (msg != null && !msg.isBlank()) sb.append(": ").append(msg);
-            cause = cause.getCause();
-            depth++;
-        }
-        return sb.toString();
-    }
-
-    private void handleHealth(HttpExchange exchange) throws IOException {
-        boolean indexing = com.intellij.openapi.project.DumbService.getInstance(project).isDumb();
-        JsonObject health = new JsonObject();
-        health.addProperty("status", "ok");
-        health.addProperty("indexing", indexing);
-        byte[] resp = GSON.toJson(health).getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set(CONTENT_TYPE_HEADER, APPLICATION_JSON);
-        exchange.sendResponseHeaders(200, resp.length);
-        exchange.getResponseBody().write(resp);
-        exchange.getResponseBody().close();
-    }
-
-    private void handleToolStatus(HttpExchange exchange) throws IOException {
-        JsonObject status = new JsonObject();
-        status.addProperty("permissionPending", permissionPending.get());
-        byte[] resp = GSON.toJson(status).getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set(CONTENT_TYPE_HEADER, APPLICATION_JSON);
-        exchange.sendResponseHeaders(200, resp.length);
-        exchange.getResponseBody().write(resp);
-        exchange.getResponseBody().close();
-    }
-
-    private void handleToolsList(HttpExchange exchange) throws IOException {
-        if (!"GET".equals(exchange.getRequestMethod())) {
-            exchange.sendResponseHeaders(405, -1);
-            return;
-        }
-
-        JsonArray tools = new JsonArray();
-        for (String name : toolRegistry.keySet()) {
-            JsonObject tool = new JsonObject();
-            tool.addProperty("name", name);
-            tools.add(tool);
-        }
-
-        JsonObject response = new JsonObject();
-        response.add("tools", tools);
-        byte[] bytes = GSON.toJson(response).getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set(CONTENT_TYPE_HEADER, APPLICATION_JSON);
-        exchange.sendResponseHeaders(200, bytes.length);
-        exchange.getResponseBody().write(bytes);
-        exchange.getResponseBody().close();
-    }
-
-    private void handleToolCall(HttpExchange exchange) throws IOException {
-        if (!"POST".equals(exchange.getRequestMethod())) {
-            exchange.sendResponseHeaders(405, -1);
-            return;
-        }
-
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        JsonObject request = JsonParser.parseString(body).getAsJsonObject();
-        String toolName = request.get("name").getAsString();
-        JsonObject arguments = request.has("arguments")
-            ? request.getAsJsonObject("arguments") : new JsonObject();
-
-        LOG.info("PSI Bridge tool call: " + toolName + " args=" + arguments);
-        long toolCallStart = System.currentTimeMillis();
-
-        // Enforce per-tool permissions (DENY / ASK / ALLOW)
-        String denied = checkPluginToolPermission(toolName, arguments);
-        if (denied != null) {
-            JsonObject response = new JsonObject();
-            response.addProperty("result", denied);
-            byte[] bytes = GSON.toJson(response).getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set(CONTENT_TYPE_HEADER, APPLICATION_JSON);
-            exchange.sendResponseHeaders(200, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.getResponseBody().close();
-            fireToolCallEvent(toolName, toolCallStart, false);
-            return;
-        }
-
-        String result;
-        boolean success = true;
-        try {
-            ToolHandler handler = toolRegistry.get(toolName);
-            result = handler != null ? handler.handle(arguments) : "Unknown tool: " + toolName;
-        } catch (com.intellij.openapi.application.ex.ApplicationUtil.CannotRunReadActionException e) {
-            result = "Error: IDE is busy, please retry. " + e.getMessage();
-            success = false;
-        } catch (Exception e) {
-            LOG.warn("PSI tool error: " + toolName, e);
-            result = "Error: " + e.getMessage();
-            success = false;
-        }
-
-        // Piggyback highlights after successful write operations
-        if (isSuccessfulWrite(toolName, result)) {
-            String filePath = null;
-            if (arguments.has("path")) {
-                filePath = arguments.get("path").getAsString();
-            } else if (arguments.has("file")) {
-                filePath = arguments.get("file").getAsString();
-            }
-            if (filePath != null) {
-                LOG.info("Auto-highlights: piggybacking on write to " + filePath);
-                result = appendAutoHighlights(result, filePath);
-            }
-        }
-
-        JsonObject response = new JsonObject();
-        response.addProperty("result", result);
-        byte[] bytes = GSON.toJson(response).getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set(CONTENT_TYPE_HEADER, APPLICATION_JSON);
-        exchange.sendResponseHeaders(200, bytes.length);
-        exchange.getResponseBody().write(bytes);
-        exchange.getResponseBody().close();
-        fireToolCallEvent(toolName, toolCallStart, success);
     }
 
     /**
@@ -634,7 +384,8 @@ public final class PsiBridgeService implements Disposable {
         LOG.info("Auto-highlights: daemon pass wait completed (2s fixed), collecting highlights");
     }
 
+    @Override
     public void dispose() {
-        stop();
+        // Nothing to dispose — tool handlers are stateless, lifecycle managed by IntelliJ
     }
 }
