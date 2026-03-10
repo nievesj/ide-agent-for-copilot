@@ -28,6 +28,7 @@ const ChatController = {
     _profileColors: {} as Record<string, number>,
     _nextProfileColor: 0,
     _currentProfile: '',
+    _currentProfileName: '',
     _ctx: {} as Record<string, TurnContext & { thinkingMsg?: HTMLElement | null; thinkingChip?: HTMLElement | null }>,
 
     _getCtx(turnId: string, agentId: string): TurnContext & {
@@ -61,12 +62,20 @@ const ChatController = {
                 msg.classList.add('model-c' + this._profileColors[this._currentProfile]);
             }
             const meta = document.createElement('message-meta');
+            meta.className = 'meta';
             const now = new Date();
             const ts = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
             const tsSpan = document.createElement('span');
             tsSpan.className = 'ts';
             tsSpan.textContent = ts;
             meta.appendChild(tsSpan);
+            if (this._currentProfileName && agentId === 'main') {
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'agent-name';
+                nameSpan.textContent = this._currentProfileName;
+                meta.appendChild(nameSpan);
+                meta.classList.add('show');
+            }
             msg.appendChild(meta);
             const details = document.createElement('turn-details');
             msg.appendChild(details);
@@ -309,6 +318,7 @@ const ChatController = {
         this._profileColors = {};
         this._nextProfileColor = 0;
         this._currentProfile = '';
+        this._currentProfileName = '';
     },
 
     finalizeTurn(turnId: string, statsJson?: string): void {
@@ -391,8 +401,9 @@ const ChatController = {
         meta.appendChild(chip);
     },
 
-    setCurrentProfile(profileId: string): void {
+    setCurrentProfile(profileId: string, profileName: string): void {
         this._currentProfile = profileId;
+        this._currentProfileName = profileName;
     },
 
     setCurrentModel(modelId: string): void {

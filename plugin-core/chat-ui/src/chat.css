@@ -488,13 +488,21 @@ thinking-chip.thinking-active .thought-bubble {
 
 /* ── Sub-agent colors ────────────────────────────────── */
 
-/* ── Model colors (main agent bubbles cycle per model) ── */
+/* ── Model colors (main agent bubbles cycle per profile) ── */
+.model-c0 {
+    --mc: rgba(150, 200, 150, 1);
+}
+
 .model-c0 .agent-bubble {
     background: rgba(150, 200, 150, 0.06);
 }
 
 .model-c0 .agent-bubble:hover {
     background: rgba(150, 200, 150, 0.10);
+}
+
+.model-c1 {
+    --mc: rgba(130, 170, 220, 1);
 }
 
 .model-c1 .agent-bubble {
@@ -505,12 +513,20 @@ thinking-chip.thinking-active .thought-bubble {
     background: rgba(130, 170, 220, 0.10);
 }
 
+.model-c2 {
+    --mc: rgba(190, 150, 210, 1);
+}
+
 .model-c2 .agent-bubble {
     background: rgba(190, 150, 210, 0.06);
 }
 
 .model-c2 .agent-bubble:hover {
     background: rgba(190, 150, 210, 0.10);
+}
+
+.model-c3 {
+    --mc: rgba(220, 170, 100, 1);
 }
 
 .model-c3 .agent-bubble {
@@ -521,6 +537,10 @@ thinking-chip.thinking-active .thought-bubble {
     background: rgba(220, 170, 100, 0.10);
 }
 
+.model-c4 {
+    --mc: rgba(200, 130, 150, 1);
+}
+
 .model-c4 .agent-bubble {
     background: rgba(200, 130, 150, 0.06);
 }
@@ -529,12 +549,23 @@ thinking-chip.thinking-active .thought-bubble {
     background: rgba(200, 130, 150, 0.10);
 }
 
+.model-c5 {
+    --mc: rgba(100, 190, 190, 1);
+}
+
 .model-c5 .agent-bubble {
     background: rgba(100, 190, 190, 0.06);
 }
 
 .model-c5 .agent-bubble:hover {
     background: rgba(100, 190, 190, 0.10);
+}
+
+.agent-name {
+    color: var(--mc, var(--think));
+    font-weight: 500;
+    font-size: 0.88em;
+    opacity: 0.85;
 }
 
 .subagent-c0 {
