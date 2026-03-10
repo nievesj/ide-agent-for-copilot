@@ -361,7 +361,7 @@ public final class ToolUtils {
 
     private static boolean isGradleCompileCommand(String cmd) {
         boolean isGradleCmd = cmd.contains("gradlew") || cmd.matches(".*\\bgradle\\s.*");
-        boolean hasCompileTask = cmd.contains("compilekotlin") || cmd.contains("compilejava");
+        boolean hasCompileTask = cmd.matches(".*compile(test)?(kotlin|java).*");
         return isGradleCmd && hasCompileTask;
     }
 
