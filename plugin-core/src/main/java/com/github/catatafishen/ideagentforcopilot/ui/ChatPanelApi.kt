@@ -17,9 +17,15 @@ interface ChatPanelApi : Disposable {
 
     // ── User messages ──────────────────────────────────────────────
 
-    fun addPromptEntry(text: String, contextFiles: List<Triple<String, String, Int>>? = null, bubbleHtml: String? = null)
+    fun addPromptEntry(
+        text: String,
+        contextFiles: List<Triple<String, String, Int>>? = null,
+        bubbleHtml: String? = null
+    )
+
     fun setPromptStats(modelId: String, multiplier: String)
     fun setCurrentModel(modelId: String)
+    fun setCurrentProfile(profileId: String)
     fun addContextFilesEntry(files: List<Pair<String, String>>)
 
     // ── Agent text (streaming) ─────────────────────────────────────
@@ -90,5 +96,10 @@ interface ChatPanelApi : Disposable {
      * Show a permission request bubble in the chat pane with Deny / Allow / Allow for Session buttons.
      * [reqId] is a unique ID for this request. [onRespond] is called with the user's choice.
      */
-    fun showPermissionRequest(reqId: String, toolDisplayName: String, description: String, onRespond: (com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse) -> Unit)
+    fun showPermissionRequest(
+        reqId: String,
+        toolDisplayName: String,
+        description: String,
+        onRespond: (com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse) -> Unit
+    )
 }

@@ -11,7 +11,11 @@ const ChatController = {
         return document.querySelector('#messages')!;
     },
 
-    _container(): HTMLElement & { scrollIfNeeded(): void; forceScroll(): void; workingIndicator: HTMLElement & { show(): void; hide(): void; resetTimer(): void } } | null {
+    _container(): HTMLElement & {
+        scrollIfNeeded(): void;
+        forceScroll(): void;
+        workingIndicator: HTMLElement & { show(): void; hide(): void; resetTimer(): void }
+    } | null {
         return document.querySelector('chat-container') as any;
     },
 
@@ -21,9 +25,9 @@ const ChatController = {
     },
 
     _thinkingCounter: 0,
-    _modelColors: {} as Record<string, number>,
-    _nextModelColor: 0,
-    _currentModel: '',
+    _profileColors: {} as Record<string, number>,
+    _nextProfileColor: 0,
+    _currentProfile: '',
     _ctx: {} as Record<string, TurnContext & { thinkingMsg?: HTMLElement | null; thinkingChip?: HTMLElement | null }>,
 
     _getCtx(turnId: string, agentId: string): TurnContext & {
@@ -49,12 +53,12 @@ const ChatController = {
         if (!ctx.msg) {
             const msg = document.createElement('chat-message');
             msg.setAttribute('type', 'agent');
-            // Apply model-based color class for main agent messages
-            if (this._currentModel && agentId === 'main') {
-                if (!(this._currentModel in this._modelColors)) {
-                    this._modelColors[this._currentModel] = this._nextModelColor++ % 6;
+            // Apply profile-based color class for main agent messages
+            if (this._currentProfile && agentId === 'main') {
+                if (!(this._currentProfile in this._profileColors)) {
+                    this._profileColors[this._currentProfile] = this._nextProfileColor++ % 6;
                 }
-                msg.classList.add('model-c' + this._modelColors[this._currentModel]);
+                msg.classList.add('model-c' + this._profileColors[this._currentProfile]);
             }
             const meta = document.createElement('message-meta');
             const now = new Date();
@@ -302,9 +306,9 @@ const ChatController = {
         this._msgs().innerHTML = '';
         this._ctx = {};
         this._thinkingCounter = 0;
-        this._modelColors = {};
-        this._nextModelColor = 0;
-        this._currentModel = '';
+        this._profileColors = {};
+        this._nextProfileColor = 0;
+        this._currentProfile = '';
     },
 
     finalizeTurn(turnId: string, statsJson?: string): void {
@@ -387,8 +391,12 @@ const ChatController = {
         meta.appendChild(chip);
     },
 
+    setCurrentProfile(profileId: string): void {
+        this._currentProfile = profileId;
+    },
+
     setCurrentModel(modelId: string): void {
-        this._currentModel = modelId;
+        // Kept for stats display compatibility; coloring is now profile-based.
     },
 
     restoreBatch(encodedHtml: string): void {
