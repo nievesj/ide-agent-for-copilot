@@ -2190,6 +2190,12 @@ class AgenticCopilotToolWindowContent(
      * before regular dispatchers — so using `addDispatcher` lets the popup's speed-search text
      * field consume the Ctrl+V keystroke before our handler sees it. Preprocessors run before
      * popup dispatchers, so the paste is reliably intercepted.
+     *
+     * **Double-paste prevention:** calling [com.intellij.openapi.ui.popup.JBPopup.cancel] fires
+     * [com.intellij.openapi.ui.popup.JBPopupListener.onClosed] *synchronously*, which would
+     * dispose the preprocessor before it can swallow the follow-up KEY_TYPED / KEY_RELEASED
+     * events. We guard against this with [pasteIntercepted]: when set, [onClosed] skips disposal
+     * and the preprocessor self-disposes after KEY_RELEASED via [invokeLater].
      */
     private fun registerPasteToSkip(popup: com.intellij.openapi.ui.popup.JBPopup, text: String) {
         val pasteStrokes = setOf(
@@ -2204,6 +2210,10 @@ class AgenticCopilotToolWindowContent(
         // KEY_TYPED and KEY_RELEASED events from the same keystroke.
         var swallowFollowUp = false
 
+        // True once we intercept a paste stroke. Prevents onClosed from disposing the
+        // preprocessor before it finishes swallowing follow-up events (see Javadoc above).
+        var pasteIntercepted = false
+
         val disposable = com.intellij.openapi.util.Disposer.newDisposable("pasteToSkip")
         com.intellij.ide.IdeEventQueue.getInstance().addPreprocessor(
             com.intellij.ide.IdeEventQueue.EventDispatcher { event ->
@@ -2213,7 +2223,14 @@ class AgenticCopilotToolWindowContent(
                 // isVisible false immediately, so KEY_TYPED/KEY_RELEASED would slip through
                 // and trigger a second paste in the editor.
                 if (swallowFollowUp && event.id != java.awt.event.KeyEvent.KEY_PRESSED) {
-                    if (event.id == java.awt.event.KeyEvent.KEY_RELEASED) swallowFollowUp = false
+                    if (event.id == java.awt.event.KeyEvent.KEY_RELEASED) {
+                        swallowFollowUp = false
+                        // Self-dispose now that all follow-up events are consumed. Use
+                        // invokeLater to avoid modifying the preprocessor list mid-dispatch.
+                        ApplicationManager.getApplication().invokeLater {
+                            com.intellij.openapi.util.Disposer.dispose(disposable)
+                        }
+                    }
                     return@EventDispatcher true
                 }
 
@@ -2224,6 +2241,7 @@ class AgenticCopilotToolWindowContent(
                 if (stroke !in pasteStrokes) return@EventDispatcher false
 
                 swallowFollowUp = true
+                pasteIntercepted = true
                 popup.cancel()
                 com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
                     val editor = promptTextArea.editor ?: return@runWriteCommandAction
@@ -2242,7 +2260,11 @@ class AgenticCopilotToolWindowContent(
 
         popup.addListener(object : com.intellij.openapi.ui.popup.JBPopupListener {
             override fun onClosed(event: com.intellij.openapi.ui.popup.LightweightWindowEvent) {
-                com.intellij.openapi.util.Disposer.dispose(disposable)
+                // Skip disposal if a paste was intercepted — the preprocessor will self-dispose
+                // after it finishes swallowing the follow-up KEY_TYPED / KEY_RELEASED events.
+                if (!pasteIntercepted) {
+                    com.intellij.openapi.util.Disposer.dispose(disposable)
+                }
             }
         })
     }
