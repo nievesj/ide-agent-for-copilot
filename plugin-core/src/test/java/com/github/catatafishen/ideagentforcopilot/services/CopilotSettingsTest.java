@@ -19,7 +19,7 @@ public class CopilotSettingsTest extends BasePlatformTestCase {
         // Clear any stale values from previous runs
         PropertiesComponent props = PropertiesComponent.getInstance();
         props.unsetValue("copilot.selectedModel");
-        props.unsetValue("copilot.sessionMode");
+        props.unsetValue("copilot.selectedAgent");
         props.unsetValue("copilot.monthlyRequests");
         props.unsetValue("copilot.monthlyCost");
         props.unsetValue("copilot.usageResetMonth");
