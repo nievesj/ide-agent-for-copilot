@@ -28,6 +28,7 @@ import java.util.Map;
 public final class ProfileBasedAgentConfig implements AgentConfig {
 
     private static final Logger LOG = Logger.getInstance(ProfileBasedAgentConfig.class);
+    private static final String MCP_SERVERS_KEY = "mcpServers";
 
     private final AgentProfile profile;
     private String resolvedBinaryPath;
@@ -246,8 +247,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
 
         // Check common Unix locations
         if (!isWindows) {
-            String found = checkUnixLocations(binaryName);
-            if (found != null) return found;
+            return checkUnixLocations(binaryName);
         }
 
         return null;
@@ -373,9 +373,9 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
                 String content = Files.readString(configPath);
                 JsonObject root = JsonParser.parseString(content).getAsJsonObject();
 
-                // Support both {"mcpServers": {...}} and flat {"serverName": {...}}
-                JsonObject servers = root.has("mcpServers") && root.get("mcpServers").isJsonObject()
-                    ? root.getAsJsonObject("mcpServers")
+                // Support both nested and flat MCP server config layouts
+                JsonObject servers = root.has(MCP_SERVERS_KEY) && root.get(MCP_SERVERS_KEY).isJsonObject()
+                    ? root.getAsJsonObject(MCP_SERVERS_KEY)
                     : root;
 
                 for (Map.Entry<String, JsonElement> entry : servers.entrySet()) {
@@ -432,7 +432,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         try {
             var parsed = com.google.gson.JsonParser.parseString(configJson).getAsJsonObject();
             var permObj = buildPermissionJsonObject();
-            if (permObj.size() > 0) {
+            if (!permObj.isEmpty()) {
                 parsed.add("permission", permObj);
                 LOG.info("Merged " + permObj.size() + " tool permissions into agent config JSON");
             }

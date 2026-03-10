@@ -8,6 +8,7 @@ package com.github.catatafishen.ideagentforcopilot.ui
 internal object MarkdownRenderer {
 
     private const val HTML_TABLE_CLOSE = "</table>"
+    private const val HTML_BLOCKQUOTE_CLOSE = "</blockquote>"
     private val FILE_PATH_REGEX = Regex(
         """(?<![:\w])(?:/[\w.\-]+(?:/[\w.\-]+)*\.\w+|(?:\.\.?/)?[\w.\-]+(?:/[\w.\-]+)+\.\w+)(?::\d+(?::\d+)?)?"""
     )
@@ -37,7 +38,14 @@ internal object MarkdownRenderer {
             when {
                 t.startsWith("```") -> handleCodeFence(sb, state, t)
                 state.inCode -> sb.append(escapeHtml(line)).append("\n")
-                processBlockElement(sb, state, t, resolveFileReference, resolveFilePath, isGitCommit) -> { /* handled by helper */
+                processBlockElement(
+                    sb,
+                    state,
+                    t,
+                    resolveFileReference,
+                    resolveFilePath,
+                    isGitCommit
+                ) -> { /* handled by helper */
                 }
 
                 t.isEmpty() -> { /* skip blank lines */
@@ -78,14 +86,17 @@ internal object MarkdownRenderer {
         if (hm != null) {
             closeAllInlineBlocks(sb, state)
             val lv = hm.groupValues[1].length + 1
-            sb.append("<h$lv>").append(formatInline(hm.groupValues[2], resolveFileReference, resolveFilePath, isGitCommit))
+            sb.append("<h$lv>")
+                .append(formatInline(hm.groupValues[2], resolveFileReference, resolveFilePath, isGitCommit))
                 .append("</h$lv>")
             return true
         }
         if (handleBlockquote(sb, state, t, resolveFileReference, resolveFilePath, isGitCommit)) return true
         if (handleTableRow(sb, state, t, resolveFileReference, resolveFilePath, isGitCommit)) return true
         if (handleListItem(sb, state, t, resolveFileReference, resolveFilePath, isGitCommit)) return true
-        if (state.inBlockquote) { sb.append("</blockquote>"); state.inBlockquote = false }
+        if (state.inBlockquote) {
+            sb.append(HTML_BLOCKQUOTE_CLOSE); state.inBlockquote = false
+        }
         return false
     }
 
@@ -111,7 +122,8 @@ internal object MarkdownRenderer {
         }
         val content = t.removePrefix("> ").removePrefix(">").trim()
         if (content.isNotEmpty()) {
-            sb.append("<p>").append(formatInline(content, resolveFileReference, resolveFilePath, isGitCommit)).append("</p>")
+            sb.append("<p>").append(formatInline(content, resolveFileReference, resolveFilePath, isGitCommit))
+                .append("</p>")
         }
         return true
     }
@@ -138,7 +150,8 @@ internal object MarkdownRenderer {
         val cells = t.split("|").drop(1).dropLast(1).map { it.trim() }
         val tag = if (state.firstTR) "th" else "td"
         sb.append("<tr>"); cells.forEach {
-            sb.append("<$tag>").append(formatInline(it, resolveFileReference, resolveFilePath, isGitCommit)).append("</$tag>")
+            sb.append("<$tag>").append(formatInline(it, resolveFileReference, resolveFilePath, isGitCommit))
+                .append("</$tag>")
         }
         sb.append("</tr>"); state.firstTR = false
         return true
@@ -160,14 +173,23 @@ internal object MarkdownRenderer {
             sb.append("<ul>"); state.inList = true
         }
         sb.append("<li>")
-            .append(formatInline(t.removePrefix("- ").removePrefix("* "), resolveFileReference, resolveFilePath, isGitCommit))
+            .append(
+                formatInline(
+                    t.removePrefix("- ").removePrefix("* "),
+                    resolveFileReference,
+                    resolveFilePath,
+                    isGitCommit
+                )
+            )
             .append("</li>")
         return true
     }
 
     private fun closeAllInlineBlocks(sb: StringBuilder, state: MarkdownState) {
         closeListAndTable(sb, state)
-        if (state.inBlockquote) { sb.append("</blockquote>"); state.inBlockquote = false }
+        if (state.inBlockquote) {
+            sb.append(HTML_BLOCKQUOTE_CLOSE); state.inBlockquote = false
+        }
     }
 
     private fun closeListAndTable(sb: StringBuilder, state: MarkdownState) {
@@ -183,7 +205,7 @@ internal object MarkdownRenderer {
         if (state.inCode) sb.append("</code></pre>")
         if (state.inTable) sb.append(HTML_TABLE_CLOSE)
         if (state.inList) sb.append("</ul>")
-        if (state.inBlockquote) sb.append("</blockquote>")
+        if (state.inBlockquote) sb.append(HTML_BLOCKQUOTE_CLOSE)
     }
 
     private fun formatInline(
@@ -240,7 +262,11 @@ internal object MarkdownRenderer {
         return result.toString()
     }
 
-    private fun formatNonCode(text: String, resolveFilePath: (String) -> String?, isGitCommit: (String) -> Boolean): String {
+    private fun formatNonCode(
+        text: String,
+        resolveFilePath: (String) -> String?,
+        isGitCommit: (String) -> Boolean
+    ): String {
         var html = escapeHtml(text)
         html = FILE_PATH_REGEX.replace(html) { m ->
             val pathPart = m.value.split(":")[0]

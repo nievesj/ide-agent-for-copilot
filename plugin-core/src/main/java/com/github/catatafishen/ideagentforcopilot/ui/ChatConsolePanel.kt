@@ -85,8 +85,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
         fun getInstance(project: Project): ChatConsolePanel? = instances[project]
 
-        private fun getThemeColor(key: String, lightFallback: Color, darkFallback: Color): Color =
-            UIManager.getColor(key) ?: JBColor(lightFallback, darkFallback)
+        private const val FAILED_SPAN = "<span style='color:var(--error)'>✖ Failed</span>"
+        private const val DEFAULT_AGENT_TYPE = "general-purpose"
 
         private val LINK_COLOR_KEY = "Link.activeForeground"
         private val USER_COLOR = JBColor(Color(0x28, 0x6B, 0xC0), Color(86, 156, 214))
@@ -366,7 +366,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         )
         if (!initialResult.isNullOrBlank() || initialStatus == "completed" || initialStatus == "failed") {
             val resultHtml =
-                if (!initialResult.isNullOrBlank()) markdownToHtml(initialResult) else if (initialStatus == "completed") "Completed" else "<span style='color:var(--error)'>✖ Failed</span>"
+                if (!initialResult.isNullOrBlank()) markdownToHtml(initialResult) else if (initialStatus == "completed") "Completed" else FAILED_SPAN
             val encoded = b64(resultHtml)
             executeJs("ChatController.updateSubAgent('$did','${initialStatus ?: "completed"}',b64('$encoded'))")
         }
@@ -378,7 +378,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         entry?.let { it.result = result; it.status = status }
         val did = domId(id)
         val resultHtml =
-            if (!result.isNullOrBlank()) markdownToHtml(result) else if (status == "completed") "Completed" else "<span style='color:var(--error)'>✖ Failed</span>"
+            if (!result.isNullOrBlank()) markdownToHtml(result) else if (status == "completed") "Completed" else FAILED_SPAN
         val encoded = b64(resultHtml)
         executeJs("ChatController.updateSubAgent('$did','$status',b64('$encoded'))")
         toolJustCompleted = true
@@ -592,7 +592,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 val ci = obj["colorIndex"]?.asInt ?: (nextSubAgentColor++ % SA_COLOR_COUNT)
                 entries.add(
                     EntryData.SubAgent(
-                        obj["agentType"]?.asString ?: "general-purpose",
+                        obj["agentType"]?.asString ?: DEFAULT_AGENT_TYPE,
                         obj["description"]?.asString ?: "",
                         obj["prompt"]?.asString?.ifEmpty { null },
                         obj["result"]?.asString?.ifEmpty { null },
@@ -688,7 +688,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
             "subagent" -> {
                 if (currentTurnId.isEmpty()) currentTurnId = "t${turnCounter++}"
-                val agentType = obj["agentType"]?.asString ?: "general-purpose"
+                val agentType = obj["agentType"]?.asString ?: DEFAULT_AGENT_TYPE
                 val saInfo = SUB_AGENT_INFO[agentType]
                 val displayName = saInfo?.displayName ?: agentType.replaceFirstChar { it.uppercaseChar() }
                 val prompt = obj["prompt"]?.asString?.ifEmpty { null }
@@ -705,7 +705,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                     }')"
                 )
                 val resultHtml =
-                    if (!result.isNullOrBlank()) markdownToHtml(result) else if (status == "completed") "Completed" else "<span style='color:var(--error)'>✖ Failed</span>"
+                    if (!result.isNullOrBlank()) markdownToHtml(result) else if (status == "completed") "Completed" else FAILED_SPAN
                 val encoded = b64(resultHtml)
                 executeJs("ChatController.updateSubAgent('$did','$status',b64('$encoded'))")
                 // Start a new segment so subsequent entries are appended after the
@@ -862,7 +862,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                             }
 
                             "subagent" -> {
-                                val agentType = e["agentType"]?.asString ?: "general-purpose"
+                                val agentType = e["agentType"]?.asString ?: DEFAULT_AGENT_TYPE
                                 val saInfo = SUB_AGENT_INFO[agentType]
                                 val dn = saInfo?.displayName ?: agentType.replaceFirstChar { it.uppercaseChar() }
                                 val result = e["result"]?.asString?.ifEmpty { null }
@@ -998,7 +998,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val log = com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
         ApplicationManager.getApplication().invokeLater {
             try {
-                val repos = git4idea.repo.GitRepositoryManager.getInstance(project).repositories
+                val repos = git4idea.repo.GitRepositoryManager.getInstance(project).repositories.toList()
                 val root = repos.firstOrNull()?.root
                 if (root == null) {
                     log.warn("No VCS root found for git commit link $hash")
@@ -1047,7 +1047,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val basePath = project.basePath ?: return null
         return try {
             val process = ProcessBuilder("git", "rev-parse", shortHash)
-                .directory(java.io.File(basePath))
+                .directory(File(basePath))
                 .redirectErrorStream(true)
                 .start()
             val exited = process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
@@ -1066,7 +1066,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val basePath = project.basePath ?: return false
         return try {
             val process = ProcessBuilder("git", "cat-file", "-t", sha)
-                .directory(java.io.File(basePath))
+                .directory(File(basePath))
                 .redirectErrorStream(true)
                 .start()
             val exited = process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
@@ -1099,7 +1099,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private fun findProjectFileByName(name: String): String? = try {
         var result: String? = null
         ApplicationManager.getApplication().runReadAction {
-            val files = FilenameIndex.getVirtualFilesByName(name, GlobalSearchScope.projectScope(project))
+            val files = FilenameIndex.getVirtualFilesByName(name, GlobalSearchScope.projectScope(project)).toList()
             if (files.size == 1) result = files.first().path
         }
         result

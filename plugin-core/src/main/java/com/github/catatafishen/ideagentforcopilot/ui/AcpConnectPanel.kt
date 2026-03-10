@@ -34,10 +34,15 @@ class AcpConnectPanel(
     private val onConnect: (String, String?) -> Unit
 ) : JBPanel<AcpConnectPanel>(BorderLayout()) {
 
+    companion object {
+        private const val START_SERVER = "Start server"
+        private const val STOP_SERVER = "Stop server"
+    }
+
     private val agentManager = ActiveAgentManager.getInstance(project)
 
     // MCP controls
-    private val mcpStartButton = JButton("Start server")
+    private val mcpStartButton = JButton(START_SERVER)
     private val mcpSpinner = AsyncProcessIcon("mcp-toggle").apply {
         isVisible = false
         toolTipText = "Working…"
@@ -360,7 +365,7 @@ class AcpConnectPanel(
         val mcpServer = McpServerControl.getInstance(project)
         if (mcpServer == null) {
             mcpStartButton.isEnabled = false
-            mcpStartButton.text = "Start server"
+            mcpStartButton.text = START_SERVER
             mcpStartButton.icon = AllIcons.Actions.Execute
             mcpStatusLabel.text = "Error — McpServerControl service not registered"
             mcpStatusLabel.icon = AllIcons.General.Error
@@ -376,7 +381,7 @@ class AcpConnectPanel(
         val port = mcpServer.port
 
         mcpStartButton.isEnabled = true
-        mcpStartButton.text = if (running) "Stop server" else "Start server"
+        mcpStartButton.text = if (running) STOP_SERVER else START_SERVER
         mcpStartButton.icon = if (running) AllIcons.Actions.Suspend else AllIcons.Actions.Execute
 
         if (running && port > 0) {

@@ -27,6 +27,7 @@ import java.util.List;
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
 class InfrastructureTools extends AbstractToolHandler {
     private static final Logger LOG = Logger.getInstance(InfrastructureTools.class);
+    private static final String PARAM_OFFSET = "offset";
 
     private static final String CONTENT_TYPE_HEADER = "Content-Type";
     private static final String APPLICATION_JSON = "application/json";
@@ -118,7 +119,7 @@ class InfrastructureTools extends AbstractToolHandler {
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
         int timeoutSec = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 60;
-        int offset = args.has("offset") ? args.get("offset").getAsInt() : 0;
+        int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
         String tabTitle = title != null ? title : "Command: " + truncateForTitle(command);
 
@@ -147,7 +148,7 @@ class InfrastructureTools extends AbstractToolHandler {
         boolean failed = result.exitCode() != 0;
         // On failure with no explicit offset, show the tail so stack traces / errors are visible
         int effectiveOffset = offset;
-        if (failed && !args.has("offset") && fullOutput.length() > maxChars) {
+        if (failed && !args.has(PARAM_OFFSET) && fullOutput.length() > maxChars) {
             effectiveOffset = fullOutput.length() - maxChars;
         }
         String header = failed

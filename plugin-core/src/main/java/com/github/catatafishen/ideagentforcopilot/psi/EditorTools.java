@@ -26,6 +26,9 @@ class EditorTools extends AbstractToolHandler {
 
     private static final Logger LOG = Logger.getInstance(EditorTools.class);
 
+    private static final String JSON_EXT = ".json";
+    private static final String CONVERSATION_PREFIX = "conversation-";
+
     private static final String PARAM_CONTENT = "content";
     private static final String FORMAT_CHARS_SUFFIX = " chars)";
     private static final String DIFF_LABEL_CURRENT = "Current";
@@ -343,7 +346,7 @@ class EditorTools extends AbstractToolHandler {
 
         java.io.File agentDir = new java.io.File(basePath, ".agent-work");
         java.io.File archiveDir = new java.io.File(agentDir, "conversations");
-        java.io.File currentFile = new java.io.File(agentDir, "conversation.json");
+        java.io.File currentFile = new java.io.File(agentDir, "conversation" + JSON_EXT);
 
         String query = args.has("query") ? args.get("query").getAsString() : null;
         String file = args.has("file") ? args.get("file").getAsString() : null;
@@ -370,11 +373,11 @@ class EditorTools extends AbstractToolHandler {
             sb.append("• current (").append(formatFileSize(currentFile.length())).append(")\n");
         }
         if (archiveDir.exists()) {
-            java.io.File[] archives = archiveDir.listFiles((d, n) -> n.endsWith(".json"));
+            java.io.File[] archives = archiveDir.listFiles((d, n) -> n.endsWith(JSON_EXT));
             if (archives != null && archives.length > 0) {
                 java.util.Arrays.sort(archives, java.util.Comparator.comparing(java.io.File::getName).reversed());
                 for (java.io.File f : archives) {
-                    String name = f.getName().replace("conversation-", "").replace(".json", "");
+                    String name = f.getName().replace(CONVERSATION_PREFIX, "").replace(JSON_EXT, "");
                     sb.append("• ").append(name).append(" (").append(formatFileSize(f.length())).append(")\n");
                 }
             }
@@ -409,7 +412,7 @@ class EditorTools extends AbstractToolHandler {
         } else {
             if (currentFile.exists() && currentFile.length() > 10) files.add(currentFile);
             if (archiveDir.exists()) {
-                java.io.File[] archives = archiveDir.listFiles((d, n) -> n.endsWith(".json"));
+                java.io.File[] archives = archiveDir.listFiles((d, n) -> n.endsWith(JSON_EXT));
                 if (archives != null) {
                     java.util.Arrays.sort(archives, java.util.Comparator.comparing(java.io.File::getName).reversed());
                     files.addAll(java.util.Arrays.asList(archives));
@@ -419,7 +422,7 @@ class EditorTools extends AbstractToolHandler {
 
         int totalMatches = 0;
         for (java.io.File f : files) {
-            String label = f.equals(currentFile) ? "current" : f.getName().replace("conversation-", "").replace(".json", "");
+            String label = f.equals(currentFile) ? "current" : f.getName().replace(CONVERSATION_PREFIX, "").replace(JSON_EXT, "");
             String result = conversationJsonToText(f, lowerQuery, maxChars - sb.length());
             if (!result.isEmpty()) {
                 long matchCount = result.lines().filter(l -> l.toLowerCase(java.util.Locale.ROOT).contains(lowerQuery)).count();
@@ -436,11 +439,11 @@ class EditorTools extends AbstractToolHandler {
 
     private static java.io.File resolveConversationFile(String name, java.io.File currentFile, java.io.File archiveDir) {
         if ("current".equalsIgnoreCase(name)) return currentFile;
-        java.io.File direct = new java.io.File(archiveDir, "conversation-" + name + ".json");
+        java.io.File direct = new java.io.File(archiveDir, CONVERSATION_PREFIX + name + JSON_EXT);
         if (direct.exists()) return direct;
         // Fuzzy match: find archive containing the name
         if (archiveDir.exists()) {
-            java.io.File[] archives = archiveDir.listFiles((d, n) -> n.contains(name) && n.endsWith(".json"));
+            java.io.File[] archives = archiveDir.listFiles((d, n) -> n.contains(name) && n.endsWith(JSON_EXT));
             if (archives != null && archives.length > 0) return archives[0];
         }
         return null;
