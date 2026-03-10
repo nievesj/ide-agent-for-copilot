@@ -227,7 +227,7 @@ public final class PsiBridgeService implements Disposable {
         String argsJson = arguments.toString();
         String reqId = java.util.UUID.randomUUID().toString();
 
-        com.github.catatafishen.ideagentforcopilot.ui uy.ChatConsolePanel chatPanel =
+        com.github.catatafishen.ideagentforcopilot.ui.ChatConsolePanel chatPanel =
             com.github.catatafishen.ideagentforcopilot.ui.ChatConsolePanel.Companion.getInstance(project);
 
         com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse response;
