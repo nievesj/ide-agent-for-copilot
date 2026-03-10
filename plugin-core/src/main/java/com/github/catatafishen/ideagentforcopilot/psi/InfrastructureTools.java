@@ -281,14 +281,10 @@ class InfrastructureTools extends AbstractToolHandler {
      * Flush deferred console output and extract text. Must be called on EDT.
      */
     private String readConsoleTextOnEdt(com.intellij.execution.ui.ExecutionConsole console) {
-        LOG.info("readConsoleTextOnEdt: raw console type = " + console.getClass().getName());
         // Unwrap delegate wrappers (e.g. JavaConsoleWithProfilerWidget in Ultimate)
         var unwrapped = unwrapConsoleDelegate(console);
-        LOG.info("readConsoleTextOnEdt: unwrapped console type = " + unwrapped.getClass().getName());
         flushConsoleOutput(unwrapped);
-        String result = extractConsoleText(unwrapped);
-        LOG.info("readConsoleTextOnEdt: extracted text length = " + (result == null ? "null" : result.length()));
-        return result;
+        return extractConsoleText(unwrapped);
     }
 
     /**
@@ -371,15 +367,11 @@ class InfrastructureTools extends AbstractToolHandler {
         return result.toString();
     }
 
-    /**
-     * Extract plain text from any type of ExecutionConsole (regular, test runner, etc.)
-     */
     private String extractConsoleText(com.intellij.execution.ui.ExecutionConsole console) {
         try {
             var getResultsViewer = console.getClass().getMethod("getResultsViewer");
             var viewer = getResultsViewer.invoke(console);
             if (viewer != null) {
-                // Always return test runner output (may include in-progress status if tests not done yet)
                 return extractTestRunnerResults(viewer, console);
             }
         } catch (NoSuchMethodException ignored) {
@@ -387,27 +379,58 @@ class InfrastructureTools extends AbstractToolHandler {
         } catch (Exception e) {
             LOG.warn("Failed to extract test runner output", e);
         }
-
         return extractPlainConsoleText(console);
     }
 
     private String extractTestRunnerResults(Object viewer,
                                             com.intellij.execution.ui.ExecutionConsole console) throws Exception {
-        LOG.info("extractTestRunnerResults: viewer type = " + viewer.getClass().getName());
+        // getAllTests() lives on AbstractTestProxy (the root node), not on the viewer/form
+        var getTestsRootNode = viewer.getClass().getMethod("getTestsRootNode");
+        Object root = getTestsRootNode.invoke(viewer);
+        if (root == null) {
+            return "(No test results yet — the run may not have started)\n";
+        }
+
+        var getAllTests = root.getClass().getMethod("getAllTests");
+        var tests = (java.util.List<?>) getAllTests.invoke(root);
+
         StringBuilder testOutput = new StringBuilder();
-        var getAllTests = viewer.getClass().getMethod("getAllTests");
-        var tests = (java.util.List<?>) getAllTests.invoke(viewer);
-        LOG.info("extractTestRunnerResults: getAllTests count = " + (tests == null ? "null" : tests.size()));
         if (tests != null && !tests.isEmpty()) {
+            appendTestSummary(viewer, testOutput);
             testOutput.append("=== Test Results ===\n");
             for (var test : tests) {
-                appendTestResult(test, testOutput);
+                if (isLeafTest(test)) {
+                    appendTestResult(test, testOutput);
+                }
             }
         } else {
             testOutput.append(getTestRunProgressStatus(viewer));
         }
         appendTestConsoleOutput(console, testOutput);
         return testOutput.toString();
+    }
+
+    private boolean isLeafTest(Object test) {
+        try {
+            var isLeaf = test.getClass().getMethod("isLeaf");
+            return (boolean) isLeaf.invoke(test);
+        } catch (Exception ignored) {
+            return true;
+        }
+    }
+
+    private void appendTestSummary(Object viewer, StringBuilder out) {
+        try {
+            int total = (int) viewer.getClass().getMethod("getTotalTestCount").invoke(viewer);
+            int failed = (int) viewer.getClass().getMethod("getFailedTestCount").invoke(viewer);
+            int ignored = (int) viewer.getClass().getMethod("getIgnoredTestCount").invoke(viewer);
+            int passed = total - failed - ignored;
+            out.append("=== Summary: ").append(passed).append(" passed, ")
+                .append(failed).append(" failed, ")
+                .append(ignored).append(" ignored (").append(total).append(" total) ===\n");
+        } catch (Exception ignored) {
+            // Summary not available
+        }
     }
 
     /**
