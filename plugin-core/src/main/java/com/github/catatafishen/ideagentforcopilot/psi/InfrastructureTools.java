@@ -288,9 +288,21 @@ class InfrastructureTools extends AbstractToolHandler {
      * Unwrap console wrappers to get the underlying ConsoleView.
      * Handles ConsoleViewWithDelegate (IntelliJ Ultimate profiler widgets)
      * and getConsole()-style wrappers (Node.js, Python, etc.).
+     * <p>
+     * Test runner consoles (SMTRunnerConsoleView) are intentionally NOT unwrapped —
+     * they expose getResultsViewer() which extractConsoleText() uses to read structured
+     * test results. Unwrapping them would lose access to the results tree.
      */
     private com.intellij.execution.ui.ExecutionConsole unwrapConsoleDelegate(
         com.intellij.execution.ui.ExecutionConsole console) {
+        // Don't unwrap test runner consoles — extractConsoleText handles them specially
+        try {
+            console.getClass().getMethod("getResultsViewer");
+            return console;
+        } catch (NoSuchMethodException ignored) {
+            // Not a test runner console, proceed with unwrapping
+        }
+
         if (console instanceof com.intellij.execution.ui.ConsoleViewWithDelegate wrapper) {
             return wrapper.getDelegate();
         }
@@ -360,8 +372,8 @@ class InfrastructureTools extends AbstractToolHandler {
             var getResultsViewer = console.getClass().getMethod("getResultsViewer");
             var viewer = getResultsViewer.invoke(console);
             if (viewer != null) {
-                String testOutput = extractTestRunnerResults(viewer, console);
-                if (!testOutput.isEmpty()) return testOutput;
+                // Always return test runner output (may include in-progress status if tests not done yet)
+                return extractTestRunnerResults(viewer, console);
             }
         } catch (NoSuchMethodException ignored) {
             // Not an SMTRunnerConsoleView
@@ -382,9 +394,37 @@ class InfrastructureTools extends AbstractToolHandler {
             for (var test : tests) {
                 appendTestResult(test, testOutput);
             }
+        } else {
+            testOutput.append(getTestRunProgressStatus(viewer));
         }
         appendTestConsoleOutput(console, testOutput);
         return testOutput.toString();
+    }
+
+    /**
+     * Returns a human-readable status message when no test results are available yet.
+     * Checks the root node to distinguish "in progress" from "not started".
+     */
+    private String getTestRunProgressStatus(Object viewer) {
+        try {
+            var getRootNode = viewer.getClass().getMethod("getTestsRootNode");
+            Object root = getRootNode.invoke(viewer);
+            if (root != null && isTestNodeInProgress(root)) {
+                return "(Test run in progress — call read_run_output again after it finishes)\n";
+            }
+        } catch (Exception ignored) {
+            // Best-effort status check
+        }
+        return "(No test results yet — the run may not have started)\n";
+    }
+
+    private boolean isTestNodeInProgress(Object testNode) {
+        try {
+            var isInProgress = testNode.getClass().getMethod("isInProgress");
+            return (boolean) isInProgress.invoke(testNode);
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private void appendTestResult(Object test, StringBuilder testOutput) throws Exception {

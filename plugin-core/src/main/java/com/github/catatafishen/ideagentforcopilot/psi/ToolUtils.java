@@ -332,6 +332,9 @@ public final class ToolUtils {
             return "find";
         }
 
+        // Block direct Gradle compile tasks — should use build_project (IntelliJ incremental compiler)
+        if (isGradleCompileCommand(cmd)) return "compile";
+
         // Block test commands — should use run_tests
         // Explicit test tasks
         if (cmd.matches(".*(gradlew|gradle|mvn|npm|yarn|pnpm|pytest|jest|mocha|go) test.*") ||
@@ -356,6 +359,12 @@ public final class ToolUtils {
         return null;
     }
 
+    private static boolean isGradleCompileCommand(String cmd) {
+        boolean isGradleCmd = cmd.contains("gradlew") || cmd.matches(".*\\bgradle\\s.*");
+        boolean hasCompileTask = cmd.contains("compilekotlin") || cmd.contains("compilejava");
+        return isGradleCmd && hasCompileTask;
+    }
+
     /**
      * Map abuse type to a human-readable error message for MCP tool responses.
      */
@@ -373,6 +382,8 @@ public final class ToolUtils {
                 + "Use search_text or search_symbols to search live editor buffers instead.";
             case "find" -> "Error: find commands are not allowed via run_command. "
                 + "Use list_project_files to find files instead.";
+            case "compile" -> "Error: Gradle compile tasks are not allowed via run_command. "
+                + "Use build_project to compile via IntelliJ's incremental compiler instead.";
             case "test" -> "Error: test commands are not allowed via run_command (including build/check/verify " +
                 "which implicitly run tests). Use run_tests to run tests with proper IntelliJ integration instead.";
             default -> "Error: this command is not allowed via run_command. Use dedicated IntelliJ tools instead.";

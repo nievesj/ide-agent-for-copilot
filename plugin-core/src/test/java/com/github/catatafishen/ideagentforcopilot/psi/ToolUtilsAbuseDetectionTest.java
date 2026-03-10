@@ -209,6 +209,30 @@ class ToolUtilsAbuseDetectionTest {
         }
     }
 
+    // ── Gradle compile commands ──────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("Gradle compile task abuse detection")
+    class GradleCompileAbuse {
+        @ParameterizedTest
+        @ValueSource(strings = {
+            "./gradlew compileKotlin",
+            "./gradlew compileJava",
+            "./gradlew :plugin-core:compileKotlin",
+            "./gradlew :plugin-core:compileJava",
+            "./gradlew :plugin-core:compileKotlin :plugin-core:compileJava",
+            "./gradlew compileTestKotlin",
+            "./gradlew compileTestJava",
+            "./gradlew :module:compileJava --info",
+            "gradle compileJava",
+            "gradle compileKotlin",
+        })
+        void blocksGradleCompileCommands(String cmd) {
+            assertEquals("compile", ToolUtils.detectCommandAbuseType(cmd),
+                "Should block: " + cmd);
+        }
+    }
+
     // ── Allowed commands ─────────────────────────────────────────────────────
 
     @Nested

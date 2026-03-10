@@ -114,16 +114,18 @@ public class AcpClient implements Closeable {
         "git_pull", "git_merge", "git_rebase", "git_cherry_pick", "git_tag", "git_reset"
     );
 
+    private static final String SUBAGENT_WRITE_ABUSE_PREFIX = "subagent_write_abuse:";
+    private static final String KIND_BASH = "bash";
+    private static final String KIND_EXECUTE = "execute";
+
     /**
      * Built-in write/execute tools that sub-agents must not use.
      * These go through request_permission, so we can deny them.
      * Read-only built-ins (view, grep, glob) auto-execute without permission — unblockable.
      */
     private static final Set<String> BUILTIN_WRITE_TOOLS = Set.of(
-        "edit", "create", "bash", "write", "execute", "runInTerminal"
+        "edit", "create", KIND_BASH, "write", KIND_EXECUTE, "runInTerminal"
     );
-
-    private static final String SUBAGENT_WRITE_ABUSE_PREFIX = "subagent_write_abuse:";
 
     // Permission request listener and pending ASK map
     private volatile java.util.function.Consumer<PermissionRequest> permissionRequestListener;
@@ -1288,17 +1290,22 @@ public class AcpClient implements Closeable {
     }
 
     /**
-     * Detect if run_command is being abused to do something we have a dedicated tool for.
-     * Returns abuse type if detected, null otherwise.
+     * Detect if run_command or the bash built-in tool is being abused to do something
+     * we have a dedicated tool for. Returns abuse type if detected, null otherwise.
      */
     private String detectCommandAbuse(JsonObject toolCall) {
         if (toolCall == null) return null;
 
         String toolName = toolCall.has("name") ? toolCall.get("name").getAsString() : "";
-        String expectedName = effectiveMcpPrefix + "run_command";
-        if (!"run_command".equals(toolName) && !expectedName.equals(toolName)) {
-            return null;
-        }
+        String permKind = toolCall.has("kind") ? toolCall.get("kind").getAsString() : "";
+        String expectedMcpName = effectiveMcpPrefix + "run_command";
+
+        boolean isRunCommand = "run_command".equals(toolName) || expectedMcpName.equals(toolName);
+        // Also intercept the bash built-in tool (kind=execute or kind=bash)
+        boolean isBashTool = KIND_BASH.equals(permKind) || KIND_EXECUTE.equals(permKind)
+            || KIND_BASH.equals(toolName);
+
+        if (!isRunCommand && !isBashTool) return null;
 
         String command = extractCommand(toolCall);
         if (command.isEmpty()) return null;
@@ -1364,9 +1371,11 @@ public class AcpClient implements Closeable {
         if (deniedKind.startsWith(RUN_COMMAND_ABUSE_PREFIX)) {
             String abuseType = deniedKind.substring(RUN_COMMAND_ABUSE_PREFIX.length());
             instruction = switch (abuseType) {
-                case "test" -> "⚠ Don't use run_command for tests (including build/check/verify which " +
-                    "implicitly run tests). Use '" + p + "run_tests' instead. " +
-                    "Provides structured results, coverage, and failure details.";
+                case "compile" -> "⚠ Don't run Gradle compile tasks directly. Use '" + p + "build_project' instead. "
+                    + "It uses IntelliJ's incremental compiler which is faster and keeps editor buffers in sync.";
+                case "test" -> "⚠ Don't run tests from the command line (including build/check/verify which "
+                    + "implicitly run tests). Use '" + p + "run_tests' instead. "
+                    + "Provides structured results, coverage, and failure details.";
                 case "sed" -> "⚠ Don't use sed. Use '" + p + "edit_text' for surgical edits " +
                     "or '" + p + "replace_symbol_body' for replacing whole methods/classes. " +
                     "They provide proper undo/redo and live editor buffer access.";
@@ -1395,7 +1404,7 @@ public class AcpClient implements Closeable {
                 "'" + p + "create_file' to create files, " +
                 "'" + p + "run_command' for shell commands. " +
                 "These tools write through IntelliJ's Document API (undo/redo, live buffers, no desync).";
-        } else if ("bash".equals(deniedKind) || "execute".equals(deniedKind)) {
+        } else if (KIND_BASH.equals(deniedKind) || KIND_EXECUTE.equals(deniedKind)) {
             instruction = "⚠ Don't use bash/shell execution — it reads/writes disk directly, bypassing IntelliJ editor buffers. " +
                 "Use '" + p + "run_command' for shell commands (flushes buffers first). " +
                 "For file operations use intellij_read_file, edit_text, replace_symbol_body, search_text, etc. " +
