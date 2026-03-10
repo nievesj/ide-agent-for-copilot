@@ -133,6 +133,7 @@ public final class ToolRegistry {
         new ToolEntry("run_in_terminal", "Run in Terminal", "Run a command in IntelliJ's integrated terminal", Category.RUN, false, false, false),
         new ToolEntry("write_terminal_input", "Write Terminal Input", "Send raw text or keystrokes to a running terminal (e.g. answer prompts, send Ctrl-C)", Category.RUN, false, false, false),
         new ToolEntry("read_run_output", "Read Run Output", "Read output from a recent Run panel tab by name", Category.RUN, false, false, false),
+        new ToolEntry("read_build_output", "Read Build Output", "Read output from a tab in the Build tool window (Gradle/Maven/compiler output)", Category.RUN, false, false, false),
         new ToolEntry("read_terminal_output", "Read Terminal", "Read output from an integrated terminal tab", Category.RUN, false, false, false),
         new ToolEntry("list_terminals", "List Terminals", "List active terminal tabs", Category.RUN, false, false, false),
 
@@ -201,7 +202,7 @@ public final class ToolRegistry {
         "run_inspections", "run_qodana", "run_sonarqube_analysis",
         "get_problems", "get_highlights", "get_compilation_errors",
         "get_coverage",
-        "list_run_configurations", "read_run_output", "list_terminals", "read_terminal_output",
+        "list_run_configurations", "read_run_output", "read_build_output", "list_terminals", "read_terminal_output",
         "git_status", "git_diff", "git_log", "git_show", "git_blame", "get_file_history",
         "get_project_info", "list_project_files", "get_indexing_status",
         "get_documentation", "download_sources",

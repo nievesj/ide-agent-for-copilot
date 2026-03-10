@@ -22,7 +22,7 @@ import java.util.List;
 
 /**
  * Handles infrastructure tool calls: http_request, run_command, read_ide_log,
- * get_notifications, read_run_output.
+ * get_notifications, read_run_output, read_build_output.
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
 class InfrastructureTools extends AbstractToolHandler {
@@ -51,6 +51,7 @@ class InfrastructureTools extends AbstractToolHandler {
         register("read_ide_log", this::readIdeLog);
         register("get_notifications", this::getNotifications);
         register("read_run_output", this::readRunOutput);
+        register("read_build_output", this::readBuildOutput);
     }
 
     private String httpRequest(JsonObject args) throws Exception {
@@ -520,6 +521,130 @@ class InfrastructureTools extends AbstractToolHandler {
             // XML parsing or file access errors are non-fatal
         }
 
+        return null;
+    }
+
+    /**
+     * Read output from a tab in the Build tool window.
+     * Works for Gradle builds, Maven builds, and incremental compiler output.
+     */
+    private String readBuildOutput(JsonObject args) {
+        int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
+        String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
+
+        try {
+            var textRef = new java.util.concurrent.atomic.AtomicReference<String>();
+            EdtUtil.invokeAndWait(() -> textRef.set(readBuildOutputOnEdt(tabName, maxChars)));
+            return textRef.get();
+        } catch (Exception e) {
+            LOG.warn("Failed to read Build output", e);
+            return "Error reading Build output: " + e.getMessage();
+        }
+    }
+
+    private String readBuildOutputOnEdt(String tabName, int maxChars) {
+        var toolWindow = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+            .getToolWindow("Build");
+        if (toolWindow == null) {
+            return "Build tool window is not available (no Java/Kotlin project, or no build has run yet).";
+        }
+
+        var contentManager = toolWindow.getContentManager();
+        var contents = contentManager.getContents();
+        if (contents.length == 0) {
+            return "Build tool window is empty — no build has been run yet.";
+        }
+
+        com.intellij.ui.content.Content target;
+        if (tabName != null) {
+            target = findBuildContentByName(contents, tabName);
+            if (target == null) {
+                StringBuilder available = new StringBuilder(
+                    "No Build tab matching '").append(tabName).append("'. Available tabs:\n");
+                for (var c : contents) available.append("  - ").append(c.getDisplayName()).append("\n");
+                return available.toString();
+            }
+        } else {
+            var selected = contentManager.getSelectedContent();
+            target = selected != null ? selected : contents[contents.length - 1];
+        }
+
+        String displayName = target.getDisplayName() != null ? target.getDisplayName() : "Build";
+        String text = extractBuildTabText(target);
+        if (text == null || text.isBlank()) {
+            StringBuilder msg = new StringBuilder("Build tab '").append(displayName)
+                .append("' has no text content yet (build may still be running).\n");
+            if (contents.length > 1) {
+                msg.append("Other available tabs:\n");
+                for (var c : contents) {
+                    if (c != target) msg.append("  - ").append(c.getDisplayName()).append("\n");
+                }
+            }
+            return msg.toString();
+        }
+        return formatRunOutput(displayName, text, maxChars);
+    }
+
+    private com.intellij.ui.content.Content findBuildContentByName(
+        com.intellij.ui.content.Content[] contents, String tabName) {
+        for (var c : contents) {
+            if (c.getDisplayName() != null && c.getDisplayName().contains(tabName)) return c;
+        }
+        return null;
+    }
+
+    /**
+     * Extract text from a Build tool window content tab.
+     * Tries multiple strategies to handle BuildView and other component types.
+     */
+    private String extractBuildTabText(com.intellij.ui.content.Content content) {
+        var component = content.getComponent();
+        if (component == null) return null;
+
+        // Strategy 1: BuildView.getConsoleView() — standard Build tool window component
+        try {
+            var getConsoleView = component.getClass().getMethod("getConsoleView");
+            var consoleView = getConsoleView.invoke(component);
+            if (consoleView != null) {
+                flushConsoleOutput(consoleView);
+                String text = extractPlainConsoleText(consoleView);
+                if (text != null && !text.isEmpty()) return text;
+            }
+        } catch (NoSuchMethodException ignored) {
+        } catch (Exception e) {
+            LOG.debug("getConsoleView() failed for Build tab", e);
+        }
+
+        // Strategy 2: Extract directly from the component itself
+        flushConsoleOutput(component);
+        String text = extractPlainConsoleText(component);
+        if (text != null && !text.isEmpty()) return text;
+
+        // Strategy 3: Traverse component hierarchy (depth-limited to avoid deep Swing trees)
+        return findConsoleTextInComponentTree(component, 8);
+    }
+
+    /**
+     * Depth-limited component tree traversal to find embedded console text.
+     */
+    private String findConsoleTextInComponentTree(java.awt.Component component, int maxDepth) {
+        if (maxDepth <= 0) return null;
+
+        if (component instanceof com.intellij.execution.impl.ConsoleViewImpl cv) {
+            cv.flushDeferredText();
+            String text = extractPlainConsoleText(cv);
+            if (text != null && !text.isEmpty()) return text;
+        } else {
+            String text = extractPlainConsoleText(component);
+            if (text != null && !text.isEmpty()) return text;
+        }
+
+        if (component instanceof java.awt.Container container) {
+            for (var child : container.getComponents()) {
+                String childText = findConsoleTextInComponentTree(child, maxDepth - 1);
+                if (childText != null && !childText.isEmpty()) return childText;
+            }
+        }
         return null;
     }
 

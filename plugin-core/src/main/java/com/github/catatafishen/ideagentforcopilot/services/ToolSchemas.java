@@ -499,6 +499,11 @@ public final class ToolSchemas {
             {PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return (default: 8000)"}
         }));
 
+        m.put("read_build_output", schema(new Object[][]{
+            {PARAM_TAB_NAME, TYPE_STRING, "Name of the Build tab to read (default: currently selected or most recent). Use tab names shown in IntelliJ's Build tool window."},
+            {PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return (default: 8000)"}
+        }));
+
         // ── Terminal ─────────────────────────────────────────────────────────
 
         m.put("run_in_terminal", schema(new Object[][]{
