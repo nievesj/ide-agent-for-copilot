@@ -50,6 +50,14 @@ public final class PluginSettingsConfigurable implements Configurable {
                 + "<b>Other</b> — scratch file types and project file shortcuts</html>");
         label.setBorder(JBUI.Borders.empty(12));
         panel.add(label, BorderLayout.NORTH);
+
+        String version = com.github.catatafishen.ideagentforcopilot.BuildInfo.getVersion();
+        String hash = com.github.catatafishen.ideagentforcopilot.BuildInfo.getGitHash();
+        JBLabel versionLabel = new JBLabel("Version " + version + "  ·  " + hash);
+        versionLabel.setForeground(JBUI.CurrentTheme.Label.disabledForeground());
+        versionLabel.setFont(JBUI.Fonts.smallFont());
+        versionLabel.setBorder(JBUI.Borders.empty(8, 12));
+        panel.add(versionLabel, BorderLayout.SOUTH);
         return panel;
     }
 

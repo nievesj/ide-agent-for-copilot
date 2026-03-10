@@ -74,10 +74,6 @@ class AgenticCopilotToolWindowContent(
     private var isSending = false
     private lateinit var processingTimerPanel: ProcessingTimerPanel
 
-    // Timeline events (populated from ACP session/update notifications)
-    private val timelineModel = DefaultListModel<TimelineEvent>()
-    private val debugPanel = DebugPanel(project, timelineModel)
-
     // Plans tree (populated from ACP plan updates)
     private lateinit var planTreeModel: javax.swing.tree.DefaultTreeModel
     private lateinit var planRoot: javax.swing.tree.DefaultMutableTreeNode
@@ -134,8 +130,7 @@ class AgenticCopilotToolWindowContent(
             Separator.create(),
             ProjectFilesDropdownAction(),
             Separator.create(),
-            SettingsAction(),
-            HelpAction(project)
+            SettingsAction()
         )
         toolWindow.setTitleActions(actions)
     }
@@ -210,12 +205,6 @@ class AgenticCopilotToolWindowContent(
         cardLayout.show(mainPanel, CARD_CONNECT)
     }
 
-    /** Record an event in the Timeline tab. Thread-safe. */
-    private fun addTimelineEvent(type: EventType, message: String) {
-        SwingUtilities.invokeLater {
-            timelineModel.addElement(TimelineEvent(type, message, java.util.Date()))
-        }
-    }
 
     private fun updateSessionInfo() {
         SwingUtilities.invokeLater {
@@ -253,7 +242,6 @@ class AgenticCopilotToolWindowContent(
         val title = update["title"]?.asString ?: "Unknown tool"
         val status = update["status"]?.asString ?: "pending"
         val toolCallId = update["toolCallId"]?.asString ?: ""
-        addTimelineEvent(EventType.TOOL_CALL, "$title ($status)")
 
         val filePath = extractFilePath(update, title)
         if (filePath != null && toolCallId.isNotEmpty()) {
@@ -275,8 +263,6 @@ class AgenticCopilotToolWindowContent(
         val status = update["status"]?.asString ?: ""
         val toolCallId = update["toolCallId"]?.asString ?: ""
         if (status != "completed" && status != "failed") return
-
-        addTimelineEvent(EventType.TOOL_CALL, "Tool $toolCallId $status")
 
         val filePath = toolCallFiles[toolCallId]
         if (status == "completed" && filePath != null) {
@@ -326,7 +312,6 @@ class AgenticCopilotToolWindowContent(
             }
             planRoot.add(planNode)
             planTreeModel.reload()
-            addTimelineEvent(EventType.TOOL_CALL, "Plan updated (${entries.size()} steps)")
         }
     }
 
@@ -1133,8 +1118,6 @@ class AgenticCopilotToolWindowContent(
 
     }
 
-    // HelpAction extracted to HelpDialog.kt
-
     /** Open a project-root file in the editor if it exists */
     private fun openProjectFile(fileName: String) {
         val base = project.basePath ?: return
@@ -1587,13 +1570,11 @@ class AgenticCopilotToolWindowContent(
         consolePanel.cancelAllRunning()
         consolePanel.addErrorEntry("Stopped by user")
         setResponseStatus("Stopped", loading = false)
-        addTimelineEvent(EventType.ERROR, "Prompt cancelled by user")
     }
 
     private fun ensureSessionCreated(client: AcpClient): String {
         if (currentSessionId == null) {
             currentSessionId = client.createSession(project.basePath)
-            addTimelineEvent(EventType.SESSION_START, "Session created")
             updateSessionInfo()
             val savedModel = agentManager.settings.selectedModel
             if (!savedModel.isNullOrEmpty()) {
@@ -1657,7 +1638,6 @@ class AgenticCopilotToolWindowContent(
         consolePanel.finishResponse(turnToolCallCount, turnModelId, getModelMultiplier(turnModelId))
         notifyIfUnfocused(turnToolCallCount)
         setResponseStatus("Done", loading = false)
-        addTimelineEvent(EventType.RESPONSE_RECEIVED, "Response received")
         saveTurnStatistics(prompt, turnToolCallCount, turnModelId)
         saveConversation()
         billing.recordTurnCompleted(getModelMultiplier(turnModelId))
@@ -1685,8 +1665,6 @@ class AgenticCopilotToolWindowContent(
             val client = agentManager.client
             val sessionId = ensureSessionCreated(client)
             wirePermissionListener(client)
-
-            addTimelineEvent(EventType.MESSAGE_SENT, "Prompt: " + prompt.take(80))
 
             val modelId = prepareModelAndTurnState()
 
@@ -1995,7 +1973,6 @@ class AgenticCopilotToolWindowContent(
         }
         consolePanel.addErrorEntry("Error: $msg")
         setResponseStatus("Error", loading = false)
-        addTimelineEvent(EventType.ERROR, "Error: ${msg.take(80)}")
 
         // Show the auth banner immediately when an auth error is detected
         if (authService.isAuthenticationError(msg)) {
@@ -2346,11 +2323,8 @@ class AgenticCopilotToolWindowContent(
         }
     }
 
-    // Debug/Timeline/Settings tabs extracted to DebugPanel.kt
     fun getComponent(): JComponent = mainPanel
     fun openSettings() = com.github.catatafishen.ideagentforcopilot.settings.PluginSettingsConfigurable.open(project)
-    fun openDebug() = debugPanel.openDebug()
-    fun openSessionFiles() = debugPanel.openSessionFiles()
 
     fun resetSession() {
         currentSessionId = null
@@ -2361,7 +2335,6 @@ class AgenticCopilotToolWindowContent(
         com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).clearSessionAllowedTools()
         consolePanel.clear()
         consolePanel.showPlaceholder("New conversation started.")
-        addTimelineEvent(EventType.SESSION_START, "New conversation started")
         updateSessionInfo()
         archiveConversation()
         SwingUtilities.invokeLater {
@@ -2382,7 +2355,6 @@ class AgenticCopilotToolWindowContent(
         billing.resetLocalCounter()
         if (::processingTimerPanel.isInitialized) processingTimerPanel.resetSession()
         com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).clearSessionAllowedTools()
-        addTimelineEvent(EventType.SESSION_START, "New session started (history kept)")
         updateSessionInfo()
     }
 
@@ -2452,7 +2424,6 @@ class AgenticCopilotToolWindowContent(
         return false
     }
 
-// TimelineEvent and EventType extracted to DebugPanel.kt
 
     /** Tree node that holds file content and path for the Plans tab. */
     private class FileTreeNode(

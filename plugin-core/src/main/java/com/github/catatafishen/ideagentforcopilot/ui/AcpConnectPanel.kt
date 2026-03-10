@@ -129,6 +129,16 @@ class AcpConnectPanel(
 
         add(scrollPane, BorderLayout.CENTER)
 
+        val versionLabel = JBLabel(
+            "IDE Agent for Copilot ${com.github.catatafishen.ideagentforcopilot.BuildInfo.getVersion()}"
+        ).apply {
+            foreground = JBUI.CurrentTheme.Label.disabledForeground()
+            font = JBUI.Fonts.smallFont()
+            horizontalAlignment = javax.swing.SwingConstants.CENTER
+            border = JBUI.Borders.empty(4, 0, 8, 0)
+        }
+        add(versionLabel, BorderLayout.SOUTH)
+
         subscribeToBridgeEvents()
         refreshMcpState()
 
