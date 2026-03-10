@@ -426,7 +426,7 @@ class TestTools extends AbstractToolHandler {
     /**
      * Create and launch a JUnit pattern-based run configuration on the EDT.
      */
-    private void launchPatternConfig(ConfigurationType junitType, String configName,
+    private void launchPatternConfig(com.intellij.execution.configurations.ConfigurationType junitType, String configName,
                                      List<String> matchingClasses,
                                      CompletableFuture<String> launchFuture) {
         try {
