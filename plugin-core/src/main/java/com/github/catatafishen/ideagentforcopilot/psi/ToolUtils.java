@@ -121,6 +121,7 @@ public final class ToolUtils {
     static String fileType(String name) {
         String l = name.toLowerCase();
         if (l.endsWith(JAVA_EXTENSION)) return "Java";
+        if (l.endsWith(".gradle") || l.endsWith(".gradle.kts")) return "Gradle";
         if (l.endsWith(".kt") || l.endsWith(".kts")) return "Kotlin";
         if (l.endsWith(".py")) return "Python";
         if (l.endsWith(".js") || l.endsWith(".jsx")) return "JavaScript";
@@ -128,7 +129,6 @@ public final class ToolUtils {
         if (l.endsWith(".go")) return "Go";
         if (l.endsWith(".xml")) return "XML";
         if (l.endsWith(".json")) return "JSON";
-        if (l.endsWith(".gradle") || l.endsWith(".gradle.kts")) return "Gradle";
         if (l.endsWith(".yaml") || l.endsWith(".yml")) return "YAML";
         return "Other";
     }
