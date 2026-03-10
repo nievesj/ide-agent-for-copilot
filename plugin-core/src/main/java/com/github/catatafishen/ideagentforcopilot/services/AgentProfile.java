@@ -127,6 +127,39 @@ public final class AgentProfile {
     }
 
     /**
+     * Creates an independent deep copy preserving all fields including ID, name, and builtIn.
+     * Use this for settings UI working copies. Use {@link #duplicate()} for user-initiated
+     * "Duplicate Profile" which assigns a new ID and appends "(Copy)" to the name.
+     */
+    @NotNull
+    public AgentProfile copyForEditing() {
+        AgentProfile copy = new AgentProfile();
+        copy.id = this.id;
+        copy.displayName = this.displayName;
+        copy.builtIn = this.builtIn;
+        copy.binaryName = binaryName;
+        copy.alternateNames = new ArrayList<>(alternateNames);
+        copy.installHint = installHint;
+        copy.customBinaryPath = customBinaryPath;
+        copy.acpArgs = new ArrayList<>(acpArgs);
+        copy.mcpMethod = mcpMethod;
+        copy.mcpConfigTemplate = mcpConfigTemplate;
+        copy.mcpEnvVarName = mcpEnvVarName;
+        copy.supportsModelFlag = supportsModelFlag;
+        copy.supportsConfigDir = supportsConfigDir;
+        copy.supportsMcpConfigFlag = supportsMcpConfigFlag;
+        copy.requiresResourceDuplication = requiresResourceDuplication;
+        copy.modelUsageField = modelUsageField;
+        copy.agentsDirectory = agentsDirectory;
+        copy.usePluginPermissions = usePluginPermissions;
+        copy.excludeAgentBuiltInTools = excludeAgentBuiltInTools;
+        copy.permissionInjectionMethod = permissionInjectionMethod;
+        copy.prependInstructionsTo = prependInstructionsTo;
+        copy.ensureCopilotAgents = ensureCopilotAgents;
+        return copy;
+    }
+
+    /**
      * Copies all fields from another profile into this one (preserving this profile's ID and builtIn flag).
      */
     public void copyFrom(@NotNull AgentProfile other) {

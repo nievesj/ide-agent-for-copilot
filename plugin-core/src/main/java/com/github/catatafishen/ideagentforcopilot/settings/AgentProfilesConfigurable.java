@@ -93,10 +93,7 @@ public final class AgentProfilesConfigurable implements Configurable {
     public @Nullable JComponent createComponent() {
         workingCopies = new ArrayList<>();
         for (AgentProfile p : AgentProfileManager.getInstance().getAllProfiles()) {
-            AgentProfile copy = p.duplicate();
-            copy.setId(p.getId());
-            copy.setBuiltIn(p.isBuiltIn());
-            workingCopies.add(copy);
+            workingCopies.add(p.copyForEditing());
         }
 
         listModel = new DefaultListModel<>();
@@ -347,10 +344,7 @@ public final class AgentProfilesConfigurable implements Configurable {
         mgr.resetToDefaults(p.getId());
         AgentProfile fresh = mgr.getProfile(p.getId());
         if (fresh != null) {
-            AgentProfile copy = fresh.duplicate();
-            copy.setId(fresh.getId());
-            copy.setBuiltIn(fresh.isBuiltIn());
-            workingCopies.set(idx, copy);
+            workingCopies.set(idx, fresh.copyForEditing());
             refreshListModel();
             profileList.setSelectedIndex(idx);
         }
@@ -446,7 +440,7 @@ public final class AgentProfilesConfigurable implements Configurable {
     public boolean isModified() {
         // Read form into a transient snapshot to avoid mutating workingCopies during polling
         AgentProfile formSnapshot = (currentIndex >= 0 && currentIndex < workingCopies.size())
-            ? workingCopies.get(currentIndex).duplicate() : null;
+            ? workingCopies.get(currentIndex).copyForEditing() : null;
         if (formSnapshot != null && !loading) {
             writeFormTo(formSnapshot);
         }
@@ -493,10 +487,7 @@ public final class AgentProfilesConfigurable implements Configurable {
     public void reset() {
         workingCopies = new ArrayList<>();
         for (AgentProfile p : AgentProfileManager.getInstance().getAllProfiles()) {
-            AgentProfile copy = p.duplicate();
-            copy.setId(p.getId());
-            copy.setBuiltIn(p.isBuiltIn());
-            workingCopies.add(copy);
+            workingCopies.add(p.copyForEditing());
         }
         refreshListModel();
         if (!listModel.isEmpty()) {
