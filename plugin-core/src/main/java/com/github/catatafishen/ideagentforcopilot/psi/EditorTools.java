@@ -885,7 +885,7 @@ class EditorTools extends AbstractToolHandler {
                 for (VirtualFile file : openFiles) {
                     String filePath = file.getPath();
                     String displayPath = basePath != null ? relativize(basePath, filePath) : filePath;
-                    boolean isActive = activeFile != null && file.equals(activeFile);
+                    boolean isActive = file.equals(activeFile);
                     boolean isModified = com.intellij.openapi.fileEditor.FileDocumentManager
                         .getInstance().isFileModified(file);
                     sb.append(isActive ? "* " : "  ");
