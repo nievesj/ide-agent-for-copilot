@@ -46,6 +46,11 @@ public final class RunConfigurationService {
     private static final String TEST_TYPE_METHOD = "method";
     private static final String TEST_TYPE_CLASS = "class";
 
+    private static final String PARAM_SHARED = "shared";
+    private static final String PARAM_TASKS = "tasks";
+    private static final String PARAM_SCRIPT_PARAMETERS = "script_parameters";
+    private static final String ERROR_CONFIG_NOT_FOUND = "Run configuration not found: '";
+
     private final Project project;
     private final RefactoringTools.ClassResolver classResolver;
 
@@ -84,7 +89,7 @@ public final class RunConfigurationService {
             try {
                 var settings = RunManager.getInstance(project).findConfigurationByName(name);
                 if (settings == null) {
-                    resultFuture.complete("Run configuration not found: '" + name
+                    resultFuture.complete(ERROR_CONFIG_NOT_FOUND + name
                         + "'. Use list_run_configurations to see available configs.");
                     return;
                 }
@@ -142,7 +147,7 @@ public final class RunConfigurationService {
                 applyTypeSpecificProperties(config, args);
 
                 // Store as shared (project file) by default
-                boolean shared = !args.has("shared") || args.get("shared").getAsBoolean();
+                boolean shared = !args.has(PARAM_SHARED) || args.get(PARAM_SHARED).getAsBoolean();
                 if (shared) {
                     settings.storeInDotIdeaFolder();
                 } else {
@@ -177,15 +182,15 @@ public final class RunConfigurationService {
             try {
                 var settings = RunManager.getInstance(project).findConfigurationByName(name);
                 if (settings == null) {
-                    resultFuture.complete("Run configuration not found: '" + name + "'");
+                    resultFuture.complete(ERROR_CONFIG_NOT_FOUND + name + "'");
                     return;
                 }
 
                 List<String> changes = applyEditProperties(settings.getConfiguration(), args);
 
                 // Handle shared/workspace storage toggle
-                if (args.has("shared")) {
-                    boolean shared = args.get("shared").getAsBoolean();
+                if (args.has(PARAM_SHARED)) {
+                    boolean shared = args.get(PARAM_SHARED).getAsBoolean();
                     if (shared) {
                         settings.storeInDotIdeaFolder();
                     } else {
@@ -232,8 +237,8 @@ public final class RunConfigurationService {
         applyTypeSpecificProperties(config, args);
         if (args.has(PARAM_MAIN_CLASS)) changes.add("main class");
         if (args.has(PARAM_TEST_CLASS)) changes.add("test class");
-        if (args.has("tasks")) changes.add("Gradle tasks");
-        if (args.has("script_parameters")) changes.add("script parameters");
+        if (args.has(PARAM_TASKS)) changes.add("Gradle tasks");
+        if (args.has(PARAM_SCRIPT_PARAMETERS)) changes.add("script parameters");
 
         return changes;
     }
@@ -248,7 +253,7 @@ public final class RunConfigurationService {
                 RunManager runManager = RunManager.getInstance(project);
                 var settings = runManager.findConfigurationByName(name);
                 if (settings == null) {
-                    resultFuture.complete("Run configuration not found: '" + name
+                    resultFuture.complete(ERROR_CONFIG_NOT_FOUND + name
                         + "'. Use list_run_configurations to see available configs.");
                     return;
                 }
@@ -385,16 +390,16 @@ public final class RunConfigurationService {
     }
 
     private void applyGradleProperties(RunConfiguration config, JsonObject args) {
-        if (!args.has("tasks") && !args.has("script_parameters")) return;
+        if (!args.has(PARAM_TASKS) && !args.has(PARAM_SCRIPT_PARAMETERS)) return;
         try {
             // ExternalSystemRunConfiguration.getSettings() -> ExternalSystemTaskExecutionSettings
             var getSettings = config.getClass().getMethod("getSettings");
             var settings = getSettings.invoke(config);
 
-            if (args.has("tasks")) {
+            if (args.has(PARAM_TASKS)) {
                 // Parse tasks: accept JSON array or space-separated string
                 List<String> taskNames = new ArrayList<>();
-                var tasksElem = args.get("tasks");
+                var tasksElem = args.get(PARAM_TASKS);
                 if (tasksElem.isJsonArray()) {
                     for (var t : tasksElem.getAsJsonArray()) {
                         taskNames.add(t.getAsString());
@@ -408,9 +413,9 @@ public final class RunConfigurationService {
                 setTaskNames.invoke(settings, taskNames);
             }
 
-            if (args.has("script_parameters")) {
+            if (args.has(PARAM_SCRIPT_PARAMETERS)) {
                 var setScriptParams = settings.getClass().getMethod("setScriptParameters", String.class);
-                setScriptParams.invoke(settings, args.get("script_parameters").getAsString());
+                setScriptParams.invoke(settings, args.get(PARAM_SCRIPT_PARAMETERS).getAsString());
             }
         } catch (Exception e) {
             LOG.warn("Failed to apply Gradle properties (config may not be a Gradle type)", e);

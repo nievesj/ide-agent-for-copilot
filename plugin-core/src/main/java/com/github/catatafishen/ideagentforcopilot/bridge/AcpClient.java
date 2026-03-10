@@ -65,6 +65,8 @@ public class AcpClient implements Closeable {
     private static final String PRE_REJECTION_GUIDANCE_EVENT = "PRE_REJECTION_GUIDANCE";
     private static final String SENDING_GUIDANCE_DESC = "Sending guidance before rejection";
     private static final String PERMISSION_DENIED_EVENT = "PERMISSION_DENIED";
+    private static final String PERMISSION_APPROVED_EVENT = "PERMISSION_APPROVED";
+    private static final String TOOL_PREFIX = " (tool=";
 
     // Note: DENIED_PERMISSION_KINDS was removed — permission denial is now handled by
     // per-tool ToolPermission settings in handlePermissionRequest, not a static set.
@@ -965,7 +967,7 @@ public class AcpClient implements Closeable {
     }
 
     private void handleNotificationMessage(JsonObject msg) {
-        String method = msg.has(METHOD) ? msg.get(METHOD).getAsString() : "unknown";
+        String method = msg.has(METHOD) ? msg.get(METHOD).getAsString() : UNKNOWN;
         LOG.info("ACP notification: method=" + method + " keys=" + msg.keySet());
         if (method.contains("usage") || method.contains("quota") || method.contains("billing")
             || method.contains("premium") || method.contains("stats") || method.contains("turn")) {
@@ -1110,7 +1112,7 @@ public class AcpClient implements Closeable {
 
         if (perm == ToolPermission.DENY) {
             String rejectOptionId = findRejectOption(reqParams);
-            LOG.info("ACP request_permission: DENYING " + permKind + " (tool=" + toolId + "), option=" + rejectOptionId);
+            LOG.info("ACP request_permission: DENYING " + permKind + TOOL_PREFIX + toolId + "), option=" + rejectOptionId);
 
             // Send guidance BEFORE rejecting so agent sees it while still in turn
             Map<String, Object> retryParams = buildRetryParams(permKind);
@@ -1118,7 +1120,7 @@ public class AcpClient implements Closeable {
             fireDebugEvent(PRE_REJECTION_GUIDANCE_EVENT, SENDING_GUIDANCE_DESC, retryMessage);
             sendPromptMessage(retryMessage);
 
-            fireDebugEvent(PERMISSION_DENIED_EVENT, "Denied: " + permKind + " (tool=" + toolId + ")",
+            fireDebugEvent(PERMISSION_DENIED_EVENT, "Denied: " + permKind + TOOL_PREFIX + toolId + ")",
                 "Permission mode: DENY");
             builtInActionDeniedDuringTurn = true;
             lastDeniedKind = permKind;
@@ -1153,11 +1155,11 @@ public class AcpClient implements Closeable {
             if (response == PermissionResponse.ALLOW_SESSION) {
                 sessionAllowedTools.add(toolId);
                 LOG.info("ACP request_permission: ASK approved for session for " + toolId);
-                fireDebugEvent("PERMISSION_APPROVED", formattedPermission, "session-approved");
+                fireDebugEvent(PERMISSION_APPROVED_EVENT, formattedPermission, "session-approved");
                 sendPermissionResponse(reqId, findAllowOption(reqParams));
             } else if (response == PermissionResponse.ALLOW_ONCE) {
                 LOG.info("ACP request_permission: ASK approved (once) for " + toolId);
-                fireDebugEvent("PERMISSION_APPROVED", formattedPermission, "user-approved");
+                fireDebugEvent(PERMISSION_APPROVED_EVENT, formattedPermission, "user-approved");
                 sendPermissionResponse(reqId, findAllowOption(reqParams));
             } else {
                 String rejectOptionId = findRejectOption(reqParams);
@@ -1170,8 +1172,8 @@ public class AcpClient implements Closeable {
         } else {
             // ALLOW
             String allowOptionId = findAllowOption(reqParams);
-            LOG.info("ACP request_permission: auto-approving " + permKind + " (tool=" + toolId + "), option=" + allowOptionId);
-            fireDebugEvent("PERMISSION_APPROVED", formattedPermission, "");
+            LOG.info("ACP request_permission: auto-approving " + permKind + TOOL_PREFIX + toolId + "), option=" + allowOptionId);
+            fireDebugEvent(PERMISSION_APPROVED_EVENT, formattedPermission, "");
             sendPermissionResponse(reqId, allowOptionId);
         }
     }
@@ -1221,7 +1223,7 @@ public class AcpClient implements Closeable {
             }
         }
         // Also check inside a nested "arguments" / "input" object
-        for (String wrapper : new String[]{"arguments", "input", "params"}) {
+        for (String wrapper : new String[]{"arguments", "input", PARAMS}) {
             if (toolCall.has(wrapper) && toolCall.get(wrapper).isJsonObject()) {
                 JsonObject inner = toolCall.getAsJsonObject(wrapper);
                 for (String key : new String[]{"path", "file", "file1", "file2"}) {

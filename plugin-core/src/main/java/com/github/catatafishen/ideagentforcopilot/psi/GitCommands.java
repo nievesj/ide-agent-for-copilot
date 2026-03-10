@@ -27,6 +27,16 @@ final class GitCommands {
     private static final String JSON_STASH_PREFIX = "stash@{";
     private static final String JSON_APPLY = "apply";
 
+    private static final String ACTION_REBASE = "rebase";
+    private static final String ERROR_UNKNOWN_ACTION = "Error: unknown action '";
+    private static final String FLAG_ABORT = "--abort";
+    private static final String PARAM_ABORT = "abort";
+    private static final String PARAM_FF_ONLY = "ff_only";
+    private static final String PARAM_FORCE = "force";
+    private static final String PARAM_MAX_COUNT = "max_count";
+    private static final String PARAM_NO_COMMIT = "no_commit";
+    private static final String PARAM_REMOTE = "remote";
+
     private static final String STATUS_PARAM = "status";
 
     private final GitToolHandler handler;
@@ -69,7 +79,7 @@ final class GitCommands {
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("log");
 
-        int maxCount = args.has("max_count") ? args.get("max_count").getAsInt() : 20;
+        int maxCount = args.has(PARAM_MAX_COUNT) ? args.get(PARAM_MAX_COUNT).getAsInt() : 20;
         gitArgs.add("-" + maxCount);
 
         String format = args.has("format") ? args.get("format").getAsString() : "medium";
@@ -217,10 +227,10 @@ final class GitCommands {
             }
             case "delete" -> {
                 if (!args.has("name")) yield "Error: 'name' required for delete";
-                boolean force = args.has("force") && args.get("force").getAsBoolean();
+                boolean force = args.has(PARAM_FORCE) && args.get(PARAM_FORCE).getAsBoolean();
                 yield handler.runGit(PARAM_BRANCH, force ? "-D" : "-d", args.get("name").getAsString());
             }
-            default -> "Error: unknown action '" + action + "'. Use: list, create, switch, delete";
+            default -> ERROR_UNKNOWN_ACTION + action + "'. Use: list, create, switch, delete";
         };
     }
 
@@ -261,14 +271,14 @@ final class GitCommands {
         gitArgs.add("push");
 
         boolean setUpstream = args.has("set_upstream") && args.get("set_upstream").getAsBoolean();
-        if (args.has("force") && args.get("force").getAsBoolean()) {
+        if (args.has(PARAM_FORCE) && args.get(PARAM_FORCE).getAsBoolean()) {
             gitArgs.add("--force");
         }
         if (setUpstream) {
             gitArgs.add("--set-upstream");
         }
 
-        String remote = args.has("remote") ? args.get("remote").getAsString() : null;
+        String remote = args.has(PARAM_REMOTE) ? args.get(PARAM_REMOTE).getAsString() : null;
         String branch = args.has(PARAM_BRANCH) ? args.get(PARAM_BRANCH).getAsString() : null;
 
         if (setUpstream) {
@@ -297,26 +307,26 @@ final class GitCommands {
         String action = args.has(JSON_ACTION) ? args.get(JSON_ACTION).getAsString() : "list";
 
         return switch (action) {
-            case "list" -> handler.runGit("remote", "-v");
+            case "list" -> handler.runGit(PARAM_REMOTE, "-v");
             case "add" -> {
                 if (!args.has("name")) yield "Error: 'name' required for add";
                 if (!args.has("url")) yield "Error: 'url' required for add";
-                yield handler.runGit("remote", "add", args.get("name").getAsString(), args.get("url").getAsString());
+                yield handler.runGit(PARAM_REMOTE, "add", args.get("name").getAsString(), args.get("url").getAsString());
             }
             case "remove" -> {
                 if (!args.has("name")) yield "Error: 'name' required for remove";
-                yield handler.runGit("remote", "remove", args.get("name").getAsString());
+                yield handler.runGit(PARAM_REMOTE, "remove", args.get("name").getAsString());
             }
             case "set_url", "set-url" -> {
                 if (!args.has("name")) yield "Error: 'name' required for set_url";
                 if (!args.has("url")) yield "Error: 'url' required for set_url";
-                yield handler.runGit("remote", "set-url", args.get("name").getAsString(), args.get("url").getAsString());
+                yield handler.runGit(PARAM_REMOTE, "set-url", args.get("name").getAsString(), args.get("url").getAsString());
             }
             case "get_url", "get-url" -> {
                 if (!args.has("name")) yield "Error: 'name' required for get_url";
-                yield handler.runGit("remote", "get-url", args.get("name").getAsString());
+                yield handler.runGit(PARAM_REMOTE, "get-url", args.get("name").getAsString());
             }
-            default -> "Error: unknown action '" + action + "'. Use: list, add, remove, set_url, get_url";
+            default -> ERROR_UNKNOWN_ACTION + action + "'. Use: list, add, remove, set_url, get_url";
         };
     }
 
@@ -325,7 +335,7 @@ final class GitCommands {
             return "Error: 'commit' parameter is required";
         }
         List<String> gitArgs = new ArrayList<>(List.of("revert"));
-        if (args.has("no_commit") && args.get("no_commit").getAsBoolean()) {
+        if (args.has(PARAM_NO_COMMIT) && args.get(PARAM_NO_COMMIT).getAsBoolean()) {
             gitArgs.add("--no-commit");
         }
         if (args.has("no_edit") && args.get("no_edit").getAsBoolean()) {
@@ -345,8 +355,8 @@ final class GitCommands {
         if (args.has("tags") && args.get("tags").getAsBoolean()) {
             gitArgs.add("--tags");
         }
-        if (args.has("remote")) {
-            gitArgs.add(args.get("remote").getAsString());
+        if (args.has(PARAM_REMOTE)) {
+            gitArgs.add(args.get(PARAM_REMOTE).getAsString());
         }
         if (args.has(PARAM_BRANCH)) {
             gitArgs.add(args.get(PARAM_BRANCH).getAsString());
@@ -361,14 +371,14 @@ final class GitCommands {
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("pull");
 
-        if (args.has("rebase") && args.get("rebase").getAsBoolean()) {
+        if (args.has(ACTION_REBASE) && args.get(ACTION_REBASE).getAsBoolean()) {
             gitArgs.add("--rebase");
         }
-        if (args.has("ff_only") && args.get("ff_only").getAsBoolean()) {
+        if (args.has(PARAM_FF_ONLY) && args.get(PARAM_FF_ONLY).getAsBoolean()) {
             gitArgs.add("--ff-only");
         }
-        if (args.has("remote")) {
-            gitArgs.add(args.get("remote").getAsString());
+        if (args.has(PARAM_REMOTE)) {
+            gitArgs.add(args.get(PARAM_REMOTE).getAsString());
         }
         if (args.has(PARAM_BRANCH)) {
             gitArgs.add(args.get(PARAM_BRANCH).getAsString());
@@ -378,7 +388,7 @@ final class GitCommands {
     }
 
     String gitMerge(JsonObject args) throws Exception {
-        if (!args.has(PARAM_BRANCH) && !args.has("abort")) {
+        if (!args.has(PARAM_BRANCH) && !args.has(PARAM_ABORT)) {
             return "Error: 'branch' parameter is required (or 'abort' to abort a merge)";
         }
 
@@ -386,15 +396,15 @@ final class GitCommands {
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("merge");
 
-        if (args.has("abort") && args.get("abort").getAsBoolean()) {
-            gitArgs.add("--abort");
+        if (args.has(PARAM_ABORT) && args.get(PARAM_ABORT).getAsBoolean()) {
+            gitArgs.add(FLAG_ABORT);
             return handler.runGit(gitArgs.toArray(new String[0]));
         }
 
         if (args.has("no_ff") && args.get("no_ff").getAsBoolean()) {
             gitArgs.add("--no-ff");
         }
-        if (args.has("ff_only") && args.get("ff_only").getAsBoolean()) {
+        if (args.has(PARAM_FF_ONLY) && args.get(PARAM_FF_ONLY).getAsBoolean()) {
             gitArgs.add("--ff-only");
         }
         if (args.has("squash") && args.get("squash").getAsBoolean()) {
@@ -412,10 +422,10 @@ final class GitCommands {
     String gitRebase(JsonObject args) throws Exception {
         handler.saveAllDocuments();
         List<String> gitArgs = new ArrayList<>();
-        gitArgs.add("rebase");
+        gitArgs.add(ACTION_REBASE);
 
-        if (args.has("abort") && args.get("abort").getAsBoolean()) {
-            gitArgs.add("--abort");
+        if (args.has(PARAM_ABORT) && args.get(PARAM_ABORT).getAsBoolean()) {
+            gitArgs.add(FLAG_ABORT);
             return handler.runGit(gitArgs.toArray(new String[0]));
         }
         if (args.has("continue_rebase") && args.get("continue_rebase").getAsBoolean()) {
@@ -451,8 +461,8 @@ final class GitCommands {
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("cherry-pick");
 
-        if (args.has("abort") && args.get("abort").getAsBoolean()) {
-            gitArgs.add("--abort");
+        if (args.has(PARAM_ABORT) && args.get(PARAM_ABORT).getAsBoolean()) {
+            gitArgs.add(FLAG_ABORT);
             return handler.runGit(gitArgs.toArray(new String[0]));
         }
         if (args.has("continue_pick") && args.get("continue_pick").getAsBoolean()) {
@@ -460,7 +470,7 @@ final class GitCommands {
             return handler.runGit(gitArgs.toArray(new String[0]));
         }
 
-        if (args.has("no_commit") && args.get("no_commit").getAsBoolean()) {
+        if (args.has(PARAM_NO_COMMIT) && args.get(PARAM_NO_COMMIT).getAsBoolean()) {
             gitArgs.add("--no-commit");
         }
 
@@ -510,7 +520,7 @@ final class GitCommands {
                 if (!args.has("name")) yield "Error: 'name' required for delete";
                 yield handler.runGit("tag", "-d", args.get("name").getAsString());
             }
-            default -> "Error: unknown action '" + action + "'. Use: list, create, delete";
+            default -> ERROR_UNKNOWN_ACTION + action + "'. Use: list, create, delete";
         };
     }
 
@@ -569,7 +579,7 @@ final class GitCommands {
     String getFileHistory(JsonObject args) throws Exception {
         if (!args.has("path")) return ERROR_PATH_REQUIRED;
         String path = args.get("path").getAsString();
-        int maxCount = args.has("max_count") ? args.get("max_count").getAsInt() : 20;
+        int maxCount = args.has(PARAM_MAX_COUNT) ? args.get(PARAM_MAX_COUNT).getAsInt() : 20;
         return handler.runGit("log", "--follow", "--format=%H %ai %an%n  %s", "-n", String.valueOf(maxCount), "--", path);
     }
 }

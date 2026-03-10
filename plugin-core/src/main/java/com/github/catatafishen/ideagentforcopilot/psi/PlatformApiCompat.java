@@ -33,6 +33,9 @@ import java.util.function.Function;
 public final class PlatformApiCompat {
 
     private static final Logger LOG = Logger.getInstance(PlatformApiCompat.class);
+    private static final String LANG_SHELL_SCRIPT = "Shell Script";
+    private static final String LANG_JAVASCRIPT = "JavaScript";
+    private static final String LANG_PYTHON = "Python";
 
     private PlatformApiCompat() {
     }
@@ -678,14 +681,14 @@ public final class PlatformApiCompat {
     }
 
     private static final java.util.Map<String, String> SHEBANG_LANG_MAP = java.util.Map.ofEntries(
-        java.util.Map.entry("python", "Python"),
-        java.util.Map.entry("python3", "Python"),
-        java.util.Map.entry("node", "JavaScript"),
-        java.util.Map.entry("deno", "JavaScript"),
-        java.util.Map.entry("bun", "JavaScript"),
-        java.util.Map.entry("bash", "Shell Script"),
-        java.util.Map.entry("sh", "Shell Script"),
-        java.util.Map.entry("zsh", "Shell Script"),
+        java.util.Map.entry("python", LANG_PYTHON),
+        java.util.Map.entry("python3", LANG_PYTHON),
+        java.util.Map.entry("node", LANG_JAVASCRIPT),
+        java.util.Map.entry("deno", LANG_JAVASCRIPT),
+        java.util.Map.entry("bun", LANG_JAVASCRIPT),
+        java.util.Map.entry("bash", LANG_SHELL_SCRIPT),
+        java.util.Map.entry("sh", LANG_SHELL_SCRIPT),
+        java.util.Map.entry("zsh", LANG_SHELL_SCRIPT),
         java.util.Map.entry("ruby", "Ruby"),
         java.util.Map.entry("perl", "Perl"),
         java.util.Map.entry("php", "PHP"),
@@ -741,7 +744,7 @@ public final class PlatformApiCompat {
         // Python: def/class with colon, or import without braces
         if ((first512.contains("def ") && first512.contains(":"))
             || first512.startsWith("import ") && !first512.contains("{") && !first512.contains("from '")) {
-            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("Python");
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage(LANG_PYTHON);
         }
         // Kotlin top-level fun
         if (first512.contains("fun ") && first512.contains("{") && !first512.contains(";")) {

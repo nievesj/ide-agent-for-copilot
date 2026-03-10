@@ -48,6 +48,14 @@ class TestTools extends AbstractToolHandler {
     private static final String TEST_TYPE_PATTERN = "pattern";
     private static final String ERROR_NO_PROJECT_PATH = "No project base path";
     private static final String JUNIT_TYPE_ID = "junit";
+    private static final String LAUNCH_FAILED = "launch_failed";
+    private static final String TESTS_PASSED = "Tests PASSED";
+    private static final String TESTS_FAILED_PREFIX = "Tests FAILED (exit code ";
+    private static final String NO_PROCESS_HANDLE_MSG =
+        "\nCould not capture process handle. Check the Run panel for results.";
+    private static final String FIELD_TEST_OBJECT = "TEST_OBJECT";
+    private static final String ERROR_PROCESS_FAILED_TO_START = "Error: Test process failed to start for ";
+    private static final String ERROR_TESTS_TIMED_OUT = "Tests timed out after 120 seconds: ";
 
     private final RefactoringTools refactoringTools;
 
@@ -260,7 +268,8 @@ class TestTools extends AbstractToolHandler {
 
             // Subscribe to execution events before launching (on any thread)
             CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
-            AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> { });
+            AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> {
+            });
             disconnect.set(PlatformApiCompat.subscribeExecutionListener(project, new com.intellij.execution.ExecutionListener() {
                 @Override
                 public void processStarted(@NotNull String executorId,
@@ -293,14 +302,14 @@ class TestTools extends AbstractToolHandler {
                     launchFuture.complete(error);
                 } catch (Exception e) {
                     LOG.warn("Failed to run JUnit natively, will fall back to Gradle", e);
-                    launchFuture.complete("launch_failed");
+                    launchFuture.complete(LAUNCH_FAILED);
                 }
             });
 
             String launchError = launchFuture.get(10, TimeUnit.SECONDS);
             if (launchError != null) {
                 disconnect.get().run();
-                return "launch_failed".equals(launchError) ? null : launchError;
+                return LAUNCH_FAILED.equals(launchError) ? null : launchError;
             }
 
             // Wait for the process to start (up to 15s) — off EDT
@@ -311,21 +320,21 @@ class TestTools extends AbstractToolHandler {
                 if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                 disconnect.get().run();
                 return "Started tests via IntelliJ JUnit runner: " + configName
-                    + "\nCould not capture process handle. Check the Run panel for results.";
+                    + NO_PROCESS_HANDLE_MSG;
             }
 
             if (handler == null) {
-                return "Error: Test process failed to start for " + configName;
+                return ERROR_PROCESS_FAILED_TO_START + configName;
             }
 
             // Wait for the process to finish (up to 120s) — off EDT
             if (!handler.waitFor(120_000)) {
-                return "Tests timed out after 120 seconds: " + configName;
+                return ERROR_TESTS_TIMED_OUT + configName;
             }
 
             int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
 
-            String summary = (exitCode == 0 ? "Tests PASSED" : "Tests FAILED (exit code " + exitCode + ")")
+            String summary = (exitCode == 0 ? TESTS_PASSED : TESTS_FAILED_PREFIX + exitCode + ")")
                 + " — " + configName;
 
             String testOutput = collectTestRunOutput(configName);
@@ -375,7 +384,8 @@ class TestTools extends AbstractToolHandler {
             String configName = "Test: " + target + " (" + matchingClasses.size() + " classes)";
 
             CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
-            AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> { });
+            AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> {
+            });
             disconnect.set(PlatformApiCompat.subscribeExecutionListener(project, new com.intellij.execution.ExecutionListener() {
                 @Override
                 public void processStarted(@NotNull String executorId,
@@ -410,7 +420,7 @@ class TestTools extends AbstractToolHandler {
                     // Configure as pattern-based test
                     var getData = config.getClass().getMethod("getPersistentData");
                     Object data = getData.invoke(config);
-                    data.getClass().getField("TEST_OBJECT").set(data, TEST_TYPE_PATTERN);
+                    data.getClass().getField(FIELD_TEST_OBJECT).set(data, TEST_TYPE_PATTERN);
                     data.getClass().getField("PATTERNS").set(data,
                         new java.util.LinkedHashSet<>(matchingClasses));
 
@@ -435,14 +445,14 @@ class TestTools extends AbstractToolHandler {
                     launchFuture.complete(null);
                 } catch (Exception e) {
                     LOG.warn("Failed to run JUnit pattern config", e);
-                    launchFuture.complete("launch_failed");
+                    launchFuture.complete(LAUNCH_FAILED);
                 }
             });
 
             String launchError = launchFuture.get(10, TimeUnit.SECONDS);
             if (launchError != null) {
                 disconnect.get().run();
-                return "launch_failed".equals(launchError) ? null : launchError;
+                return LAUNCH_FAILED.equals(launchError) ? null : launchError;
             }
 
             ProcessHandler handler;
@@ -452,20 +462,20 @@ class TestTools extends AbstractToolHandler {
                 if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                 disconnect.get().run();
                 return "Started tests via IntelliJ JUnit runner: " + configName
-                    + "\nCould not capture process handle. Check the Run panel for results.";
+                    + NO_PROCESS_HANDLE_MSG;
             }
 
             if (handler == null) {
-                return "Error: Test process failed to start for " + configName;
+                return ERROR_PROCESS_FAILED_TO_START + configName;
             }
 
             if (!handler.waitFor(120_000)) {
-                return "Tests timed out after 120 seconds: " + configName;
+                return ERROR_TESTS_TIMED_OUT + configName;
             }
 
             int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
 
-            String summary = (exitCode == 0 ? "Tests PASSED" : "Tests FAILED (exit code " + exitCode + ")")
+            String summary = (exitCode == 0 ? TESTS_PASSED : TESTS_FAILED_PREFIX + exitCode + ")")
                 + " — " + configName;
 
             String testOutput = collectTestRunOutput(configName);
@@ -591,7 +601,8 @@ class TestTools extends AbstractToolHandler {
             String configName = "Gradle Test: " + target;
 
             CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
-            AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> { });
+            AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> {
+            });
             disconnect.set(PlatformApiCompat.subscribeExecutionListener(project, new com.intellij.execution.ExecutionListener() {
                 @Override
                 public void processStarted(@NotNull String executorId,
@@ -622,14 +633,14 @@ class TestTools extends AbstractToolHandler {
                     launchFuture.complete(error);
                 } catch (Exception e) {
                     LOG.warn("Failed to create Gradle test config", e);
-                    launchFuture.complete("launch_failed");
+                    launchFuture.complete(LAUNCH_FAILED);
                 }
             });
 
             String launchError = launchFuture.get(10, TimeUnit.SECONDS);
             if (launchError != null) {
                 disconnect.get().run();
-                if ("launch_failed".equals(launchError)) {
+                if (LAUNCH_FAILED.equals(launchError)) {
                     return "Error: Failed to create Gradle test run configuration for: " + target;
                 }
                 return launchError;
@@ -642,15 +653,15 @@ class TestTools extends AbstractToolHandler {
                 if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                 disconnect.get().run();
                 return "Started tests via Gradle run configuration: " + configName
-                    + "\nCould not capture process handle. Check the Run panel for results.";
+                    + NO_PROCESS_HANDLE_MSG;
             }
 
             if (handler == null) {
-                return "Error: Test process failed to start for " + configName;
+                return ERROR_PROCESS_FAILED_TO_START + configName;
             }
 
             if (!handler.waitFor(120_000)) {
-                return "Tests timed out after 120 seconds: " + configName;
+                return ERROR_TESTS_TIMED_OUT + configName;
             }
 
             int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
@@ -660,7 +671,7 @@ class TestTools extends AbstractToolHandler {
                 if (!xmlResults.isEmpty()) return xmlResults;
             }
 
-            String summary = (exitCode == 0 ? "Tests PASSED" : "Tests FAILED (exit code " + exitCode + ")")
+            String summary = (exitCode == 0 ? TESTS_PASSED : TESTS_FAILED_PREFIX + exitCode + ")")
                 + " — " + configName;
 
             String testOutput = collectTestRunOutput(configName);
@@ -722,7 +733,7 @@ class TestTools extends AbstractToolHandler {
             return null;
         } catch (Exception e) {
             LOG.warn("createAndRunGradleTestConfig failed", e);
-            return "launch_failed";
+            return LAUNCH_FAILED;
         }
     }
 
@@ -785,9 +796,9 @@ class TestTools extends AbstractToolHandler {
         data.getClass().getField("MAIN_CLASS_NAME").set(data, resolvedClass);
         if (resolvedMethod != null) {
             data.getClass().getField("METHOD_NAME").set(data, resolvedMethod);
-            data.getClass().getField("TEST_OBJECT").set(data, TEST_TYPE_METHOD);
+            data.getClass().getField(FIELD_TEST_OBJECT).set(data, TEST_TYPE_METHOD);
         } else {
-            data.getClass().getField("TEST_OBJECT").set(data, TEST_TYPE_CLASS);
+            data.getClass().getField(FIELD_TEST_OBJECT).set(data, TEST_TYPE_CLASS);
         }
 
         if (resolvedModule != null) {

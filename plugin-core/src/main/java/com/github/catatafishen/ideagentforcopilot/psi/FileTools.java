@@ -39,6 +39,8 @@ class FileTools extends AbstractToolHandler {
     private static final String PARAM_END_LINE = "end_line";
     private static final String PARAM_NEW_STR = "new_str";
     private static final String FORMAT_CHARS_SUFFIX = " chars)";
+    private static final String PARAM_COUNT = "count";
+    private static final String AUTO_FORMAT_SUFFIX = " (auto-format queued)";
     static final java.awt.Color HIGHLIGHT_EDIT = new java.awt.Color(80, 160, 80, 40);
     static final java.awt.Color HIGHLIGHT_READ = new java.awt.Color(80, 120, 200, 35);
 
@@ -427,7 +429,7 @@ class FileTools extends AbstractToolHandler {
             FileDocumentManager.getInstance().saveDocument(doc);
             String syntaxWarning = checkSyntaxErrors(pathStr);
             if (autoFormat && syntaxWarning.isEmpty()) pendingAutoFormat.add(pathStr);
-            String formatNote = autoFormat && syntaxWarning.isEmpty() ? " (auto-format queued)" : "";
+            String formatNote = autoFormat && syntaxWarning.isEmpty() ? AUTO_FORMAT_SUFFIX : "";
             resultFuture.complete("Written: " + pathStr + " (" + newContent.length() + FORMAT_CHARS_SUFFIX + formatNote + syntaxWarning);
         } else {
             ApplicationManager.getApplication().runWriteAction(() -> {
@@ -512,7 +514,7 @@ class FileTools extends AbstractToolHandler {
         followRange[0] = doc.getLineNumber(finalIdx) + 1;
         int ctxEnd = Math.min(finalIdx + normalizedNew.length(), doc.getTextLength());
         followRange[1] = doc.getLineNumber(Math.max(ctxEnd - 1, finalIdx)) + 1;
-        String formatNote = autoFormat && syntaxWarning.isEmpty() ? " (auto-format queued)" : "";
+        String formatNote = autoFormat && syntaxWarning.isEmpty() ? AUTO_FORMAT_SUFFIX : "";
         resultFuture.complete("Edited: " + pathStr + " (replaced " + finalLen + " chars with " + normalizedNew.length() + FORMAT_CHARS_SUFFIX
             + contextLines(doc, finalIdx, ctxEnd) + formatNote + syntaxWarning);
     }
@@ -572,7 +574,7 @@ class FileTools extends AbstractToolHandler {
         if (autoFormat && syntaxWarning.isEmpty()) pendingAutoFormat.add(pathStr);
         int ctxEnd = Math.min(fStart + fNew.length(), doc.getTextLength());
         followRange[1] = doc.getLineNumber(Math.max(ctxEnd - 1, fStart)) + 1;
-        String formatNote = autoFormat && syntaxWarning.isEmpty() ? " (auto-format queued)" : "";
+        String formatNote = autoFormat && syntaxWarning.isEmpty() ? AUTO_FORMAT_SUFFIX : "";
         resultFuture.complete("Edited: " + pathStr + " (replaced lines " + startLine + "-" + endLine
             + " (" + replacedLines + " lines) with " + fNew.length() + FORMAT_CHARS_SUFFIX
             + contextLines(doc, fStart, ctxEnd) + formatNote + syntaxWarning);
@@ -988,7 +990,7 @@ class FileTools extends AbstractToolHandler {
     private String undo(JsonObject args) throws Exception {
         if (!args.has("path")) return ToolUtils.ERROR_PATH_REQUIRED;
         String pathStr = args.get("path").getAsString();
-        int count = args.has("count") ? args.get("count").getAsInt() : 1;
+        int count = args.has(PARAM_COUNT) ? args.get(PARAM_COUNT).getAsInt() : 1;
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> performUndo(pathStr, count, resultFuture));
@@ -998,7 +1000,7 @@ class FileTools extends AbstractToolHandler {
     private String redo(JsonObject args) throws Exception {
         if (!args.has("path")) return ToolUtils.ERROR_PATH_REQUIRED;
         String pathStr = args.get("path").getAsString();
-        int count = args.has("count") ? args.get("count").getAsInt() : 1;
+        int count = args.has(PARAM_COUNT) ? args.get(PARAM_COUNT).getAsInt() : 1;
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> performRedo(pathStr, count, resultFuture));

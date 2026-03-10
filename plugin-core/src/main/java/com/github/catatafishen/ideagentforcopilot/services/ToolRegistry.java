@@ -10,6 +10,8 @@ import java.util.List;
  */
 public final class ToolRegistry {
 
+    private static final String TOOL_GIT_PUSH = "git_push";
+
     public enum Category {
         FILE("File Operations"),
         SEARCH("Search & Navigation"),
@@ -145,7 +147,7 @@ public final class ToolRegistry {
         new ToolEntry("git_stash", "Git Stash", "Push, pop, apply, list, or drop stashed changes", Category.GIT, false, false, false),
         new ToolEntry("git_show", "Git Show", "Show details and diff for a specific commit", Category.GIT, false, false, false),
         new ToolEntry("git_blame", "Git Blame", "Show per-line authorship for a file, optionally restricted to a line range", Category.GIT, false, false, false),
-        new ToolEntry("git_push", "Git Push", "Push commits to a remote repository", Category.GIT, false, false, false),
+        new ToolEntry(TOOL_GIT_PUSH, "Git Push", "Push commits to a remote repository", Category.GIT, false, false, false),
         new ToolEntry("git_remote", "Git Remote", "List, add, remove, or update remote repositories", Category.GIT, false, false, false),
         new ToolEntry("git_fetch", "Git Fetch", "Download objects and refs from a remote without merging", Category.GIT, false, false, false),
         new ToolEntry("git_pull", "Git Pull", "Fetch from remote and integrate changes into the current branch", Category.GIT, false, false, false),
@@ -210,13 +212,13 @@ public final class ToolRegistry {
 
     // Tools that can permanently delete or irreversibly modify data
     private static final java.util.Set<String> DESTRUCTIVE_TOOLS = java.util.Set.of(
-        "delete_file", "git_reset", "git_push", "git_rebase"
+        "delete_file", "git_reset", TOOL_GIT_PUSH, "git_rebase"
     );
 
     // Tools that interact with systems outside the IDE
     private static final java.util.Set<String> OPEN_WORLD_TOOLS = java.util.Set.of(
         "run_command", "run_in_terminal", "write_terminal_input",
-        "http_request", "git_push", "git_pull", "git_fetch"
+        "http_request", TOOL_GIT_PUSH, "git_pull", "git_fetch"
     );
 
     private ToolRegistry() {

@@ -33,6 +33,10 @@ class SymbolEditingTools extends AbstractToolHandler {
     private static final String PARAM_CONTENT = "content";
     private static final String PARAM_LINE = "line";
 
+    private static final String ERROR_CANNOT_OPEN_DOC = "Cannot open document: ";
+    private static final String FORMATTED_SUFFIX = " (formatted & imports optimized)";
+    private static final String SYMBOL_PREFIX = "Symbol '";
+
     SymbolEditingTools(Project project) {
         super(project);
         register("replace_symbol_body", this::replaceSymbolBody);
@@ -76,7 +80,7 @@ class SymbolEditingTools extends AbstractToolHandler {
                 }
                 Document doc = FileDocumentManager.getInstance().getDocument(vf);
                 if (doc == null) {
-                    result.complete("Cannot open document: " + pathStr);
+                    result.complete(ERROR_CANNOT_OPEN_DOC + pathStr);
                     return;
                 }
 
@@ -111,14 +115,14 @@ class SymbolEditingTools extends AbstractToolHandler {
                 int newLineCount = (int) fNew.chars().filter(c -> c == '\n').count();
                 result.complete("Replaced lines " + loc.startLine + "-" + loc.endLine
                     + " (" + replacedLines + " lines) with " + newLineCount + " lines in " + pathStr
-                    + " (formatted & imports optimized)");
+                    + FORMATTED_SUFFIX);
             } catch (Exception e) {
                 result.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
             }
         });
 
         String resultStr = result.get(15, TimeUnit.SECONDS);
-        if (!resultStr.startsWith(ToolUtils.ERROR_PREFIX) && !resultStr.startsWith("Symbol '")) {
+        if (!resultStr.startsWith(ToolUtils.ERROR_PREFIX) && !resultStr.startsWith(SYMBOL_PREFIX)) {
             int newLineCount = (int) newBody.chars().filter(c -> c == '\n').count() + 1;
             FileTools.followFileIfEnabled(project, pathStr, lineRange[0], lineRange[0] + newLineCount - 1,
                 FileTools.HIGHLIGHT_EDIT, "replacing " + symbolType[0] + " " + symbolName);
@@ -157,7 +161,7 @@ class SymbolEditingTools extends AbstractToolHandler {
                 }
                 Document doc = FileDocumentManager.getInstance().getDocument(vf);
                 if (doc == null) {
-                    result.complete("Cannot open document: " + pathStr);
+                    result.complete(ERROR_CANNOT_OPEN_DOC + pathStr);
                     return;
                 }
 
@@ -181,14 +185,14 @@ class SymbolEditingTools extends AbstractToolHandler {
 
                 int newLineCount = (int) fContent.chars().filter(c -> c == '\n').count();
                 result.complete("Inserted " + newLineCount + " lines before line " + loc.startLine + " in " + pathStr
-                    + " (formatted & imports optimized)");
+                    + FORMATTED_SUFFIX);
             } catch (Exception e) {
                 result.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
             }
         });
 
         String resultStr = result.get(15, TimeUnit.SECONDS);
-        if (!resultStr.startsWith(ToolUtils.ERROR_PREFIX) && !resultStr.startsWith("Symbol '")) {
+        if (!resultStr.startsWith(ToolUtils.ERROR_PREFIX) && !resultStr.startsWith(SYMBOL_PREFIX)) {
             int insertedLines = (int) content.chars().filter(c -> c == '\n').count() + 1;
             FileTools.followFileIfEnabled(project, pathStr, anchorLine[0], anchorLine[0] + insertedLines - 1,
                 FileTools.HIGHLIGHT_EDIT, "inserting before " + symbolName);
@@ -227,7 +231,7 @@ class SymbolEditingTools extends AbstractToolHandler {
                 }
                 Document doc = FileDocumentManager.getInstance().getDocument(vf);
                 if (doc == null) {
-                    result.complete("Cannot open document: " + pathStr);
+                    result.complete(ERROR_CANNOT_OPEN_DOC + pathStr);
                     return;
                 }
 
@@ -254,14 +258,14 @@ class SymbolEditingTools extends AbstractToolHandler {
 
                 int newLineCount = (int) fContent.chars().filter(c -> c == '\n').count();
                 result.complete("Inserted " + newLineCount + " lines after line " + loc.endLine + " in " + pathStr
-                    + " (formatted & imports optimized)");
+                    + FORMATTED_SUFFIX);
             } catch (Exception e) {
                 result.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
             }
         });
 
         String resultStr = result.get(15, TimeUnit.SECONDS);
-        if (!resultStr.startsWith(ToolUtils.ERROR_PREFIX) && !resultStr.startsWith("Symbol '")) {
+        if (!resultStr.startsWith(ToolUtils.ERROR_PREFIX) && !resultStr.startsWith(SYMBOL_PREFIX)) {
             int insertedLines = (int) content.chars().filter(c -> c == '\n').count() + 1;
             int insertStart = endLine[0] + 1;
             FileTools.followFileIfEnabled(project, pathStr, insertStart, insertStart + insertedLines - 1,
@@ -392,7 +396,7 @@ class SymbolEditingTools extends AbstractToolHandler {
             return "\nAvailable symbols: " + String.join(", ", symbols);
         });
 
-        String msg = "Symbol '" + symbolName + "' not found in " + pathStr;
+        String msg = SYMBOL_PREFIX + symbolName + "' not found in " + pathStr;
         if (lineHint != null) msg += " (near line " + lineHint + ")";
         return msg + available;
     }
