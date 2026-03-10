@@ -130,11 +130,24 @@ tasks.named("prepareSandbox") {
 }
 
 // Resolve nvm Node so Gradle's exec tasks use the right version.
-// Falls back to system PATH if nvm is not installed.
+// Prefers the nvm default alias (~/.nvm/alias/default) so the same
+// Node version used in the terminal is used here. Falls back to the
+// highest installed version, then to system PATH.
 val nvmNodeBin: String? by lazy {
-    val nvmDir = File(System.getProperty("user.home"), ".nvm/versions/node")
-    if (!nvmDir.isDirectory) return@lazy null
-    nvmDir.listFiles()
+    val home = System.getProperty("user.home")
+    val nvmVersionsDir = File(home, ".nvm/versions/node")
+    if (!nvmVersionsDir.isDirectory) return@lazy null
+
+    // Try the nvm default alias first
+    val defaultAlias = File(home, ".nvm/alias/default")
+    if (defaultAlias.isFile) {
+        val defaultVersion = defaultAlias.readText().trim()
+        val defaultBin = File(nvmVersionsDir, "$defaultVersion/bin")
+        if (File(defaultBin, "node").exists()) return@lazy defaultBin.absolutePath
+    }
+
+    // Fall back to highest installed version
+    nvmVersionsDir.listFiles()
         ?.filter { it.isDirectory }
         ?.sortedByDescending { it.name }
         ?.map { File(it, "bin") }
