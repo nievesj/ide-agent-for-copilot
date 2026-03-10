@@ -323,7 +323,7 @@ class ProjectTools extends AbstractToolHandler {
 
     @SuppressWarnings({"JavaReflectionMemberAccess", "RedundantSuppression"})
     private String downloadSources(JsonObject args) {
-        String library = args.has("library") ? args.get("library").getAsString() : "";
+        String library = args.has(PARAM_LIBRARY) ? args.get(PARAM_LIBRARY).getAsString() : "";
 
         try {
             CompletableFuture<String> future = new CompletableFuture<>();
@@ -553,6 +553,7 @@ class ProjectTools extends AbstractToolHandler {
     private static final String PARAM_ACTION = "action";
     private static final String PARAM_DEPENDENCY_NAME = "dependency_name";
     private static final String PARAM_DEPENDENCY_TYPE = "dependency_type";
+    private static final String PARAM_LIBRARY = "library";
     private static final String PARAM_SCOPE = "scope";
     private static final String PARAM_JAR_PATH = "jar_path";
     private static final String MSG_MODULE_PREFIX = "Module '";
@@ -692,7 +693,7 @@ class ProjectTools extends AbstractToolHandler {
             return ToolUtils.ERROR_PREFIX + "'module' parameter is required for add_dependency";
         }
 
-        String depType = args.has(PARAM_DEPENDENCY_TYPE) ? args.get(PARAM_DEPENDENCY_TYPE).getAsString() : "library";
+        String depType = args.has(PARAM_DEPENDENCY_TYPE) ? args.get(PARAM_DEPENDENCY_TYPE).getAsString() : PARAM_LIBRARY;
         String depName = args.has(PARAM_DEPENDENCY_NAME) ? args.get(PARAM_DEPENDENCY_NAME).getAsString() : "";
         String scopeStr = args.has(PARAM_SCOPE) ? args.get(PARAM_SCOPE).getAsString() : "COMPILE";
         String jarPath = args.has(PARAM_JAR_PATH) ? args.get(PARAM_JAR_PATH).getAsString() : "";

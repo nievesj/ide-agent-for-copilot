@@ -38,6 +38,9 @@ import java.util.Set;
  */
 public class RefactoringJavaSupport {
 
+    private static final String JAR_INDICATOR = ".jar!";
+    private static final String HEADER_SUFFIX = ":\n\n";
+
     private RefactoringJavaSupport() {
     }
 
@@ -173,7 +176,7 @@ public class RefactoringJavaSupport {
         String basePath = project.getBasePath();
         StringBuilder sb = new StringBuilder();
         String qName = psiClass.getQualifiedName();
-        sb.append("Implementations of ").append(qName != null ? qName : psiClass.getName()).append(":\n\n");
+        sb.append("Implementations of ").append(qName != null ? qName : psiClass.getName()).append(HEADER_SUFFIX);
         for (PsiClass inheritor : inheritors) {
             appendClassLocation(sb, inheritor, basePath);
         }
@@ -193,7 +196,7 @@ public class RefactoringJavaSupport {
 
         String basePath = project.getBasePath();
         StringBuilder sb = new StringBuilder();
-        sb.append("Overrides of ").append(formatMethodSignature(method)).append(":\n\n");
+        sb.append("Overrides of ").append(formatMethodSignature(method)).append(HEADER_SUFFIX);
         for (PsiMethod override : overrides) {
             appendMethodLocation(sb, override, basePath);
         }
@@ -225,7 +228,7 @@ public class RefactoringJavaSupport {
 
         String basePath = project.getBasePath();
         StringBuilder sb = new StringBuilder();
-        sb.append("Callers of ").append(formatMethodSignature(method)).append(":\n\n");
+        sb.append("Callers of ").append(formatMethodSignature(method)).append(HEADER_SUFFIX);
         for (PsiReference ref : references) {
             appendCallerInfo(sb, ref, basePath);
         }
@@ -271,7 +274,7 @@ public class RefactoringJavaSupport {
         PsiFile file = cls.getContainingFile();
         if (file != null && file.getVirtualFile() != null && basePath != null) {
             String path = file.getVirtualFile().getPath();
-            if (!path.contains(".jar!")) {
+            if (!path.contains(JAR_INDICATOR)) {
                 sb.append(" (").append(ToolUtils.relativize(basePath, path));
                 Document doc = FileDocumentManager.getInstance().getDocument(file.getVirtualFile());
                 if (doc != null) {
@@ -317,7 +320,7 @@ public class RefactoringJavaSupport {
         PsiFile file = element.getContainingFile();
         if (file == null || file.getVirtualFile() == null || basePath == null) return;
         String path = file.getVirtualFile().getPath();
-        if (path.contains(".jar!")) return;
+        if (path.contains(JAR_INDICATOR)) return;
         sb.append(" (").append(ToolUtils.relativize(basePath, path));
         Document doc = FileDocumentManager.getInstance().getDocument(file.getVirtualFile());
         if (doc != null) {
@@ -340,7 +343,7 @@ public class RefactoringJavaSupport {
         PsiFile file = cls.getContainingFile();
         if (file != null && file.getVirtualFile() != null && basePath != null) {
             String path = file.getVirtualFile().getPath();
-            if (path.contains(".jar!")) return "";
+            if (path.contains(JAR_INDICATOR)) return "";
             return " (" + ToolUtils.relativize(basePath, path) + ")";
         }
         return "";

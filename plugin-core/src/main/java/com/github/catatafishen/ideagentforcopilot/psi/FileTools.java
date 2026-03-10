@@ -247,8 +247,6 @@ class FileTools extends AbstractToolHandler {
                 int lineCount = doc.getLineCount();
                 if (midLine - 1 >= lineCount) break;
 
-                // If the highlighted range fits in the viewport, center it;
-                // otherwise scroll so the start (with the action label) is visible near the top.
                 int visibleLines = editor.getScrollingModel().getVisibleArea().height
                     / editor.getLineHeight();
                 int rangeLines = endLine - startLine + 1;

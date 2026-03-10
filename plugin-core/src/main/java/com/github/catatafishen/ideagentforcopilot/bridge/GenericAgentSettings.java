@@ -21,7 +21,7 @@ public final class GenericAgentSettings implements AgentSettings {
     public boolean isAutoApprovePermissions() {
         if (project == null) return false;
         var profile = ActiveAgentManager.getInstance(project).getActiveProfile();
-        return profile != null && !profile.isUsePluginPermissions();
+        return !profile.isUsePluginPermissions();
     }
 
     @Override

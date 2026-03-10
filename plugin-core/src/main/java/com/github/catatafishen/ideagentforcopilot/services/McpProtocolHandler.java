@@ -51,8 +51,7 @@ public final class McpProtocolHandler {
                 default -> respondError(msg, -32601, "Method not found: " + method);
             };
 
-            // Notifications (no id) don't get a response
-            if (result == null || !msg.has("id")) return null;
+            if (!msg.has("id")) return null;
             return GSON.toJson(result);
         } catch (Exception e) {
             LOG.warn("MCP protocol error", e);
