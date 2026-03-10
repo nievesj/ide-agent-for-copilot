@@ -1001,7 +1001,7 @@ class AgenticCopilotToolWindowContent(
                 AllIcons.FileTypes.Text
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
-                override fun actionPerformed(ev: AnActionEvent) = handleCreateScratch(ev)
+                override fun actionPerformed(ev: AnActionEvent) = handleCreateScratch()
             })
             group.addSeparator()
 
@@ -2231,7 +2231,7 @@ class AgenticCopilotToolWindowContent(
         })
     }
 
-    private fun handleCreateScratch(e: AnActionEvent) {
+    private fun handleCreateScratch() {
         val settings = com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings.getInstance()
         val enabledLanguages = settings.enabledLanguages
 

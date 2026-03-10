@@ -47,5 +47,6 @@ public final class McpServerConfigurable implements Configurable {
 
     @Override
     public void apply() {
+        // No mutable settings on this parent page — sub-pages handle their own apply()
     }
 }

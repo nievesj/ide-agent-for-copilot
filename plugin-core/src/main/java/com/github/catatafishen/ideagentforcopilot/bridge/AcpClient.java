@@ -1096,7 +1096,7 @@ public class AcpClient implements Closeable {
 
         // Use per-tool permission settings (DENY / ASK / ALLOW)
         String toolId = resolveToolId(permKind, toolCall);
-        ToolPermission perm = resolveEffectivePermission(toolId, permKind, toolCall);
+        ToolPermission perm = resolveEffectivePermission(toolId, toolCall);
 
         // Auto-approve: profile's usePluginPermissions=false promotes ASK → ALLOW (DENY stays DENY)
         if (perm == ToolPermission.ASK && agentSettings.isAutoApprovePermissions()) {
@@ -1198,7 +1198,7 @@ public class AcpClient implements Closeable {
      * Look up the effective ToolPermission for a tool call.
      * For file tools, checks inside/outside-project sub-permission when a path is present.
      */
-    private ToolPermission resolveEffectivePermission(String toolId, String permKind, @Nullable JsonObject toolCall) {
+    private ToolPermission resolveEffectivePermission(String toolId, @Nullable JsonObject toolCall) {
         ToolRegistry.ToolEntry entry = ToolRegistry.findById(toolId);
 
         // Path-based sub-permissions for file tools (ceiling enforced by AgentSettings)
