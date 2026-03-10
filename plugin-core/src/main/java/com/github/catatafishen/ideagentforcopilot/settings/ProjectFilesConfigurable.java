@@ -37,9 +37,9 @@ public final class ProjectFilesConfigurable implements Configurable {
         loadFromSettings();
 
         table = new JBTable(tableModel);
-        table.getColumnModel().getColumn(0).setPreferredWidth(150);
-        table.getColumnModel().getColumn(1).setPreferredWidth(300);
-        table.getColumnModel().getColumn(2).setPreferredWidth(60);
+        table.getColumnModel().getColumn(0).setPreferredWidth(JBUI.scale(150));
+        table.getColumnModel().getColumn(1).setPreferredWidth(JBUI.scale(300));
+        table.getColumnModel().getColumn(2).setPreferredWidth(JBUI.scale(60));
 
         JPanel decorated = ToolbarDecorator.createDecorator(table)
             .setAddAction(b -> {

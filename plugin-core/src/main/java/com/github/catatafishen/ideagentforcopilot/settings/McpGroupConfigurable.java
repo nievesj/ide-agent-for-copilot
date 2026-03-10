@@ -4,6 +4,7 @@ import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.util.ui.FormBuilder;
+import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -32,17 +33,19 @@ public final class McpGroupConfigurable implements Configurable {
 
     @Override
     public @Nullable JComponent createComponent() {
-        return FormBuilder.createFormBuilder()
+        JPanel panel = FormBuilder.createFormBuilder()
             .addComponent(new JBLabel(
                 "<html>"
                     + "<b>Model Context Protocol (MCP)</b><br><br>"
                     + "Configure the MCP server that exposes IDE tools to the agent.<br><br>"
                     + "Use the sub-pages to manage:<br>"
-                    + "• <b>Server</b> — port, transport mode, auto-start<br>"
-                    + "• <b>Tools</b> — enable or disable individual tools"
+                    + "&#8226; <b>Server</b> \u2014 port, transport mode, auto-start<br>"
+                    + "&#8226; <b>Tools</b> \u2014 enable or disable individual tools"
                     + "</html>"))
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
+        panel.setBorder(JBUI.Borders.empty(8));
+        return panel;
     }
 
     @Override

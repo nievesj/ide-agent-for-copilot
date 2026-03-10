@@ -7,7 +7,6 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.options.Configurable;
-import com.intellij.openapi.ui.Splitter;
 import com.intellij.ui.CheckBoxList;
 import com.intellij.ui.ToolbarDecorator;
 import com.intellij.ui.components.JBLabel;
@@ -52,7 +51,8 @@ public final class ScratchTypesConfigurable implements Configurable {
         JPanel languagePanel = createLanguagePanel();
         JPanel aliasPanel = createAliasPanel();
 
-        Splitter splitter = new Splitter(true, 0.65f);
+        JBSplitter splitter = new JBSplitter(true, 0.65f);
+        splitter.setShowDividerControls(true);
         splitter.setFirstComponent(languagePanel);
         splitter.setSecondComponent(aliasPanel);
         return splitter;
@@ -95,8 +95,8 @@ public final class ScratchTypesConfigurable implements Configurable {
         loadAliasTable();
 
         table = new JBTable(tableModel);
-        table.getColumnModel().getColumn(0).setPreferredWidth(200);
-        table.getColumnModel().getColumn(1).setPreferredWidth(100);
+        table.getColumnModel().getColumn(0).setPreferredWidth(JBUI.scale(200));
+        table.getColumnModel().getColumn(1).setPreferredWidth(JBUI.scale(100));
 
         JPanel decorated = ToolbarDecorator.createDecorator(table)
             .setAddAction(b -> {

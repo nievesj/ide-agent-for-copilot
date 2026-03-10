@@ -333,7 +333,6 @@ class AgenticCopilotToolWindowContent(
     /** Creates a banner for Copilot CLI setup issues (not installed / not authenticated). */
     private fun createCopilotSetupBanner(onFixed: () -> Unit): AuthSetupBanner {
         val banner = AuthSetupBanner(
-            retryTooltip = "Re-check Copilot CLI status",
             pollIntervalDown = 30,
             pollIntervalUp = 60,
             diagnosticsFn = { authService.copilotSetupDiagnostics() },
@@ -387,7 +386,6 @@ class AgenticCopilotToolWindowContent(
     /** Creates a banner for GH CLI setup issues (not installed / not authenticated). */
     private fun createGhSetupBanner(onFixed: () -> Unit): AuthSetupBanner {
         val banner = AuthSetupBanner(
-            retryTooltip = "Re-check GitHub CLI status",
             pollIntervalDown = 30,
             pollIntervalUp = 120,
             diagnosticsFn = { authService.ghSetupDiagnostics(billing) },

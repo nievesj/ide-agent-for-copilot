@@ -4,6 +4,7 @@ import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.util.ui.FormBuilder;
+import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -32,18 +33,20 @@ public final class AcpGroupConfigurable implements Configurable {
 
     @Override
     public @Nullable JComponent createComponent() {
-        return FormBuilder.createFormBuilder()
+        JPanel panel = FormBuilder.createFormBuilder()
             .addComponent(new JBLabel(
                 "<html>"
                     + "<b>Agent Communication Protocol (ACP)</b><br><br>"
                     + "Configure how the IDE communicates with Copilot-compatible agents.<br><br>"
                     + "Use the sub-pages to manage:<br>"
-                    + "• <b>Agent Settings</b> — timeout and tool-call limits<br>"
-                    + "• <b>Agent Profiles</b> — agent binaries and MCP injection<br>"
-                    + "• <b>Tool Permissions</b> — allow, ask, or deny per tool"
+                    + "&#8226; <b>Agent Settings</b> \u2014 timeout and tool-call limits<br>"
+                    + "&#8226; <b>Agent Profiles</b> \u2014 agent binaries and MCP injection<br>"
+                    + "&#8226; <b>Tool Permissions</b> \u2014 allow, ask, or deny per tool"
                     + "</html>"))
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
+        panel.setBorder(JBUI.Borders.empty(8));
+        return panel;
     }
 
     @Override

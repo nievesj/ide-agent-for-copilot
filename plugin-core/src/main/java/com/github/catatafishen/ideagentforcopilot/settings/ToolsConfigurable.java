@@ -3,7 +3,9 @@ package com.github.catatafishen.ideagentforcopilot.settings;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
+import com.intellij.ui.TitledSeparator;
 import com.intellij.ui.components.JBCheckBox;
+import com.intellij.ui.components.JBPanel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
@@ -40,8 +42,25 @@ public final class ToolsConfigurable implements Configurable {
     public JComponent createComponent() {
         McpServerSettings settings = McpServerSettings.getInstance(project);
 
-        JPanel toolsPanel = new JPanel();
+        JBPanel<?> toolsPanel = new JBPanel<>();
         toolsPanel.setLayout(new BoxLayout(toolsPanel, BoxLayout.Y_AXIS));
+
+        // Enable / Disable All buttons
+        JButton enableAllBtn = new JButton("Enable All");
+        JButton disableAllBtn = new JButton("Disable All");
+        enableAllBtn.addActionListener(e -> toolCheckboxes.values().forEach(cb -> cb.setSelected(true)));
+        disableAllBtn.addActionListener(e -> toolCheckboxes.values().forEach(cb -> cb.setSelected(false)));
+
+        JBPanel<?> topRow = new JBPanel<>();
+        topRow.setLayout(new BoxLayout(topRow, BoxLayout.X_AXIS));
+        topRow.setBorder(JBUI.Borders.empty(0, 0, 4, 0));
+        topRow.add(enableAllBtn);
+        topRow.add(Box.createHorizontalStrut(JBUI.scale(8)));
+        topRow.add(disableAllBtn);
+        topRow.add(Box.createHorizontalGlue());
+        topRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        toolsPanel.add(topRow);
 
         List<ToolRegistry.ToolEntry> tools = McpToolFilter.getConfigurableTools();
         ToolRegistry.Category currentCategory = null;
@@ -49,15 +68,16 @@ public final class ToolsConfigurable implements Configurable {
         for (ToolRegistry.ToolEntry tool : tools) {
             if (tool.category != currentCategory) {
                 currentCategory = tool.category;
-                JLabel categoryLabel = new JLabel(currentCategory.displayName);
-                categoryLabel.setFont(categoryLabel.getFont().deriveFont(Font.BOLD));
-                categoryLabel.setBorder(JBUI.Borders.empty(8, 0, 4, 0));
-                toolsPanel.add(categoryLabel);
+                TitledSeparator sep = new TitledSeparator(currentCategory.displayName);
+                sep.setBorder(JBUI.Borders.empty(8, 0, 4, 0));
+                sep.setAlignmentX(Component.LEFT_ALIGNMENT);
+                toolsPanel.add(sep);
             }
 
             JBCheckBox cb = new JBCheckBox(tool.displayName, settings.isToolEnabled(tool.id));
             cb.setToolTipText(tool.description);
             cb.setBorder(JBUI.Borders.empty(1, 16, 1, 0));
+            cb.setAlignmentX(Component.LEFT_ALIGNMENT);
             toolCheckboxes.put(tool.id, cb);
             toolsPanel.add(cb);
         }
@@ -65,9 +85,9 @@ public final class ToolsConfigurable implements Configurable {
         toolsPanel.add(Box.createVerticalGlue());
 
         JBScrollPane scrollPane = new JBScrollPane(toolsPanel);
-        scrollPane.setPreferredSize(JBUI.size(400, 300));
 
-        JPanel wrapper = new JPanel(new BorderLayout());
+        JBPanel<?> wrapper = new JBPanel<>(new BorderLayout());
+        wrapper.setBorder(JBUI.Borders.empty(8));
         wrapper.add(scrollPane, BorderLayout.CENTER);
         return wrapper;
     }

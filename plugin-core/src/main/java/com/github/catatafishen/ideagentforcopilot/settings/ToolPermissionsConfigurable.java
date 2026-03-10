@@ -4,7 +4,6 @@ import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.ui.PermissionsPanel;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
-import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -33,10 +32,7 @@ public final class ToolPermissionsConfigurable implements Configurable {
     public @Nullable JComponent createComponent() {
         var settings = ActiveAgentManager.getInstance(project).getSettings();
         permissionsPanel = new PermissionsPanel(settings);
-        JComponent comp = permissionsPanel.getComponent();
-        comp.setPreferredSize(JBUI.size(740, 560));
-        comp.setMinimumSize(JBUI.size(500, 340));
-        return comp;
+        return permissionsPanel.getComponent();
     }
 
     @Override

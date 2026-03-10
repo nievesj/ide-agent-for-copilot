@@ -5,11 +5,17 @@ import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.ComboBox;
+import com.intellij.openapi.ui.Messages;
+import com.intellij.ui.IdeBorderFactory;
 import com.intellij.ui.JBSplitter;
+import com.intellij.ui.TitledSeparator;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBList;
+import com.intellij.ui.components.JBPanel;
 import com.intellij.ui.components.JBScrollPane;
+import com.intellij.ui.components.JBTabbedPane;
 import com.intellij.ui.components.JBTextArea;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.FormBuilder;
@@ -23,6 +29,7 @@ import javax.swing.event.ListSelectionEvent;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Settings page for managing agent profiles.
@@ -40,23 +47,32 @@ public final class AgentProfilesConfigurable implements Configurable {
     private JPanel editorPanel;
     private CardLayout editorCards;
 
+    // ── General tab ──
     private JBTextField nameField;
     private JBTextField binaryNameField;
     private JBTextField alternateNamesField;
     private JBTextField installHintField;
     private JBTextField customBinaryPathField;
+
+    // ── ACP & Launch tab ──
     private JBTextField acpArgsField;
-    private JComboBox<McpInjectionMethod> mcpMethodCombo;
+    private JBTextField prependInstructionsToField;
+    private JBCheckBox ensureCopilotAgentsCb;
+
+    // ── MCP tab ──
+    private ComboBox<McpInjectionMethod> mcpMethodCombo;
     private JBTextArea mcpConfigTemplateArea;
     private JBTextField mcpEnvVarNameField;
+
+    // ── Feature Flags tab ──
     private JBCheckBox supportsModelFlagCb;
     private JBCheckBox supportsConfigDirCb;
     private JBCheckBox supportsMcpConfigFlagCb;
     private JBCheckBox requiresResourceDuplicationCb;
     private JBTextField modelUsageFieldField;
     private JBTextField agentsDirectoryField;
-    private JBTextField prependInstructionsToField;
-    private JBCheckBox ensureCopilotAgentsCb;
+
+    // ── Permissions tab ──
     private JBCheckBox usePluginPermissionsCb;
     private JBCheckBox excludeAgentBuiltInToolsCb;
 
@@ -94,10 +110,11 @@ public final class AgentProfilesConfigurable implements Configurable {
         JPanel editor = buildEditorPanel();
 
         JBSplitter splitter = new JBSplitter(false, 0.3f);
+        splitter.setShowDividerControls(true);
         splitter.setFirstComponent(listPanel);
         splitter.setSecondComponent(editor);
 
-        mainPanel = new JPanel(new BorderLayout());
+        mainPanel = new JBPanel<>(new BorderLayout());
         mainPanel.add(splitter, BorderLayout.CENTER);
         mainPanel.setBorder(JBUI.Borders.empty(4));
 
@@ -109,8 +126,8 @@ public final class AgentProfilesConfigurable implements Configurable {
     }
 
     private JPanel buildListPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("Profiles"));
+        JPanel panel = new JBPanel<>(new BorderLayout());
+        panel.setBorder(IdeBorderFactory.createTitledBorder("Profiles"));
 
         JBScrollPane scrollPane = new JBScrollPane(profileList);
         panel.add(scrollPane, BorderLayout.CENTER);
@@ -128,11 +145,17 @@ public final class AgentProfilesConfigurable implements Configurable {
         resetBtn.setToolTipText("Reset selected built-in profile to factory defaults");
         resetBtn.addActionListener(e -> resetProfile());
 
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        JPanel buttons = new JBPanel<>();
+        buttons.setLayout(new BoxLayout(buttons, BoxLayout.X_AXIS));
+        buttons.setBorder(JBUI.Borders.empty(4, 2, 2, 2));
         buttons.add(addBtn);
+        buttons.add(Box.createHorizontalStrut(JBUI.scale(4)));
         buttons.add(duplicateBtn);
+        buttons.add(Box.createHorizontalStrut(JBUI.scale(4)));
         buttons.add(removeBtn);
+        buttons.add(Box.createHorizontalStrut(JBUI.scale(4)));
         buttons.add(resetBtn);
+        buttons.add(Box.createHorizontalGlue());
         panel.add(buttons, BorderLayout.SOUTH);
 
         return panel;
@@ -147,10 +170,12 @@ public final class AgentProfilesConfigurable implements Configurable {
         customBinaryPathField = new JBTextField();
         acpArgsField = new JBTextField();
 
-        mcpMethodCombo = new JComboBox<>(McpInjectionMethod.values());
-        mcpConfigTemplateArea = new JBTextArea(4, 40);
+        mcpMethodCombo = new ComboBox<>(McpInjectionMethod.values());
+        mcpConfigTemplateArea = new JBTextArea(6, 40);
+        mcpConfigTemplateArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN,
+            mcpConfigTemplateArea.getFont().getSize()));
         mcpConfigTemplateArea.setLineWrap(true);
-        mcpConfigTemplateArea.setWrapStyleWord(true);
+        mcpConfigTemplateArea.setWrapStyleWord(false);
         mcpEnvVarNameField = new JBTextField();
 
         supportsModelFlagCb = new JBCheckBox("Supports --model flag");
@@ -161,24 +186,43 @@ public final class AgentProfilesConfigurable implements Configurable {
         agentsDirectoryField = new JBTextField();
 
         prependInstructionsToField = new JBTextField();
-
         ensureCopilotAgentsCb = new JBCheckBox("Ensure Copilot agents config on launch");
 
-        this.usePluginPermissionsCb = new JBCheckBox("Use plugin-level tool permissions");
-
-        this.excludeAgentBuiltInToolsCb = new JBCheckBox("Exclude agent's built-in tools at session start");
+        usePluginPermissionsCb = new JBCheckBox("Use plugin-level tool permissions");
+        excludeAgentBuiltInToolsCb = new JBCheckBox("Exclude agent's built-in tools at session start");
 
         editorCards = new CardLayout();
-        editorPanel = new JPanel(editorCards);
+        editorPanel = new JBPanel<>(editorCards);
 
-        JPanel emptyPanel = new JPanel(new BorderLayout());
-        emptyPanel.add(new JBLabel("Select a profile to edit"), BorderLayout.CENTER);
+        JBPanel<JBPanel<?>> emptyPanel = new JBPanel<>(new BorderLayout());
+        JBLabel emptyLabel = new JBLabel("Select a profile from the list to edit it");
+        emptyLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        emptyLabel.setForeground(JBUI.CurrentTheme.Label.disabledForeground());
+        emptyPanel.add(emptyLabel, BorderLayout.CENTER);
         editorPanel.add(emptyPanel, EMPTY_CARD);
 
-        JPanel form = FormBuilder.createFormBuilder()
+        JBTabbedPane tabs = new JBTabbedPane();
+        tabs.addTab("General", scrollTab(buildGeneralTab()));
+        tabs.addTab("ACP & Launch", scrollTab(buildAcpTab()));
+        tabs.addTab("MCP", scrollTab(buildMcpTab()));
+        tabs.addTab("Feature Flags", scrollTab(buildFlagsTab()));
+        tabs.addTab("Permissions", scrollTab(buildPermissionsTab()));
+
+        editorPanel.add(tabs, "editor");
+        editorCards.show(editorPanel, EMPTY_CARD);
+        return editorPanel;
+    }
+
+    private static JScrollPane scrollTab(JPanel content) {
+        JBScrollPane scroll = new JBScrollPane(content);
+        scroll.setBorder(JBUI.Borders.empty());
+        return scroll;
+    }
+
+    private JPanel buildGeneralTab() {
+        return FormBuilder.createFormBuilder()
             .addLabeledComponent("Display name:", nameField)
-            .addSeparator()
-            .addComponent(new JBLabel("<html><b>Binary Discovery</b></html>"))
+            .addComponent(new TitledSeparator("Binary Discovery"))
             .addLabeledComponent("Binary name:", binaryNameField)
             .addTooltip("Primary executable name to search for (e.g., \"copilot\", \"opencode\")")
             .addLabeledComponent("Alternate names (comma-separated):", alternateNamesField)
@@ -187,19 +231,37 @@ public final class AgentProfilesConfigurable implements Configurable {
             .addTooltip("Shown when the binary cannot be found")
             .addLabeledComponent("Custom binary path:", customBinaryPathField)
             .addTooltip("Override auto-discovery with an absolute path")
-            .addSeparator()
-            .addComponent(new JBLabel("<html><b>ACP Command</b></html>"))
+            .addComponentFillVertically(new JPanel(), 0)
+            .getPanel();
+    }
+
+    private JPanel buildAcpTab() {
+        return FormBuilder.createFormBuilder()
+            .addComponent(new TitledSeparator("ACP Command"))
             .addLabeledComponent("ACP args (space-separated):", acpArgsField)
             .addTooltip("Arguments to activate ACP mode (e.g., \"--acp --stdio\" or \"acp\")")
-            .addSeparator()
-            .addComponent(new JBLabel("<html><b>MCP Configuration</b></html>"))
+            .addComponent(new TitledSeparator("Pre-launch Hooks"))
+            .addLabeledComponent("Prepend instructions to (relative path):", prependInstructionsToField)
+            .addTooltip("Relative path from project root to prepend plugin context to on launch "
+                + "(e.g. \".copilot/copilot-instructions.md\" or \"CLAUDE.md\"). Leave empty to skip.")
+            .addComponent(ensureCopilotAgentsCb)
+            .addComponentFillVertically(new JPanel(), 0)
+            .getPanel();
+    }
+
+    private JPanel buildMcpTab() {
+        return FormBuilder.createFormBuilder()
             .addLabeledComponent("MCP injection method:", mcpMethodCombo)
             .addTooltip("How to tell the agent about the IDE's MCP server")
             .addLabeledComponent("MCP config template:", new JBScrollPane(mcpConfigTemplateArea))
             .addTooltip("JSON template. Placeholders: {mcpPort}, {mcpJarPath}, {javaPath}")
             .addLabeledComponent("Env var name (for ENV_VAR method):", mcpEnvVarNameField)
-            .addSeparator()
-            .addComponent(new JBLabel("<html><b>Feature Flags</b></html>"))
+            .addComponentFillVertically(new JPanel(), 0)
+            .getPanel();
+    }
+
+    private JPanel buildFlagsTab() {
+        return FormBuilder.createFormBuilder()
             .addComponent(supportsModelFlagCb)
             .addComponent(supportsConfigDirCb)
             .addComponent(supportsMcpConfigFlagCb)
@@ -207,27 +269,23 @@ public final class AgentProfilesConfigurable implements Configurable {
             .addLabeledComponent("Model usage field:", modelUsageFieldField)
             .addTooltip("JSON field name in model metadata for usage info (e.g., \"copilotUsage\")")
             .addLabeledComponent("Agents directory (relative path):", agentsDirectoryField)
-            .addTooltip("Relative path from project root to a directory of agent definition files (*.md). Leave empty for no agent selector.")
-            .addSeparator()
-            .addComponent(new JBLabel("<html><b>Permissions</b></html>"))
-            .addComponent(usePluginPermissionsCb)
-            .addTooltip("When enabled, tool calls go through plugin's per-tool permission system (allow/ask/deny). When disabled, the agent handles its own permissions.")
-            .addComponent(excludeAgentBuiltInToolsCb)
-            .addTooltip("Send excludedTools in session/new to remove the agent's built-in tools (view, edit, bash, etc.). Only works with agents that honour this parameter (e.g., OpenCode). Copilot CLI ignores it.")
-            .addSeparator()
-            .addComponent(new JBLabel("<html><b>Pre-launch Hooks</b></html>"))
-            .addLabeledComponent("Prepend instructions to (relative path):", prependInstructionsToField)
-            .addTooltip("Relative path from project root to prepend plugin context to on launch (e.g. \".copilot/copilot-instructions.md\" or \"CLAUDE.md\"). Leave empty to skip file injection.")
-            .addComponent(ensureCopilotAgentsCb)
+            .addTooltip("Relative path from project root to a directory of agent definition files (*.md). "
+                + "Leave empty for no agent selector.")
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
+    }
 
-        JBScrollPane formScroll = new JBScrollPane(form);
-        formScroll.setBorder(JBUI.Borders.empty());
-        editorPanel.add(formScroll, "editor");
-
-        editorCards.show(editorPanel, EMPTY_CARD);
-        return editorPanel;
+    private JPanel buildPermissionsTab() {
+        return FormBuilder.createFormBuilder()
+            .addComponent(usePluginPermissionsCb)
+            .addTooltip("When enabled, tool calls go through plugin's per-tool permission system "
+                + "(allow/ask/deny). When disabled, the agent handles its own permissions.")
+            .addComponent(excludeAgentBuiltInToolsCb)
+            .addTooltip("Send excludedTools in session/new to remove the agent's built-in tools "
+                + "(view, edit, bash, etc.). Only works with agents that honour this parameter "
+                + "(e.g., OpenCode). Copilot CLI ignores it.")
+            .addComponentFillVertically(new JPanel(), 0)
+            .getPanel();
     }
 
     // ── List management ──────────────────────────────────────────────────────
@@ -263,9 +321,9 @@ public final class AgentProfilesConfigurable implements Configurable {
         if (idx < 0) return;
         AgentProfile p = workingCopies.get(idx);
         if (p.isBuiltIn()) {
-            JOptionPane.showMessageDialog(mainPanel,
+            Messages.showWarningDialog(mainPanel,
                 "Built-in profiles cannot be removed. Use 'Reset' to restore defaults.",
-                "Cannot Remove", JOptionPane.WARNING_MESSAGE);
+                "Cannot Remove");
             return;
         }
         workingCopies.remove(idx);
@@ -280,9 +338,9 @@ public final class AgentProfilesConfigurable implements Configurable {
         if (idx < 0) return;
         AgentProfile p = workingCopies.get(idx);
         if (!p.isBuiltIn()) {
-            JOptionPane.showMessageDialog(mainPanel,
+            Messages.showInfoMessage(mainPanel,
                 "Only built-in profiles can be reset to defaults.",
-                "Cannot Reset", JOptionPane.INFORMATION_MESSAGE);
+                "Cannot Reset");
             return;
         }
         AgentProfileManager mgr = AgentProfileManager.getInstance();
@@ -332,7 +390,8 @@ public final class AgentProfilesConfigurable implements Configurable {
             requiresResourceDuplicationCb.setSelected(p.isRequiresResourceDuplication());
             modelUsageFieldField.setText(p.getModelUsageField() != null ? p.getModelUsageField() : "");
             agentsDirectoryField.setText(p.getAgentsDirectory() != null ? p.getAgentsDirectory() : "");
-            prependInstructionsToField.setText(p.getPrependInstructionsTo() != null ? p.getPrependInstructionsTo() : "");
+            prependInstructionsToField.setText(
+                p.getPrependInstructionsTo() != null ? p.getPrependInstructionsTo() : "");
             ensureCopilotAgentsCb.setSelected(p.isEnsureCopilotAgents());
             usePluginPermissionsCb.setSelected(p.isUsePluginPermissions());
             excludeAgentBuiltInToolsCb.setSelected(p.isExcludeAgentBuiltInTools());
@@ -343,46 +402,61 @@ public final class AgentProfilesConfigurable implements Configurable {
 
     private void saveCurrentToWorking() {
         if (currentIndex < 0 || currentIndex >= workingCopies.size() || loading) return;
-        AgentProfile p = workingCopies.get(currentIndex);
-        p.setDisplayName(nameField.getText().trim());
-        p.setBinaryName(binaryNameField.getText().trim());
-        p.setAlternateNames(splitComma(alternateNamesField.getText()));
-        p.setInstallHint(installHintField.getText().trim());
-        p.setCustomBinaryPath(customBinaryPathField.getText().trim());
-        p.setAcpArgs(splitSpace(acpArgsField.getText()));
-        p.setMcpMethod((McpInjectionMethod) mcpMethodCombo.getSelectedItem());
-        p.setMcpConfigTemplate(mcpConfigTemplateArea.getText().trim());
-        p.setMcpEnvVarName(mcpEnvVarNameField.getText().trim());
-        p.setSupportsModelFlag(supportsModelFlagCb.isSelected());
-        p.setSupportsConfigDir(supportsConfigDirCb.isSelected());
-        p.setSupportsMcpConfigFlag(supportsMcpConfigFlagCb.isSelected());
-        p.setRequiresResourceDuplication(requiresResourceDuplicationCb.isSelected());
-        String modelField = modelUsageFieldField.getText().trim();
-        p.setModelUsageField(modelField.isEmpty() ? null : modelField);
-        String agentsDir = agentsDirectoryField.getText().trim();
-        p.setAgentsDirectory(agentsDir.isEmpty() ? null : agentsDir);
-        String prependTarget = prependInstructionsToField.getText().trim();
-        p.setPrependInstructionsTo(prependTarget.isEmpty() ? null : prependTarget);
-        p.setEnsureCopilotAgents(ensureCopilotAgentsCb.isSelected());
-        p.setUsePluginPermissions(usePluginPermissionsCb.isSelected());
-        p.setExcludeAgentBuiltInTools(excludeAgentBuiltInToolsCb.isSelected());
-
-        // Update list display name
+        writeFormTo(workingCopies.get(currentIndex));
         if (currentIndex < listModel.size()) {
-            listModel.set(currentIndex,
-                new ProfileListEntry(p.getDisplayName(), p.isBuiltIn(), currentIndex));
+            listModel.set(currentIndex, new ProfileListEntry(
+                workingCopies.get(currentIndex).getDisplayName(),
+                workingCopies.get(currentIndex).isBuiltIn(),
+                currentIndex));
         }
+    }
+
+    /**
+     * Reads all form fields into {@code target} without touching {@link #workingCopies}.
+     * Safe to call from read-only polls.
+     */
+    private void writeFormTo(@NotNull AgentProfile target) {
+        target.setDisplayName(nameField.getText().trim());
+        target.setBinaryName(binaryNameField.getText().trim());
+        target.setAlternateNames(splitComma(alternateNamesField.getText()));
+        target.setInstallHint(installHintField.getText().trim());
+        target.setCustomBinaryPath(customBinaryPathField.getText().trim());
+        target.setAcpArgs(splitSpace(acpArgsField.getText()));
+        target.setMcpMethod((McpInjectionMethod) mcpMethodCombo.getSelectedItem());
+        target.setMcpConfigTemplate(mcpConfigTemplateArea.getText().trim());
+        target.setMcpEnvVarName(mcpEnvVarNameField.getText().trim());
+        target.setSupportsModelFlag(supportsModelFlagCb.isSelected());
+        target.setSupportsConfigDir(supportsConfigDirCb.isSelected());
+        target.setSupportsMcpConfigFlag(supportsMcpConfigFlagCb.isSelected());
+        target.setRequiresResourceDuplication(requiresResourceDuplicationCb.isSelected());
+        String modelField = modelUsageFieldField.getText().trim();
+        target.setModelUsageField(modelField.isEmpty() ? null : modelField);
+        String agentsDir = agentsDirectoryField.getText().trim();
+        target.setAgentsDirectory(agentsDir.isEmpty() ? null : agentsDir);
+        String prependTarget = prependInstructionsToField.getText().trim();
+        target.setPrependInstructionsTo(prependTarget.isEmpty() ? null : prependTarget);
+        target.setEnsureCopilotAgents(ensureCopilotAgentsCb.isSelected());
+        target.setUsePluginPermissions(usePluginPermissionsCb.isSelected());
+        target.setExcludeAgentBuiltInTools(excludeAgentBuiltInToolsCb.isSelected());
     }
 
     // ── Configurable interface ───────────────────────────────────────────────
 
     @Override
     public boolean isModified() {
-        saveCurrentToWorking();
+        // Read form into a transient snapshot to avoid mutating workingCopies during polling
+        AgentProfile formSnapshot = (currentIndex >= 0 && currentIndex < workingCopies.size())
+            ? workingCopies.get(currentIndex).duplicate() : null;
+        if (formSnapshot != null && !loading) {
+            writeFormTo(formSnapshot);
+        }
+
         List<AgentProfile> persisted = AgentProfileManager.getInstance().getAllProfiles();
         if (workingCopies.size() != persisted.size()) return true;
         for (int i = 0; i < workingCopies.size(); i++) {
-            if (!profileEquals(workingCopies.get(i), persisted.get(i))) return true;
+            AgentProfile toCompare = (i == currentIndex && formSnapshot != null)
+                ? formSnapshot : workingCopies.get(i);
+            if (!profileEquals(toCompare, persisted.get(i))) return true;
         }
         return false;
     }
@@ -392,11 +466,8 @@ public final class AgentProfilesConfigurable implements Configurable {
         saveCurrentToWorking();
         AgentProfileManager mgr = AgentProfileManager.getInstance();
 
-        // Collect IDs to remove
-        List<String> existingIds = mgr.getAllProfiles().stream()
-            .map(AgentProfile::getId).toList();
-        List<String> newIds = workingCopies.stream()
-            .map(AgentProfile::getId).toList();
+        List<String> existingIds = mgr.getAllProfiles().stream().map(AgentProfile::getId).toList();
+        List<String> newIds = workingCopies.stream().map(AgentProfile::getId).toList();
 
         for (String id : existingIds) {
             if (!newIds.contains(id)) {
@@ -458,9 +529,9 @@ public final class AgentProfilesConfigurable implements Configurable {
             && a.isSupportsConfigDir() == b.isSupportsConfigDir()
             && a.isSupportsMcpConfigFlag() == b.isSupportsMcpConfigFlag()
             && a.isRequiresResourceDuplication() == b.isRequiresResourceDuplication()
-            && java.util.Objects.equals(a.getModelUsageField(), b.getModelUsageField())
-            && java.util.Objects.equals(a.getAgentsDirectory(), b.getAgentsDirectory())
-            && java.util.Objects.equals(a.getPrependInstructionsTo(), b.getPrependInstructionsTo())
+            && Objects.equals(a.getModelUsageField(), b.getModelUsageField())
+            && Objects.equals(a.getAgentsDirectory(), b.getAgentsDirectory())
+            && Objects.equals(a.getPrependInstructionsTo(), b.getPrependInstructionsTo())
             && a.isEnsureCopilotAgents() == b.isEnsureCopilotAgents()
             && a.isUsePluginPermissions() == b.isUsePluginPermissions()
             && a.isExcludeAgentBuiltInTools() == b.isExcludeAgentBuiltInTools();

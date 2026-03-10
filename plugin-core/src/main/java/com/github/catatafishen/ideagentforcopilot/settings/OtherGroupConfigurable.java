@@ -3,6 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.settings;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.util.ui.FormBuilder;
+import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.Nullable;
 
@@ -23,16 +24,18 @@ public final class OtherGroupConfigurable implements Configurable {
 
     @Override
     public @Nullable JComponent createComponent() {
-        return FormBuilder.createFormBuilder()
+        JPanel panel = FormBuilder.createFormBuilder()
             .addComponent(new JBLabel(
                 "<html>"
                     + "<b>Additional Settings</b><br><br>"
                     + "Miscellaneous plugin configuration:<br><br>"
-                    + "• <b>Scratch File Types</b> — language dropdown and alias mappings for scratch files<br>"
-                    + "• <b>Project Files</b> — file shortcuts in the toolbar dropdown"
+                    + "&#8226; <b>Scratch File Types</b> \u2014 language dropdown and alias mappings for scratch files<br>"
+                    + "&#8226; <b>Project Files</b> \u2014 file shortcuts in the toolbar dropdown"
                     + "</html>"))
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
+        panel.setBorder(JBUI.Borders.empty(8));
+        return panel;
     }
 
     @Override
