@@ -177,8 +177,18 @@ Each context item is converted to an ACP `ResourceReference` containing:
 - The actual file text (read from the live editor buffer, not disk)
 
 These references are sent as structured content blocks *before* the prompt text in the ACP request.
-Additionally, code selections are inlined in the prompt as markdown snippets, giving the agent dual
-visibility through both structured references and natural language context.
+
+> **⚠️ Copilot-specific workaround:** GitHub Copilot surfaces `ResourceReference` objects as
+> tagged-file metadata (path + line count) but does **not** inline their content for the agent.
+> To guarantee the agent sees the referenced code, `buildEffectivePromptWithContent()` also
+> appends the file/selection content as plain text after the user's message. The `ResourceReference`
+> objects are still sent in parallel (belt-and-suspenders) so that agents which *do* honour
+> structured references get the benefit of typed MIME metadata and `file://` URIs.
+>
+> **Multi-agent note:** When adding new agent backends, verify whether they surface
+> resource-reference content natively. If so, the text duplication can be skipped for that
+> backend via `AgentConfig`. See `buildEffectivePromptWithContent()` in
+> `AgenticCopilotToolWindowContent.kt`.
 
 ### Validation & Cleanup
 
@@ -256,7 +266,7 @@ The primary editing tool. Supports three modes:
 
 All writes execute through `CommandProcessor.executeCommand()` on the EDT, ensuring they appear in
 IntelliJ's undo history. After each write, the file is optionally auto-formatted (optimize imports +
-reformat code). The `auto_format` parameter (default: true) controls this behavior.
+reformat code). The `auto_format_and_optimize_imports` parameter (default: true) controls this behavior.
 
 ### `create_file`
 
@@ -304,7 +314,7 @@ Fast compilation error check using the cached compiler daemon results. Much fast
 ### `optimize_imports`
 
 Removes unused imports and organizes import statements according to project style settings. Uses
-`OptimizeImportsProcessor`. Runs automatically after writes when `auto_format` is enabled.
+`OptimizeImportsProcessor`. Runs automatically after writes when `auto_format_and_optimize_imports` is enabled.
 
 ### `format_code`
 

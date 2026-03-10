@@ -21,7 +21,7 @@ internal class ConversationExporter(private val entries: List<EntryData>) {
 
             is EntryData.Thinking -> sb.appendLine("[thinking] ${e.raw}")
             is EntryData.ToolCall -> {
-                val baseName = e.title.substringAfterLast("-")
+                val baseName = stripMcpPrefix(e.title)
                 val info = TOOL_DISPLAY_INFO[e.title] ?: TOOL_DISPLAY_INFO[baseName]
                 val name = info?.displayName ?: e.title
                 sb.appendLine("\uD83D\uDD27 $name")
@@ -66,7 +66,7 @@ internal class ConversationExporter(private val entries: List<EntryData>) {
             }
 
             is EntryData.ToolCall -> {
-                val baseName = e.title.substringAfterLast("-")
+                val baseName = stripMcpPrefix(e.title)
                 val info = TOOL_DISPLAY_INFO[e.title] ?: TOOL_DISPLAY_INFO[baseName]
                 val name = info?.displayName ?: e.title
                 sb.appendLine("Tool: $name")
@@ -88,7 +88,7 @@ internal class ConversationExporter(private val entries: List<EntryData>) {
         val result = sb.toString()
         if (result.length <= maxChars) return result
         return "[Previous conversation summary - trimmed to recent]\n..." +
-                result.substring(result.length - maxChars + 60)
+            result.substring(result.length - maxChars + 60)
     }
 
     /** Returns the conversation as a self-contained HTML document */
@@ -104,17 +104,33 @@ internal class ConversationExporter(private val entries: List<EntryData>) {
         val font = UIUtil.getLabelFont()
         val fg = UIUtil.getLabelForeground()
         val bg = UIUtil.getPanelBackground()
-        val codeBg = UIManager.getColor("EditorPane.background") ?: JBColor(Color(0xF5, 0xF5, 0xF5), Color(0x2B, 0x2B, 0x2B))
+        val codeBg =
+            UIManager.getColor("EditorPane.background") ?: JBColor(Color(0xF5, 0xF5, 0xF5), Color(0x2B, 0x2B, 0x2B))
         val tblBorder = JBColor(Color(0xDD, 0xDD, 0xDD), Color(0x55, 0x55, 0x55))
         val thBg = JBColor(Color(0xEE, 0xEE, 0xEE), Color(0x3C, 0x3F, 0x41))
         val linkColor = UIManager.getColor(LINK_COLOR_KEY) ?: JBColor(Color(0x29, 0x79, 0xFF), Color(0x58, 0x9D, 0xF6))
         return """<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 body{font-family:'${font.family}',system-ui,sans-serif;font-size:${font.size}pt;color:${rgb(fg)};background:${rgb(bg)};max-width:900px;margin:0 auto;padding:20px}
 .prompt{margin:12px 0 4px}
-.prompt-b{display:inline-block;background:${rgba(USER_COLOR, 0.12)};border:1px solid ${rgba(USER_COLOR, 0.3)};border-radius:16px 16px 16px 4px;padding:8px 14px;color:${rgb(USER_COLOR)};font-weight:600}
+.prompt-b{display:inline-block;background:${rgba(USER_COLOR, 0.12)};border:1px solid ${
+            rgba(
+                USER_COLOR,
+                0.3
+            )
+        };border-radius:16px 16px 16px 4px;padding:8px 14px;color:${rgb(USER_COLOR)};font-weight:600}
 .response{margin:4px 0;line-height:1.55}
-.thinking{background:${rgba(THINK_COLOR, 0.06)};border:1px solid ${rgba(THINK_COLOR, 0.2)};border-radius:4px 16px 16px 16px;padding:6px 12px;margin:4px 0;font-size:0.88em;color:${rgb(THINK_COLOR)}}
-.tool{display:inline-flex;align-items:center;gap:6px;background:${rgba(TOOL_COLOR, 0.1)};border:1px solid ${rgba(TOOL_COLOR, 0.3)};border-radius:20px;padding:3px 12px;margin:2px 0;font-size:0.88em;color:${rgb(TOOL_COLOR)}}
+.thinking{background:${rgba(THINK_COLOR, 0.06)};border:1px solid ${
+            rgba(
+                THINK_COLOR,
+                0.2
+            )
+        };border-radius:4px 16px 16px 16px;padding:6px 12px;margin:4px 0;font-size:0.88em;color:${rgb(THINK_COLOR)}}
+.tool{display:inline-flex;align-items:center;gap:6px;background:${rgba(TOOL_COLOR, 0.1)};border:1px solid ${
+            rgba(
+                TOOL_COLOR,
+                0.3
+            )
+        };border-radius:20px;padding:3px 12px;margin:2px 0;font-size:0.88em;color:${rgb(TOOL_COLOR)}}
 .context{font-size:0.88em;color:${rgb(USER_COLOR)};margin:2px 0}
 .context summary{cursor:pointer;padding:4px 0}
 .context .ctx-file{padding:2px 0;padding-left:8px}
@@ -159,7 +175,7 @@ ul,ol{margin:4px 0;padding-left:22px}
     }
 
     private fun renderExportToolCall(e: EntryData.ToolCall): String {
-        val baseName = e.title.substringAfterLast("-")
+        val baseName = stripMcpPrefix(e.title)
         val info = TOOL_DISPLAY_INFO[e.title] ?: TOOL_DISPLAY_INFO[baseName]
         val displayName = info?.displayName ?: e.title
         val sb = StringBuilder("<details class='tool'><summary>\u2692 ${escapeHtml(displayName)}</summary>")

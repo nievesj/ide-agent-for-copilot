@@ -22,11 +22,12 @@ import java.util.List;
 
 /**
  * Handles infrastructure tool calls: http_request, run_command, read_ide_log,
- * get_notifications, read_run_output.
+ * get_notifications, read_run_output, read_build_output.
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
 class InfrastructureTools extends AbstractToolHandler {
     private static final Logger LOG = Logger.getInstance(InfrastructureTools.class);
+    private static final String PARAM_OFFSET = "offset";
 
     private static final String CONTENT_TYPE_HEADER = "Content-Type";
     private static final String APPLICATION_JSON = "application/json";
@@ -50,6 +51,7 @@ class InfrastructureTools extends AbstractToolHandler {
         register("read_ide_log", this::readIdeLog);
         register("get_notifications", this::getNotifications);
         register("read_run_output", this::readRunOutput);
+        register("read_build_output", this::readBuildOutput);
     }
 
     private String httpRequest(JsonObject args) throws Exception {
@@ -118,7 +120,7 @@ class InfrastructureTools extends AbstractToolHandler {
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
         int timeoutSec = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 60;
-        int offset = args.has("offset") ? args.get("offset").getAsInt() : 0;
+        int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
         String tabTitle = title != null ? title : "Command: " + truncateForTitle(command);
 
@@ -147,12 +149,12 @@ class InfrastructureTools extends AbstractToolHandler {
         boolean failed = result.exitCode() != 0;
         // On failure with no explicit offset, show the tail so stack traces / errors are visible
         int effectiveOffset = offset;
-        if (failed && !args.has("offset") && fullOutput.length() > maxChars) {
+        if (failed && !args.has(PARAM_OFFSET) && fullOutput.length() > maxChars) {
             effectiveOffset = fullOutput.length() - maxChars;
         }
         String header = failed
-            ? "❌ Command failed (exit code " + result.exitCode() + ")"
-            : "✅ Command succeeded";
+            ? "Command failed (exit code " + result.exitCode() + ")"
+            : "Command succeeded";
         if (failed && effectiveOffset > 0) {
             header += "\n(showing last " + maxChars + " chars — use offset=0 for beginning)";
         }
@@ -258,13 +260,16 @@ class InfrastructureTools extends AbstractToolHandler {
             // synchronously on the EDT; from other threads it posts async and returns
             // immediately, so the text would still be empty when we read it.
             var textRef = new java.util.concurrent.atomic.AtomicReference<String>();
-            ApplicationManager.getApplication().invokeAndWait(() ->
+            EdtUtil.invokeAndWait(() ->
                 textRef.set(readConsoleTextOnEdt(console)));
 
             String text = textRef.get();
             if (text == null || text.isEmpty()) {
+                var consoleClass = target.getExecutionConsole() != null
+                    ? target.getExecutionConsole().getClass().getName() : "null";
                 return "Tab '" + target.getDisplayName()
-                    + "' has no text content (console may still be loading or is an unsupported type).";
+                    + "' has no text content (console type: " + consoleClass
+                    + "). The run may still be in progress or the console type is unsupported.";
             }
             return formatRunOutput(target.getDisplayName(), text, maxChars);
         } catch (Exception e) {
@@ -286,9 +291,21 @@ class InfrastructureTools extends AbstractToolHandler {
      * Unwrap console wrappers to get the underlying ConsoleView.
      * Handles ConsoleViewWithDelegate (IntelliJ Ultimate profiler widgets)
      * and getConsole()-style wrappers (Node.js, Python, etc.).
+     * <p>
+     * Test runner consoles (SMTRunnerConsoleView) are intentionally NOT unwrapped —
+     * they expose getResultsViewer() which extractConsoleText() uses to read structured
+     * test results. Unwrapping them would lose access to the results tree.
      */
     private com.intellij.execution.ui.ExecutionConsole unwrapConsoleDelegate(
         com.intellij.execution.ui.ExecutionConsole console) {
+        // Don't unwrap test runner consoles — extractConsoleText handles them specially
+        try {
+            console.getClass().getMethod("getResultsViewer");
+            return console;
+        } catch (NoSuchMethodException ignored) {
+            // Not a test runner console, proceed with unwrapping
+        }
+
         if (console instanceof com.intellij.execution.ui.ConsoleViewWithDelegate wrapper) {
             return wrapper.getDelegate();
         }
@@ -350,39 +367,96 @@ class InfrastructureTools extends AbstractToolHandler {
         return result.toString();
     }
 
-    /**
-     * Extract plain text from any type of ExecutionConsole (regular, test runner, etc.)
-     */
     private String extractConsoleText(com.intellij.execution.ui.ExecutionConsole console) {
         try {
             var getResultsViewer = console.getClass().getMethod("getResultsViewer");
             var viewer = getResultsViewer.invoke(console);
             if (viewer != null) {
-                String testOutput = extractTestRunnerResults(viewer, console);
-                if (!testOutput.isEmpty()) return testOutput;
+                return extractTestRunnerResults(viewer, console);
             }
         } catch (NoSuchMethodException ignored) {
             // Not an SMTRunnerConsoleView
         } catch (Exception e) {
             LOG.warn("Failed to extract test runner output", e);
         }
-
         return extractPlainConsoleText(console);
     }
 
     private String extractTestRunnerResults(Object viewer,
                                             com.intellij.execution.ui.ExecutionConsole console) throws Exception {
+        // getAllTests() lives on AbstractTestProxy (the root node), not on the viewer/form
+        var getTestsRootNode = viewer.getClass().getMethod("getTestsRootNode");
+        Object root = getTestsRootNode.invoke(viewer);
+        if (root == null) {
+            return "(No test results yet — the run may not have started)\n";
+        }
+
+        var getAllTests = root.getClass().getMethod("getAllTests");
+        var tests = (java.util.List<?>) getAllTests.invoke(root);
+
         StringBuilder testOutput = new StringBuilder();
-        var getAllTests = viewer.getClass().getMethod("getAllTests");
-        var tests = (java.util.List<?>) getAllTests.invoke(viewer);
         if (tests != null && !tests.isEmpty()) {
+            appendTestSummary(viewer, testOutput);
             testOutput.append("=== Test Results ===\n");
             for (var test : tests) {
-                appendTestResult(test, testOutput);
+                if (isLeafTest(test)) {
+                    appendTestResult(test, testOutput);
+                }
             }
+        } else {
+            testOutput.append(getTestRunProgressStatus(viewer));
         }
         appendTestConsoleOutput(console, testOutput);
         return testOutput.toString();
+    }
+
+    private boolean isLeafTest(Object test) {
+        try {
+            var isLeaf = test.getClass().getMethod("isLeaf");
+            return (boolean) isLeaf.invoke(test);
+        } catch (Exception ignored) {
+            return true;
+        }
+    }
+
+    private void appendTestSummary(Object viewer, StringBuilder out) {
+        try {
+            int total = (int) viewer.getClass().getMethod("getTotalTestCount").invoke(viewer);
+            int failed = (int) viewer.getClass().getMethod("getFailedTestCount").invoke(viewer);
+            int ignored = (int) viewer.getClass().getMethod("getIgnoredTestCount").invoke(viewer);
+            int passed = total - failed - ignored;
+            out.append("=== Summary: ").append(passed).append(" passed, ")
+                .append(failed).append(" failed, ")
+                .append(ignored).append(" ignored (").append(total).append(" total) ===\n");
+        } catch (Exception ignored) {
+            // Summary not available
+        }
+    }
+
+    /**
+     * Returns a human-readable status message when no test results are available yet.
+     * Checks the root node to distinguish "in progress" from "not started".
+     */
+    private String getTestRunProgressStatus(Object viewer) {
+        try {
+            var getRootNode = viewer.getClass().getMethod("getTestsRootNode");
+            Object root = getRootNode.invoke(viewer);
+            if (root != null && isTestNodeInProgress(root)) {
+                return "(Test run in progress — call read_run_output again after it finishes)\n";
+            }
+        } catch (Exception ignored) {
+            // Best-effort status check
+        }
+        return "(No test results yet — the run may not have started)\n";
+    }
+
+    private boolean isTestNodeInProgress(Object testNode) {
+        try {
+            var isInProgress = testNode.getClass().getMethod("isInProgress");
+            return (boolean) isInProgress.invoke(testNode);
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private void appendTestResult(Object test, StringBuilder testOutput) throws Exception {
@@ -394,11 +468,11 @@ class InfrastructureTools extends AbstractToolHandler {
         boolean defect = (boolean) isDefect.invoke(test);
         String status;
         if (passed) {
-            status = "\u2705 PASSED";
+            status = "PASSED";
         } else if (defect) {
-            status = "\u274C FAILED";
+            status = "FAILED";
         } else {
-            status = "\u26A0 UNKNOWN";
+            status = "UNKNOWN";
         }
         testOutput.append("  ").append(status).append(" ").append(name).append("\n");
 
@@ -519,6 +593,164 @@ class InfrastructureTools extends AbstractToolHandler {
             // XML parsing or file access errors are non-fatal
         }
 
+        // Last resort: walk the Swing component tree looking for a ConsoleViewImpl.
+        // Handles external system (Gradle) consoles where ExternalSystemRunnableState
+        // wraps a BuildView containing an inner ConsoleViewImpl.
+        try {
+            var getComponent = console.getClass().getMethod("getComponent");
+            var component = getComponent.invoke(console);
+            if (component instanceof java.awt.Container container) {
+                String found = findConsoleTextInComponentTree(container);
+                if (found != null && !found.isEmpty()) return found;
+            }
+        } catch (Exception ignored) {
+            // Not a component-based console
+        }
+
+        return null;
+    }
+
+    /**
+     * Recursively walk the Swing component tree to find a ConsoleViewImpl and read its text.
+     * Used as a fallback for Gradle/external-system consoles.
+     */
+    private String findConsoleTextInComponentTree(java.awt.Container container) {
+        if (container instanceof com.intellij.execution.impl.ConsoleViewImpl cv) {
+            cv.flushDeferredText();
+            String text = cv.getText();
+            if (!text.isEmpty()) return text;
+        }
+        for (int i = 0; i < container.getComponentCount(); i++) {
+            var child = container.getComponent(i);
+            if (child instanceof java.awt.Container c) {
+                String result = findConsoleTextInComponentTree(c);
+                if (result != null && !result.isEmpty()) return result;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Read output from a tab in the Build tool window.
+     * Works for Gradle builds, Maven builds, and incremental compiler output.
+     */
+    private String readBuildOutput(JsonObject args) {
+        int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
+        String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
+
+        try {
+            var textRef = new java.util.concurrent.atomic.AtomicReference<String>();
+            EdtUtil.invokeAndWait(() -> textRef.set(readBuildOutputOnEdt(tabName, maxChars)));
+            return textRef.get();
+        } catch (Exception e) {
+            LOG.warn("Failed to read Build output", e);
+            return "Error reading Build output: " + e.getMessage();
+        }
+    }
+
+    private String readBuildOutputOnEdt(String tabName, int maxChars) {
+        var toolWindow = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+            .getToolWindow("Build");
+        if (toolWindow == null) {
+            return "Build tool window is not available (no Java/Kotlin project, or no build has run yet).";
+        }
+
+        var contentManager = toolWindow.getContentManager();
+        var contents = contentManager.getContents();
+        if (contents.length == 0) {
+            return "Build tool window is empty — no build has been run yet.";
+        }
+
+        com.intellij.ui.content.Content target;
+        if (tabName != null) {
+            target = findBuildContentByName(contents, tabName);
+            if (target == null) {
+                StringBuilder available = new StringBuilder(
+                    "No Build tab matching '").append(tabName).append("'. Available tabs:\n");
+                for (var c : contents) available.append("  - ").append(c.getDisplayName()).append("\n");
+                return available.toString();
+            }
+        } else {
+            var selected = contentManager.getSelectedContent();
+            target = selected != null ? selected : contents[contents.length - 1];
+        }
+
+        String displayName = target.getDisplayName() != null ? target.getDisplayName() : "Build";
+        String text = extractBuildTabText(target);
+        if (text == null || text.isBlank()) {
+            StringBuilder msg = new StringBuilder("Build tab '").append(displayName)
+                .append("' has no text content yet (build may still be running).\n");
+            if (contents.length > 1) {
+                msg.append("Other available tabs:\n");
+                for (var c : contents) {
+                    if (c != target) msg.append("  - ").append(c.getDisplayName()).append("\n");
+                }
+            }
+            return msg.toString();
+        }
+        return formatRunOutput(displayName, text, maxChars);
+    }
+
+    private com.intellij.ui.content.Content findBuildContentByName(
+        com.intellij.ui.content.Content[] contents, String tabName) {
+        for (var c : contents) {
+            if (c.getDisplayName() != null && c.getDisplayName().contains(tabName)) return c;
+        }
+        return null;
+    }
+
+    /**
+     * Extract text from a Build tool window content tab.
+     * Tries multiple strategies to handle BuildView and other component types.
+     */
+    private String extractBuildTabText(com.intellij.ui.content.Content content) {
+        var component = content.getComponent();
+        if (component == null) return null;
+
+        // Strategy 1: BuildView.getConsoleView() — standard Build tool window component
+        try {
+            var getConsoleView = component.getClass().getMethod("getConsoleView");
+            var consoleView = getConsoleView.invoke(component);
+            if (consoleView != null) {
+                flushConsoleOutput(consoleView);
+                String text = extractPlainConsoleText(consoleView);
+                if (text != null && !text.isEmpty()) return text;
+            }
+        } catch (NoSuchMethodException ignored) {
+        } catch (Exception e) {
+            LOG.debug("getConsoleView() failed for Build tab", e);
+        }
+
+        // Strategy 2: Extract directly from the component itself
+        flushConsoleOutput(component);
+        String text = extractPlainConsoleText(component);
+        if (text != null && !text.isEmpty()) return text;
+
+        // Strategy 3: Traverse component hierarchy (depth-limited to avoid deep Swing trees)
+        return findConsoleTextInComponentTree(component, 8);
+    }
+
+    /**
+     * Depth-limited component tree traversal to find embedded console text.
+     */
+    private String findConsoleTextInComponentTree(java.awt.Component component, int maxDepth) {
+        if (maxDepth <= 0) return null;
+
+        if (component instanceof com.intellij.execution.impl.ConsoleViewImpl cv) {
+            cv.flushDeferredText();
+            String text = extractPlainConsoleText(cv);
+            if (text != null && !text.isEmpty()) return text;
+        } else {
+            String text = extractPlainConsoleText(component);
+            if (text != null && !text.isEmpty()) return text;
+        }
+
+        if (component instanceof java.awt.Container container) {
+            for (var child : container.getComponents()) {
+                String childText = findConsoleTextInComponentTree(child, maxDepth - 1);
+                if (childText != null && !childText.isEmpty()) return childText;
+            }
+        }
         return null;
     }
 

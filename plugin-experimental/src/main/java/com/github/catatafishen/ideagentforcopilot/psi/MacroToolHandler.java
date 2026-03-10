@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.psi;
 import com.google.gson.JsonObject;
 import com.intellij.ide.actionMacro.ActionMacro;
 import com.intellij.ide.actionMacro.ActionMacroManager;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -29,7 +28,6 @@ import java.util.concurrent.TimeoutException;
  */
 public final class MacroToolHandler implements ToolHandler {
 
-    private static final Logger LOG = Logger.getInstance(MacroToolHandler.class);
     private static final int MACRO_TIMEOUT_SECONDS = 30;
 
     private final Project project;
@@ -64,19 +62,7 @@ public final class MacroToolHandler implements ToolHandler {
             }
         }
 
-        // Snapshot before
-        String[] beforeContent = new String[]{null};
-        String[] beforeFilePath = new String[]{null};
-        EdtUtil.invokeAndWait(() -> {
-            Editor editor = FileEditorManager.getInstance(project).getSelectedTextEditor();
-            if (editor != null) {
-                beforeContent[0] = editor.getDocument().getText();
-                VirtualFile vf = FileDocumentManager.getInstance().getFile(editor.getDocument());
-                if (vf != null) {
-                    beforeFilePath[0] = vf.getPath();
-                }
-            }
-        });
+        String[] before = snapshotActiveEditor();
 
         // Play the macro on EDT
         CompletableFuture<Void> playbackDone = new CompletableFuture<>();
@@ -103,24 +89,9 @@ public final class MacroToolHandler implements ToolHandler {
         StringBuilder result = new StringBuilder();
         result.append("Macro '").append(macroName).append("' executed successfully.");
 
-        String[] afterContent = new String[]{null};
-        String[] afterFilePath = new String[]{null};
-        EdtUtil.invokeAndWait(() -> {
-            Editor editor = FileEditorManager.getInstance(project).getSelectedTextEditor();
-            if (editor != null) {
-                afterContent[0] = editor.getDocument().getText();
-                VirtualFile vf = FileDocumentManager.getInstance().getFile(editor.getDocument());
-                if (vf != null) {
-                    afterFilePath[0] = vf.getPath();
-                }
-            }
-        });
+        String[] after = snapshotActiveEditor();
 
-        // Report what changed
-        appendChangeReport(result, beforeFilePath[0], beforeContent[0],
-            afterFilePath[0], afterContent[0]);
-
-        // Report macro action sequence for transparency
+        appendChangeReport(result, before[1], before[0], after[1], after[0]);
         appendActionSequence(result, macro);
 
         return result.toString();
@@ -134,6 +105,26 @@ public final class MacroToolHandler implements ToolHandler {
             }
         }
         return null;
+    }
+
+    /**
+     * Captures the active editor's content and file path on the EDT.
+     * Returns a two-element array: [content, filePath]. Either element may be null
+     * if no editor is active or the document is not backed by a virtual file.
+     */
+    private String[] snapshotActiveEditor() {
+        String[] snapshot = {null, null};
+        EdtUtil.invokeAndWait(() -> {
+            Editor editor = FileEditorManager.getInstance(project).getSelectedTextEditor();
+            if (editor != null) {
+                snapshot[0] = editor.getDocument().getText();
+                VirtualFile vf = FileDocumentManager.getInstance().getFile(editor.getDocument());
+                if (vf != null) {
+                    snapshot[1] = vf.getPath();
+                }
+            }
+        });
+        return snapshot;
     }
 
     /**
@@ -161,6 +152,9 @@ public final class MacroToolHandler implements ToolHandler {
         });
         try {
             return result.get(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Error opening file: " + e.getMessage();
         } catch (Exception e) {
             return "Error opening file: " + e.getMessage();
         }
@@ -181,33 +175,40 @@ public final class MacroToolHandler implements ToolHandler {
             return;
         }
 
-        if (!sameFile) {
+        appendFilePaths(result, sameFile, beforePath, afterPath);
+
+        if (sameFile && beforeContent != null && afterContent != null) {
+            appendDiffStats(result, beforeContent, afterContent);
+        }
+    }
+
+    private static void appendFilePaths(StringBuilder result, boolean sameFile,
+                                        String beforePath, String afterPath) {
+        if (sameFile) {
+            result.append("\nFile: ").append(afterPath);
+        } else {
             if (beforePath != null) {
                 result.append("\nBefore: ").append(beforePath);
             }
             if (afterPath != null) {
-                result.append("\nAfter: ").append(afterPath);
-                result.append(" (editor switched to a different file)");
+                result.append("\nAfter: ").append(afterPath)
+                    .append(" (editor switched to a different file)");
             }
-        } else {
-            result.append("\nFile: ").append(afterPath);
         }
+    }
 
-        if (beforeContent != null && afterContent != null && sameFile) {
-            int beforeLines = beforeContent.split("\n", -1).length;
-            int afterLines = afterContent.split("\n", -1).length;
-            int delta = afterLines - beforeLines;
-            result.append("\nLines: ").append(beforeLines).append(" → ").append(afterLines);
-            if (delta != 0) {
-                result.append(" (").append(delta > 0 ? "+" : "").append(delta).append(")");
-            }
-            int beforeLen = beforeContent.length();
-            int afterLen = afterContent.length();
-            int charDelta = afterLen - beforeLen;
-            result.append("\nChars: ").append(beforeLen).append(" → ").append(afterLen);
-            if (charDelta != 0) {
-                result.append(" (").append(charDelta > 0 ? "+" : "").append(charDelta).append(")");
-            }
+    private static void appendDiffStats(StringBuilder result, String before, String after) {
+        int beforeLines = before.split("\n", -1).length;
+        int afterLines = after.split("\n", -1).length;
+        int lineDelta = afterLines - beforeLines;
+        result.append("\nLines: ").append(beforeLines).append(" → ").append(afterLines);
+        if (lineDelta != 0) {
+            result.append(" (").append(lineDelta > 0 ? "+" : "").append(lineDelta).append(")");
+        }
+        int charDelta = after.length() - before.length();
+        result.append("\nChars: ").append(before.length()).append(" → ").append(after.length());
+        if (charDelta != 0) {
+            result.append(" (").append(charDelta > 0 ? "+" : "").append(charDelta).append(")");
         }
     }
 

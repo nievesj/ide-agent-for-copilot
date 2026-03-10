@@ -1,8 +1,11 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
 import com.github.catatafishen.ideagentforcopilot.bridge.AcpClient
-import com.github.catatafishen.ideagentforcopilot.services.CopilotService
-import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings
+import com.github.catatafishen.ideagentforcopilot.bridge.AcpException
+import com.github.catatafishen.ideagentforcopilot.bridge.Model
+import com.github.catatafishen.ideagentforcopilot.bridge.ResourceReference
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
+import com.github.catatafishen.ideagentforcopilot.settings.BillingSettings
 import com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.*
@@ -14,7 +17,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.ui.EditorTextField
 import com.intellij.ui.JBColor
-import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
@@ -29,17 +31,20 @@ import javax.swing.*
  * Main content for the IDE Agent for Copilot tool window.
  * Uses Kotlin UI DSL for cleaner, more maintainable UI code.
  */
-class AgenticCopilotToolWindowContent(private val project: Project) {
+class AgenticCopilotToolWindowContent(
+    private val project: Project,
+    private val toolWindow: com.intellij.openapi.wm.ToolWindow
+) {
 
-    // UI String Constants
     private companion object {
         private val LOG =
             com.intellij.openapi.diagnostic.Logger.getInstance(AgenticCopilotToolWindowContent::class.java)
         const val MSG_LOADING = "Loading..."
         const val MSG_THINKING = "Thinking..."
         const val MSG_UNKNOWN_ERROR = "Unknown error"
-        const val PROMPT_PLACEHOLDER = "Ask Copilot... (Shift+Enter for new line)"
         const val AGENT_WORK_DIR = ".agent-work"
+        const val CARD_CONNECT = "connect"
+        const val CARD_CHAT = "chat"
 
         /** Theme-aware error color — uses IDE's error foreground or a sensible red fallback. */
         private const val OS_NAME_PROPERTY = "os.name"
@@ -48,13 +53,14 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 ?: JBColor(Color(0xC7, 0x22, 0x22), Color(0xE0, 0x60, 0x60))
     }
 
-    private val mainPanel = JBPanel<JBPanel<*>>(BorderLayout())
-
-    // Shared context list across tabs
-    private val contextListModel = DefaultListModel<ContextItem>()
+    private val cardLayout = CardLayout()
+    private val mainPanel = JBPanel<JBPanel<*>>(cardLayout)
+    private val agentManager = ActiveAgentManager.getInstance(project)
+    private lateinit var connectPanel: AcpConnectPanel
+    private var chatPanel: JComponent? = null
 
     // Shared model list (populated from ACP)
-    private var loadedModels: List<AcpClient.Model> = emptyList()
+    private var loadedModels: List<Model> = emptyList()
 
     // Current conversation session — reused for multi-turn
     private var currentSessionId: String? = null
@@ -67,11 +73,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private var currentPromptThread: Thread? = null
     private var isSending = false
     private lateinit var processingTimerPanel: ProcessingTimerPanel
-    private lateinit var attachmentsPanel: JBPanel<JBPanel<*>>
-
-    // Timeline events (populated from ACP session/update notifications)
-    private val timelineModel = DefaultListModel<TimelineEvent>()
-    private val debugPanel = DebugPanel(project, timelineModel)
 
     // Plans tree (populated from ACP plan updates)
     private lateinit var planTreeModel: javax.swing.tree.DefaultTreeModel
@@ -99,22 +100,111 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private var lastIncrementalSaveMs = 0L
 
     private var conversationSummaryInjected = false
+    private lateinit var contextManager: PromptContextManager
 
     init {
         setupUI()
-        restoreConversation()
     }
 
     private fun setupUI() {
-        mainPanel.add(createPromptTab(), BorderLayout.CENTER)
-    }
+        // Title bar actions (always visible regardless of ACP connection)
+        setupTitleBarActions()
 
-    /** Record an event in the Timeline tab. Thread-safe. */
-    private fun addTimelineEvent(type: EventType, message: String) {
-        SwingUtilities.invokeLater {
-            timelineModel.addElement(TimelineEvent(type, message, java.util.Date()))
+        // Connect panel — always created
+        connectPanel = AcpConnectPanel(project) { profileId, customCommand ->
+            connectToAgent(profileId, customCommand)
+        }
+        mainPanel.add(connectPanel, CARD_CONNECT)
+
+        // Chat panel — created lazily on first connect
+        if (agentManager.isAutoConnect) {
+            buildAndShowChatPanel()
+        } else {
+            cardLayout.show(mainPanel, CARD_CONNECT)
         }
     }
+
+    private fun setupTitleBarActions() {
+        val actions = listOf<AnAction>(
+            FollowAgentFilesToggleAction(),
+            Separator.create(),
+            ProjectFilesDropdownAction(),
+            Separator.create(),
+            SettingsAction()
+        )
+        toolWindow.setTitleActions(actions)
+    }
+
+    private fun buildAndShowChatPanel() {
+        val addSeparatorNow = {
+            val ts = java.text.SimpleDateFormat("MMM d, yyyy h:mm a").format(java.util.Date())
+            consolePanel.addSessionSeparator(ts, agentManager.activeProfile.displayName)
+        }
+        if (chatPanel == null) {
+            chatPanel = createPromptTab()
+            mainPanel.add(chatPanel, CARD_CHAT)
+            restoreConversation(onComplete = addSeparatorNow)
+        } else {
+            addSeparatorNow()
+        }
+        cardLayout.show(mainPanel, CARD_CHAT)
+        agentManager.setAcpConnected(true)
+        updatePromptPlaceholder()
+
+        // If called from auto-connect, kick off model loading
+        if (loadedModels.isEmpty() && modelsStatusText == MSG_LOADING) {
+            loadModelsAsync { models ->
+                loadedModels = models
+                restoreModelSelection(models)
+                val agentName = agentManager.activeProfile.displayName
+                statusBanner?.showInfo("Connected to $agentName")
+            }
+        }
+    }
+
+    /**
+     * Called from AcpConnectPanel when the user clicks Connect.
+     * Switches the active agent, builds the chat panel, and loads models.
+     */
+    private fun connectToAgent(profileId: String, customCommand: String?) {
+        if (customCommand != null) {
+            agentManager.setCustomAcpCommand(customCommand)
+        }
+        if (agentManager.activeProfileId != profileId) {
+            agentManager.switchAgent(profileId)
+        }
+        buildAndShowChatPanel()
+
+        // Load models — on success show the chat; on failure return to connect panel
+        loadModelsAsync { models ->
+            loadedModels = models
+            restoreModelSelection(models)
+            statusBanner?.showInfo("Connected to ${agentManager.activeProfile.displayName}")
+        }
+    }
+
+    private fun promptPlaceholder(): String {
+        val name = agentManager.activeProfile.displayName
+        return "Ask $name... (Shift+Enter for new line)"
+    }
+
+    private fun updatePromptPlaceholder() {
+        val editor = promptTextArea.editor as? com.intellij.openapi.editor.ex.EditorEx ?: return
+        editor.setPlaceholder(promptPlaceholder())
+    }
+
+    fun disconnectFromAgent() {
+        try {
+            agentManager.stop()
+        } catch (e: Exception) {
+            LOG.warn("Error stopping agent", e)
+        }
+        agentManager.setAcpConnected(false)
+        connectPanel.resetConnectButton()
+        connectPanel.refreshMcpStatus()
+        cardLayout.show(mainPanel, CARD_CONNECT)
+    }
+
 
     private fun updateSessionInfo() {
         SwingUtilities.invokeLater {
@@ -152,7 +242,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         val title = update["title"]?.asString ?: "Unknown tool"
         val status = update["status"]?.asString ?: "pending"
         val toolCallId = update["toolCallId"]?.asString ?: ""
-        addTimelineEvent(EventType.TOOL_CALL, "$title ($status)")
 
         val filePath = extractFilePath(update, title)
         if (filePath != null && toolCallId.isNotEmpty()) {
@@ -174,8 +263,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         val status = update["status"]?.asString ?: ""
         val toolCallId = update["toolCallId"]?.asString ?: ""
         if (status != "completed" && status != "failed") return
-
-        addTimelineEvent(EventType.TOOL_CALL, "Tool $toolCallId $status")
 
         val filePath = toolCallFiles[toolCallId]
         if (status == "completed" && filePath != null) {
@@ -225,14 +312,12 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             }
             planRoot.add(planNode)
             planTreeModel.reload()
-            addTimelineEvent(EventType.TOOL_CALL, "Plan updated (${entries.size()} steps)")
         }
     }
 
     /** Creates a banner for Copilot CLI setup issues (not installed / not authenticated). */
     private fun createCopilotSetupBanner(onFixed: () -> Unit): AuthSetupBanner {
         val banner = AuthSetupBanner(
-            retryTooltip = "Re-check Copilot CLI status",
             pollIntervalDown = 30,
             pollIntervalUp = 60,
             diagnosticsFn = { authService.copilotSetupDiagnostics() },
@@ -286,7 +371,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     /** Creates a banner for GH CLI setup issues (not installed / not authenticated). */
     private fun createGhSetupBanner(onFixed: () -> Unit): AuthSetupBanner {
         val banner = AuthSetupBanner(
-            retryTooltip = "Re-check GitHub CLI status",
             pollIntervalDown = 30,
             pollIntervalUp = 120,
             diagnosticsFn = { authService.ghSetupDiagnostics(billing) },
@@ -320,14 +404,10 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private fun createPsiBridgeBanner(): com.intellij.ui.InlineBanner {
         val banner = com.intellij.ui.InlineBanner(
             "IntelliJ code tools unavailable \u2014 PSI bridge is not running. " +
-                "Make sure a project is open and the IDE Agent for Copilot plugin is active, then restart IntelliJ.",
+                "Make sure a project is open and the AgentBridge plugin is active, then restart IntelliJ.",
             com.intellij.ui.EditorNotificationPanel.Status.Warning
         )
         banner.isVisible = false
-
-        // Runs check on a pooled thread, then updates the banner on the EDT.
-        // lastDiag is stored so Details\u2026 always shows the freshest result.
-        var lastDiag: String? = null
 
         // Scheduler used for adaptive polling: 5 s while bridge is down, 30 s while healthy.
         // scheduledFuture tracks the next pending check so Recheck can cancel it (avoids duplicate chains).
@@ -342,7 +422,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 {
                     val diag = psiBridgeDiagnostics()
                     SwingUtilities.invokeLater {
-                        lastDiag = diag
                         banner.isVisible = diag != null
                     }
                     scheduleNext(diag != null)
@@ -356,7 +435,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             ApplicationManager.getApplication().executeOnPooledThread {
                 val diag = psiBridgeDiagnostics()
                 SwingUtilities.invokeLater {
-                    lastDiag = diag
                     banner.isVisible = diag != null
                 }
                 scheduleNext(diag != null)
@@ -367,7 +445,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             ApplicationManager.getApplication().executeOnPooledThread {
                 val diag = psiBridgeDiagnostics()
                 SwingUtilities.invokeLater {
-                    lastDiag = diag
                     banner.isVisible = diag != null
                     com.intellij.openapi.ui.Messages.showMessageDialog(
                         project,
@@ -386,7 +463,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             {
                 val diag = psiBridgeDiagnostics()
                 SwingUtilities.invokeLater {
-                    lastDiag = diag
                     banner.isVisible = diag != null
                 }
                 scheduleNext(diag != null)
@@ -406,68 +482,10 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     /**
-     * Checks PSI bridge availability. Returns a multi-line diagnostic string on failure, or null if healthy.
-     * Safe to call on a background thread.
+     * PSI bridge is now called directly in-process — no HTTP server to check.
+     * Always returns null (healthy).
      */
-    private fun psiBridgeDiagnostics(): String? {
-        val bridgeFile = java.nio.file.Path.of(System.getProperty("user.home"), ".copilot", "psi-bridge.json")
-        if (!java.nio.file.Files.exists(bridgeFile)) {
-            return "PSI bridge file not found.\n\n" +
-                "Expected: ${bridgeFile.toAbsolutePath()}\n\n" +
-                "This file is written by the plugin when a project opens.\nPossible causes:\n" +
-                "  • No project is open (open a project, not the Welcome Screen)\n" +
-                "  • The plugin failed to initialize — check Help → Show Log for errors\n" +
-                "  • Write permission denied on ~/.copilot/"
-        }
-        return try {
-            val content = java.nio.file.Files.readString(bridgeFile)
-            val json = com.google.gson.JsonParser.parseString(content).asJsonObject
-
-            val port: Int
-            val bridgeProject: String
-
-            if (json.has("port")) {
-                // Legacy single-entry format
-                port = json.get("port")?.asInt
-                    ?: return "PSI bridge file found but has no 'port' field.\n\nFile content:\n$content"
-                bridgeProject = json.get("projectPath")?.asString ?: "(unknown)"
-            } else {
-                // New multi-project registry — find this project's entry
-                val ourPath = project.basePath?.replace('\\', '/') ?: ""
-                val entry = json.entrySet().firstOrNull { (key, _) ->
-                    val k = key.replace('\\', '/')
-                    ourPath == k || ourPath.startsWith("$k/") || k.startsWith("$ourPath/")
-                }
-                if (entry == null) {
-                    val others = json.keySet().joinToString("\n") { "  • $it" }.ifEmpty { "  (none)" }
-                    return "No PSI bridge entry found for this project.\n\n" +
-                        "Looking for: ${project.basePath}\n\n" +
-                        "Projects with active bridges:\n$others\n\n" +
-                        "Try closing and reopening this project."
-                }
-                port = entry.value.asJsonObject.get("port")?.asInt
-                    ?: return "Bridge entry for this project has no 'port' field."
-                bridgeProject = entry.key
-            }
-
-            val url = java.net.URI.create("http://127.0.0.1:$port/health").toURL()
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 1500
-            conn.readTimeout = 1500
-            conn.requestMethod = "GET"
-            val code = try {
-                conn.responseCode
-            } catch (e: Exception) {
-                return "PSI bridge file found (port $port, project: $bridgeProject)\n" +
-                    "but the HTTP server is not responding.\n\n" +
-                    "Connection error: ${e.javaClass.simpleName}: ${e.message}\n\n" +
-                    "The bridge may have crashed. Check Help → Show Log,\nthen close and reopen the project."
-            }
-            if (code == 200) null else "PSI bridge returned HTTP $code from /health (port $port)."
-        } catch (e: Exception) {
-            "Failed to read PSI bridge file:\n${e.javaClass.simpleName}: ${e.message}\n\nFile: $bridgeFile"
-        }
-    }
+    private fun psiBridgeDiagnostics(): String? = null
 
     private fun createPromptTab(): JComponent {
         val panel = JBPanel<JBPanel<*>>(BorderLayout())
@@ -492,8 +510,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         // Setup banners: Copilot CLI / auth, GH CLI / auth
         copilotBanner = createCopilotSetupBanner {
             authService.pendingAuthError = null
-            // Invalidate the UI session so the next prompt creates a fresh one
-            // with the new auth credentials (avoids "Session not found" errors).
             currentSessionId = null
             loadModels()
         }
@@ -526,22 +542,19 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         topPanel.add(northStack, BorderLayout.NORTH)
         topPanel.add(responsePanelContainer, BorderLayout.CENTER)
 
-        // Input row (bottom of splitter — resizable)
+        // Splitter between chat area (top) and resizable input box (bottom).
+        // OnePixelSplitter gives the thin, IDE-native 1px divider; proportion is persisted.
         val inputRow = createInputRow()
-
-        // Splitter between output and input only
-        val splitter = OnePixelSplitter(true, 0.75f)
+        val splitter = com.intellij.ui.OnePixelSplitter(true, "IdeAgent.InputSplitter", 0.78f)
         splitter.firstComponent = topPanel
         splitter.secondComponent = inputRow
-        splitter.setHonorComponentsMinimumSize(true)
         panel.add(splitter, BorderLayout.CENTER)
 
-        // Fixed footer: controls + usage (not resized by splitter)
+        // Fixed footer (toolbar) always stays at the very bottom
         val fixedFooter = createFixedFooter()
         panel.add(fixedFooter, BorderLayout.SOUTH)
 
         billing.loadBillingData()
-        loadModels()
 
         return panel
     }
@@ -564,14 +577,9 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
     private fun createInputRow(): JBPanel<JBPanel<*>> {
         val row = JBPanel<JBPanel<*>>(BorderLayout())
-        row.minimumSize = JBUI.size(100, 40)
-
-        // Attachments chip panel (shown above input when files attached)
-        attachmentsPanel = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.LEFT, 4, 2))
-        attachmentsPanel.isOpaque = false
-        attachmentsPanel.isVisible = false
-        attachmentsPanel.border = JBUI.Borders.emptyBottom(2)
-
+        val minHeight = JBUI.scale(48)
+        row.minimumSize = JBUI.size(100, minHeight)
+        // No maximumSize — the OnePixelSplitter controls the height
         // Use EditorTextFieldProvider for PsiFile-backed document (enables spell checking)
         val editorCustomizations = mutableListOf<com.intellij.ui.EditorCustomization>()
         try {
@@ -585,6 +593,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             .getEditorField(com.intellij.openapi.fileTypes.PlainTextLanguage.INSTANCE, project, editorCustomizations)
         promptTextArea.setOneLineMode(false)
         promptTextArea.border = null
+        contextManager = PromptContextManager(project, promptTextArea) { text -> appendResponse(text) }
 
         // Drag-drop works on the EditorTextField wrapper (no editor needed)
         setupPromptDragDrop(promptTextArea)
@@ -595,11 +604,32 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             setupPromptKeyBindings(promptTextArea, editor)
             setupPromptContextMenu(editor)
             // Use EditorEx built-in placeholder (visual-only, doesn't set actual text)
-            editor.setPlaceholder(PROMPT_PLACEHOLDER)
+            editor.setPlaceholder(promptPlaceholder())
             editor.setShowPlaceholderWhenFocused(true)
             editor.settings.isUseSoftWraps = true
             editor.contentComponent.border = JBUI.Borders.empty(4, 6)
             editor.setBorder(null)
+
+            // Auto-scroll the outer JBScrollPane to keep the caret visible while typing.
+            // EditorTextField has an internal JViewport that swallows scrollRectToVisible calls
+            // made on editor.contentComponent — they never reach the outer scroll pane.
+            // Fix: convert the caret rect to promptTextArea coordinates so the call is handled
+            // by the outer JViewport (promptTextArea is its direct view child).
+            editor.caretModel.addCaretListener(object : com.intellij.openapi.editor.event.CaretListener {
+                override fun caretPositionChanged(event: com.intellij.openapi.editor.event.CaretEvent) {
+                    SwingUtilities.invokeLater {
+                        val caretOffset = editor.caretModel.offset
+                        val caretPoint = editor.offsetToXY(caretOffset)
+                        val lineHeight = editor.lineHeight
+                        val converted = SwingUtilities.convertPoint(
+                            editor.contentComponent, caretPoint, promptTextArea
+                        )
+                        promptTextArea.scrollRectToVisible(
+                            java.awt.Rectangle(converted.x, converted.y, 1, lineHeight)
+                        )
+                    }
+                }
+            })
         }
 
         // Auto-revalidate on document changes
@@ -609,57 +639,14 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             }
         })
 
-        val inputWrapper = JBPanel<JBPanel<*>>(BorderLayout())
-        inputWrapper.add(attachmentsPanel, BorderLayout.NORTH)
         val scrollPane = JBScrollPane(promptTextArea)
         scrollPane.horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
         scrollPane.border = null
         scrollPane.viewportBorder = null
-        inputWrapper.add(scrollPane, BorderLayout.CENTER)
         row.border = JBUI.Borders.empty()
-        row.add(inputWrapper, BorderLayout.CENTER)
-
-        // Refresh attachment chips when list changes
-        contextListModel.addListDataListener(object : javax.swing.event.ListDataListener {
-            override fun intervalAdded(e: javax.swing.event.ListDataEvent?) = refreshAttachmentChips()
-            override fun intervalRemoved(e: javax.swing.event.ListDataEvent?) = refreshAttachmentChips()
-            override fun contentsChanged(e: javax.swing.event.ListDataEvent?) = refreshAttachmentChips()
-        })
+        row.add(scrollPane, BorderLayout.CENTER)
 
         return row
-    }
-
-    private fun refreshAttachmentChips() {
-        SwingUtilities.invokeLater {
-            attachmentsPanel.removeAll()
-            for (i in 0 until contextListModel.size()) {
-                val item = contextListModel.getElementAt(i)
-                val chip = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.LEFT, 2, 0))
-                chip.isOpaque = true
-                chip.background = UIManager.getColor("ActionButton.hoverBackground")
-                    ?: JBColor(Color(0xDF, 0xE1, 0xE5), Color(0x35, 0x3B, 0x48))
-                chip.border = JBUI.Borders.empty(1, 6, 1, 2)
-                val icon = if (item.isSelection) "\u2702" else "\uD83D\uDCC4"
-                val label = JBLabel("$icon ${item.name}")
-                label.font = JBUI.Fonts.smallFont()
-                chip.add(label)
-                val removeBtn = JBLabel("\u2715")
-                removeBtn.font = JBUI.Fonts.smallFont()
-                removeBtn.foreground = JBColor.GRAY
-                removeBtn.cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
-                removeBtn.addMouseListener(object : java.awt.event.MouseAdapter() {
-                    override fun mouseClicked(e: java.awt.event.MouseEvent?) {
-                        val idx = (0 until contextListModel.size()).firstOrNull { contextListModel[it] === item }
-                        if (idx != null) contextListModel.remove(idx)
-                    }
-                })
-                chip.add(removeBtn)
-                attachmentsPanel.add(chip)
-            }
-            attachmentsPanel.isVisible = contextListModel.size() > 0
-            attachmentsPanel.revalidate()
-            attachmentsPanel.repaint()
-        }
     }
 
     private fun onSendStopClicked() {
@@ -667,35 +654,64 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             handleStopRequest(currentPromptThread)
             setSendingState(false)
         } else {
-            val prompt = promptTextArea.text.trim()
-            if (prompt.isEmpty()) return
+            val rawText = promptTextArea.text.trim()
+            if (rawText.isEmpty()) return
             consolePanel.disableQuickReplies()
             statusBanner?.dismissCurrent()
             setSendingState(true)
             setResponseStatus(MSG_THINKING)
 
-            // Add session separator before new prompt if old content exists and no active session
-            if (currentSessionId == null && consolePanel.hasContent()) {
-                val ts = java.text.SimpleDateFormat("MMM d, yyyy h:mm a").format(java.util.Date())
-                consolePanel.addSessionSeparator(ts)
-            }
-
-            val ctxFiles = if (contextListModel.size() > 0) {
-                (0 until contextListModel.size()).map { i ->
-                    val item = contextListModel.getElementAt(i)
+            // Collect context items from inline inlays BEFORE clearing the editor
+            val contextItems = contextManager.collectInlineContextItems()
+            // Agent sees inline text refs: "refactor `AuthLoginService.kt:116-170` please"
+            val prompt = contextManager.replaceOrcsWithTextRefs(rawText, contextItems)
+            val ctxFiles = if (contextItems.isNotEmpty()) {
+                contextItems.map { item ->
                     Triple(item.name, item.path, if (item.isSelection) item.startLine else 0)
                 }
             } else null
-            consolePanel.addPromptEntry(prompt, ctxFiles)
+            // Chat bubble gets HTML with inline chip links at ORC positions
+            val bubbleHtml = buildBubbleHtml(rawText, contextItems)
+            consolePanel.addPromptEntry(prompt, ctxFiles, bubbleHtml)
             promptTextArea.text = ""
 
             ApplicationManager.getApplication().executeOnPooledThread {
                 currentPromptThread = Thread.currentThread()
-                executePrompt(prompt)
+                executePrompt(prompt, contextItems)
                 currentPromptThread = null
             }
         }
     }
+
+    private fun buildBubbleHtml(rawText: String, items: List<ContextItemData>): String? {
+        if (items.isEmpty()) return null
+        val sb = StringBuilder()
+        var idx = 0
+        for (ch in rawText) {
+            if (ch == PromptContextManager.ORC && idx < items.size) {
+                val item = items[idx++]
+                val href =
+                    if (item.isSelection && item.startLine > 0) "openfile://${item.path}:${item.startLine}" else "openfile://${item.path}"
+                val title =
+                    escHtml(if (item.isSelection && item.startLine > 0) "${item.path}:${item.startLine}" else item.path)
+                sb.append("<a class='prompt-ctx-chip' href='$href' title='$title'>${escHtml(item.name)}</a>")
+            } else {
+                when (ch) {
+                    '&' -> sb.append("&amp;")
+                    '<' -> sb.append("&lt;")
+                    '>' -> sb.append("&gt;")
+                    '\'' -> sb.append("&#39;")
+                    '"' -> sb.append("&quot;")
+                    '\n' -> sb.append("\n")
+                    else -> sb.append(ch)
+                }
+            }
+        }
+        return sb.toString().trim()
+    }
+
+    private fun escHtml(s: String) =
+        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;")
 
     private fun setSendingState(sending: Boolean) {
         isSending = sending
@@ -710,25 +726,15 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private fun createControlsRow(): JBPanel<JBPanel<*>> {
         val row = JBPanel<JBPanel<*>>(BorderLayout())
 
-        // Left toolbar — grouped logically:
-        // [Send/Stop] | [Attach File, Attach Selection] | [Model, Mode] | [Follow Agent] | [Project Files ▾] | [Restart ▾] | [Export, Permissions, Help]
         val leftGroup = DefaultActionGroup()
         leftGroup.add(SendStopAction())
         leftGroup.addSeparator()
         leftGroup.add(AttachContextDropdownAction())
         leftGroup.addSeparator()
         leftGroup.add(ModelSelectorAction())
-        leftGroup.add(ModeSelectorAction())
-        leftGroup.addSeparator()
-        leftGroup.add(FollowAgentFilesToggleAction())
-        leftGroup.addSeparator()
-        leftGroup.add(ProjectFilesDropdownAction())
+        leftGroup.add(AgentSelectorAction())
         leftGroup.addSeparator()
         leftGroup.add(RestartSessionGroup())
-        leftGroup.addSeparator()
-        leftGroup.add(CopyConversationAction())
-        leftGroup.add(SettingsAction())
-        leftGroup.add(HelpAction(project))
 
         controlsToolbar = ActionManager.getInstance().createActionToolbar(
             "CopilotControls", leftGroup, true
@@ -736,19 +742,20 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         controlsToolbar.targetComponent = row
         controlsToolbar.setReservePlaceAutoPopupIcon(false)
 
-        // Right toolbar: processing indicator + usage graph (always right-aligned)
         val rightGroup = DefaultActionGroup()
         rightGroup.add(ProcessingIndicatorAction())
-        rightGroup.add(billing.createUsageGraphAction())
+        if (BillingSettings.getInstance().isShowCopilotUsage()) {
+            rightGroup.add(billing.createUsageGraphAction())
+        }
 
-        val usageToolbar = ActionManager.getInstance().createActionToolbar(
-            "CopilotUsage", rightGroup, true
+        val rightToolbar = ActionManager.getInstance().createActionToolbar(
+            "CopilotRight", rightGroup, true
         )
-        usageToolbar.targetComponent = row
-        usageToolbar.setReservePlaceAutoPopupIcon(false)
+        rightToolbar.targetComponent = row
+        rightToolbar.setReservePlaceAutoPopupIcon(false)
 
         row.add(controlsToolbar.component, BorderLayout.CENTER)
-        row.add(usageToolbar.component, BorderLayout.EAST)
+        row.add(rightToolbar.component, BorderLayout.EAST)
 
         return row
     }
@@ -952,7 +959,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 com.intellij.icons.AllIcons.Actions.AddFile
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
-                override fun actionPerformed(e: AnActionEvent) = handleAddCurrentFile()
+                override fun actionPerformed(e: AnActionEvent) = contextManager.handleAddCurrentFile()
             })
             group.add(object : AnAction(
                 "Editor Selection",
@@ -960,7 +967,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 com.intellij.icons.AllIcons.Actions.AddMulticaret
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
-                override fun actionPerformed(e: AnActionEvent) = handleAddSelection()
+                override fun actionPerformed(e: AnActionEvent) = contextManager.handleAddSelection()
             })
             group.addSeparator()
             group.add(object : AnAction(
@@ -969,7 +976,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 AllIcons.Actions.Search
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
-                override fun actionPerformed(e: AnActionEvent) = openFileSearchPopup()
+                override fun actionPerformed(e: AnActionEvent) = contextManager.openFileSearchPopup()
             })
             group.add(object : AnAction(
                 "New Scratch File\u2026",
@@ -977,7 +984,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 AllIcons.FileTypes.Text
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
-                override fun actionPerformed(ev: AnActionEvent) = handleCreateScratch(ev)
+                override fun actionPerformed(ev: AnActionEvent) = handleCreateScratch()
             })
             group.addSeparator()
 
@@ -991,9 +998,9 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             )) {
                 triggerGroup.add(object : ToggleAction(label) {
                     override fun getActionUpdateThread() = ActionUpdateThread.BGT
-                    override fun isSelected(e: AnActionEvent) = CopilotSettings.getAttachTriggerChar() == value
+                    override fun isSelected(e: AnActionEvent) = ActiveAgentManager.getAttachTriggerChar() == value
                     override fun setSelected(e: AnActionEvent, state: Boolean) {
-                        if (state) CopilotSettings.setAttachTriggerChar(value)
+                        if (state) ActiveAgentManager.setAttachTriggerChar(value)
                     }
                 })
             }
@@ -1042,7 +1049,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
     }
 
-    /** Dropdown toolbar button with two restart options: keep history or clear everything. */
+    /** Dropdown toolbar button with restart and disconnect options. */
     private inner class RestartSessionGroup : DefaultActionGroup(
         "Restart Session", true
     ) {
@@ -1068,6 +1075,17 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
                 override fun actionPerformed(e: AnActionEvent) = resetSession()
             })
+
+            addSeparator()
+
+            add(object : AnAction(
+                "Disconnect",
+                "Stop the ACP process and return to the connection screen",
+                AllIcons.Actions.Cancel
+            ) {
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun actionPerformed(e: AnActionEvent) = disconnectFromAgent()
+            })
         }
 
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
@@ -1075,7 +1093,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
     /** Toolbar button that opens the plugin settings. */
     private inner class SettingsAction : AnAction(
-        "Settings", "Open IDE Agent for Copilot settings",
+        "Settings", "Open AgentBridge settings",
         AllIcons.General.Settings
     ) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
@@ -1085,22 +1103,20 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     private inner class FollowAgentFilesToggleAction : ToggleAction(
-        "Follow agent",
-        "Auto-open files in the editor as the agent reads or writes them",
+        "Follow Agent",
+        "Open files and highlight regions as the agent reads or edits them",
         AllIcons.Actions.Preview
     ) {
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
         override fun isSelected(e: AnActionEvent): Boolean =
-            CopilotSettings.getFollowAgentFiles(project)
+            ActiveAgentManager.getFollowAgentFiles(project)
 
         override fun setSelected(e: AnActionEvent, state: Boolean) {
-            CopilotSettings.setFollowAgentFiles(project, state)
+            ActiveAgentManager.setFollowAgentFiles(project, state)
         }
 
     }
-
-    // HelpAction extracted to HelpDialog.kt
 
     /** Open a project-root file in the editor if it exists */
     private fun openProjectFile(fileName: String) {
@@ -1114,25 +1130,12 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private inner class ProjectFilesDropdownAction : AnAction(
         "Project Files", "Open project configuration files",
         com.intellij.icons.AllIcons.Nodes.Folder
-    ), com.intellij.openapi.actionSystem.ex.CustomComponentAction {
+    ) {
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
         override fun actionPerformed(e: AnActionEvent) {
             val inputEvent = e.inputEvent ?: return
             val component = inputEvent.source as? java.awt.Component ?: return
             showPopup(component)
-        }
-
-        override fun createCustomComponent(
-            presentation: com.intellij.openapi.actionSystem.Presentation,
-            place: String
-        ): javax.swing.JComponent {
-            val button = com.intellij.openapi.actionSystem.impl.ActionButtonWithText(
-                this,
-                presentation,
-                place,
-                com.intellij.openapi.actionSystem.ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE
-            )
-            return button
         }
 
         private fun showPopup(owner: java.awt.Component) {
@@ -1165,7 +1168,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                     e.presentation.isEnabled = false
                 }
 
-                override fun actionPerformed(e: AnActionEvent) {}
+                override fun actionPerformed(e: AnActionEvent) { /* disabled — no-op */
+                }
             })
 
             // Restore default — also disabled for the same reason
@@ -1180,7 +1184,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                     e.presentation.isEnabled = false
                 }
 
-                override fun actionPerformed(e: AnActionEvent) {}
+                override fun actionPerformed(e: AnActionEvent) { /* disabled — no-op */
+                }
             })
 
             val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
@@ -1242,7 +1247,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                         e.presentation.isEnabled = false
                     }
 
-                    override fun actionPerformed(e: AnActionEvent) {}
+                    override fun actionPerformed(e: AnActionEvent) { /* disabled — no-op */
+                    }
                 })
             }
         }
@@ -1261,11 +1267,15 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                         if (index == selectedModelIndex) return
 
                         selectedModelIndex = index
-                        CopilotSettings.setSelectedModel(model.id)
+                        agentManager.settings.setSelectedModel(model.id)
                         LOG.info("Model selected: ${model.id} (index=$index)")
+                        SwingUtilities.invokeLater {
+                            consolePanel.setCurrentModel(model.id)
+                            consolePanel.setPromptStats(model.id, getModelMultiplier(model.id))
+                        }
                         ApplicationManager.getApplication().executeOnPooledThread {
                             try {
-                                val client = CopilotService.getInstance(project).getClient()
+                                val client = agentManager.client
                                 val sessionId = currentSessionId
                                 if (sessionId != null) {
                                     // Switch model on current session (no restart needed)
@@ -1295,31 +1305,50 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
     }
 
-    // ComboBoxAction for mode selection — matches Run panel dropdown style
-    private class ModeSelectorAction : ComboBoxAction() {
+    private inner class AgentSelectorAction : ComboBoxAction() {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun createPopupActionGroup(button: JComponent, context: DataContext): DefaultActionGroup {
             val group = DefaultActionGroup()
-            group.add(object : AnAction("Agent") {
+            group.add(object : AnAction("Default") {
                 override fun actionPerformed(e: AnActionEvent) {
-                    CopilotSettings.setSessionMode("agent")
+                    agentManager.settings.setSelectedAgent("")
                 }
 
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
-            group.add(object : AnAction("Plan") {
-                override fun actionPerformed(e: AnActionEvent) {
-                    CopilotSettings.setSessionMode("plan")
-                }
+            for (agentName in discoverAgentNames()) {
+                group.add(object : AnAction(agentName) {
+                    override fun actionPerformed(e: AnActionEvent) {
+                        agentManager.settings.setSelectedAgent(agentName)
+                    }
 
-                override fun getActionUpdateThread() = ActionUpdateThread.BGT
-            })
+                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+                })
+            }
             return group
         }
 
         override fun update(e: AnActionEvent) {
-            e.presentation.text = if (CopilotSettings.getSessionMode() == "plan") "Plan" else "Agent"
+            val agentsDir = agentManager.config.agentsDirectory
+            if (agentsDir.isNullOrBlank()) {
+                e.presentation.isVisible = false
+                return
+            }
+            e.presentation.isVisible = true
+            val selected = agentManager.settings.selectedAgent
+            e.presentation.text = if (selected.isEmpty()) "Default" else selected
+        }
+
+        private fun discoverAgentNames(): List<String> {
+            val agentsDir = agentManager.config.agentsDirectory ?: return emptyList()
+            val basePath = project.basePath ?: return emptyList()
+            val dir = java.io.File(basePath, agentsDir)
+            if (!dir.isDirectory) return emptyList()
+            return dir.listFiles { f -> f.isFile && f.extension == "md" }
+                ?.map { it.nameWithoutExtension }
+                ?.sorted()
+                ?: emptyList()
         }
     }
 
@@ -1375,11 +1404,48 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             contentComponent
         )
 
+        // Intercept paste: redirect large clipboard content to a scratch file
+        val pasteShortcuts = arrayOf(
+            com.intellij.openapi.actionSystem.KeyboardShortcut(
+                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.CTRL_DOWN_MASK), null
+            ),
+            com.intellij.openapi.actionSystem.KeyboardShortcut(
+                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.META_DOWN_MASK), null
+            ),
+            com.intellij.openapi.actionSystem.KeyboardShortcut(
+                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_INSERT, java.awt.event.InputEvent.SHIFT_DOWN_MASK),
+                null
+            ),
+        )
+        object : AnAction() {
+            override fun actionPerformed(e: AnActionEvent) {
+                val clipText = contextManager.getClipboardText()
+                if (clipText != null && (clipText.lines().size > 3 || clipText.length > 500)) {
+                    // If the text was copied from a project file, attach as inline chip
+                    val projectSource = contextManager.findClipboardSourceInProject(clipText)
+                    if (projectSource != null) {
+                        contextManager.insertInlineChip(editor, projectSource)
+                    } else {
+                        handlePasteToScratch(clipText)
+                    }
+                } else {
+                    val handler = com.intellij.openapi.editor.actionSystem.EditorActionManager.getInstance()
+                        .getActionHandler(IdeActions.ACTION_EDITOR_PASTE)
+                    com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+                        handler.execute(editor, null, e.dataContext)
+                    }
+                }
+            }
+        }.registerCustomShortcutSet(
+            CustomShortcutSet(*pasteShortcuts),
+            contentComponent
+        )
+
         // Trigger character detection: when the configured char (# or @) is typed,
         // remove it and open the file search popup instead
         editor.document.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
             override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
-                val trigger = CopilotSettings.getAttachTriggerChar()
+                val trigger = ActiveAgentManager.getAttachTriggerChar()
                 if (trigger.isEmpty()) return
                 val inserted = event.newFragment.toString()
                 if (inserted != trigger) return
@@ -1394,7 +1460,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                     com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
                         editor.document.deleteString(offset, offset + trigger.length)
                     }
-                    openFileSearchPopup()
+                    contextManager.openFileSearchPopup()
                 }
             }
         }, project)
@@ -1413,18 +1479,18 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
             // Attach actions
             add(object : AnAction("Attach Current File", null, com.intellij.icons.AllIcons.Actions.AddFile) {
-                override fun actionPerformed(e: AnActionEvent) = handleAddCurrentFile()
+                override fun actionPerformed(e: AnActionEvent) = contextManager.handleAddCurrentFile()
             })
             add(object : AnAction("Attach Editor Selection", null, com.intellij.icons.AllIcons.Actions.AddMulticaret) {
-                override fun actionPerformed(e: AnActionEvent) = handleAddSelection()
+                override fun actionPerformed(e: AnActionEvent) = contextManager.handleAddSelection()
             })
             add(object : AnAction("Clear Attachments", null, com.intellij.icons.AllIcons.Actions.GC) {
                 override fun actionPerformed(e: AnActionEvent) {
-                    contextListModel.clear()
+                    contextManager.clearInlineChips(editor)
                 }
 
                 override fun update(e: AnActionEvent) {
-                    e.presentation.isEnabled = contextListModel.size() > 0
+                    e.presentation.isEnabled = contextManager.collectInlineContextItems().isNotEmpty()
                 }
             })
 
@@ -1435,7 +1501,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 override fun actionPerformed(e: AnActionEvent) {
                     currentSessionId = null
                     consolePanel.addSessionSeparator(
-                        java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+                        java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")),
+                        agentManager.activeProfile.displayName
                     )
                     updateSessionInfo()
                 }
@@ -1457,26 +1524,26 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                         dtde.acceptDrop(java.awt.dnd.DnDConstants.ACTION_COPY)
                         val transferable = dtde.transferable
                         if (transferable.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.javaFileListFlavor)) {
-                            @Suppress("UNCHECKED_CAST")
+                            @Suppress("UNCHECKED_CAST") // DataFlavor API returns Object
                             val files = transferable.getTransferData(
                                 java.awt.datatransfer.DataFlavor.javaFileListFlavor
                             ) as List<java.io.File>
+                            val editor = textArea.editor as? EditorEx
                             for (file in files) {
                                 val vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
                                     .findFileByIoFile(file) ?: continue
                                 val doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
                                     .getDocument(vf) ?: continue
-                                val exists = (0 until contextListModel.size()).any {
-                                    contextListModel[it].path == vf.path
-                                }
-                                if (!exists) {
-                                    contextListModel.addElement(
-                                        ContextItem(
+                                if (editor != null) {
+                                    val existing = contextManager.collectInlineContextItems().any { it.path == vf.path }
+                                    if (!existing) {
+                                        val data = ContextItemData(
                                             path = vf.path, name = vf.name,
                                             startLine = 1, endLine = doc.lineCount,
-                                            fileType = vf.fileType, isSelection = false
+                                            fileTypeName = vf.fileType.name, isSelection = false
                                         )
-                                    )
+                                        contextManager.insertInlineChip(editor, data)
+                                    }
                                 }
                             }
                             dtde.dropComplete(true)
@@ -1494,7 +1561,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         val sessionId = currentSessionId
         if (sessionId != null) {
             try {
-                CopilotService.getInstance(project).getClient().cancelSession(sessionId)
+                agentManager.client.cancelSession(sessionId)
             } catch (_: Exception) {
                 // Best-effort cancellation
             }
@@ -1503,15 +1570,13 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         consolePanel.cancelAllRunning()
         consolePanel.addErrorEntry("Stopped by user")
         setResponseStatus("Stopped", loading = false)
-        addTimelineEvent(EventType.ERROR, "Prompt cancelled by user")
     }
 
     private fun ensureSessionCreated(client: AcpClient): String {
         if (currentSessionId == null) {
             currentSessionId = client.createSession(project.basePath)
-            addTimelineEvent(EventType.SESSION_START, "Session created")
             updateSessionInfo()
-            val savedModel = CopilotSettings.getSelectedModel()
+            val savedModel = agentManager.settings.selectedModel
             if (!savedModel.isNullOrEmpty()) {
                 try {
                     client.setModel(currentSessionId!!, savedModel)
@@ -1524,11 +1589,11 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     private fun buildEffectivePrompt(prompt: String): String {
-        val snippetSuffix = buildSnippetSuffix()
-        var effective = if (snippetSuffix.isNotEmpty()) "$prompt\n\n$snippetSuffix" else prompt
+        var effective = prompt
 
-        if (CopilotSettings.getSessionMode() == "plan") {
-            effective = "[[PLAN]] $effective"
+        val selectedAgent = agentManager.settings.selectedAgent
+        if (selectedAgent.isNotEmpty()) {
+            effective = "@$selectedAgent $effective"
         }
 
         if (!conversationSummaryInjected) {
@@ -1541,13 +1606,38 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         return effective
     }
 
+    /**
+     * Build the prompt sent to the agent, optionally including referenced file content inline.
+     *
+     * <p>ACP {@code ResourceReference} objects are always sent as structured content blocks
+     * in the prompt array. However, some agents (e.g., GitHub Copilot) surface them only as
+     * metadata (path + line count) without inlining the actual content for the model. For
+     * those agents, the referenced file content is also appended as plain text so the model
+     * sees it. This behaviour is controlled by
+     * {@link com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig#requiresResourceContentDuplication()}.</p>
+     */
+    private fun buildEffectivePromptWithContent(
+        client: AcpClient,
+        prompt: String,
+        references: List<ResourceReference>,
+        contextItems: List<ContextItemData>
+    ): String {
+        val base = buildEffectivePrompt(prompt)
+        if (references.isEmpty() || !client.requiresResourceContentDuplication()) return base
+
+        val contentBlocks = references.mapIndexed { i, ref ->
+            val label = contextItems.getOrNull(i)?.name ?: ref.uri().substringAfterLast("/")
+            "--- $label ---\n${ref.text()}"
+        }
+        return "$base\n\n${contentBlocks.joinToString("\n\n")}"
+    }
+
     private fun handlePromptCompletion(prompt: String) {
         com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).flushPendingAutoFormat()
         com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).clearFileAccessTracking()
         consolePanel.finishResponse(turnToolCallCount, turnModelId, getModelMultiplier(turnModelId))
         notifyIfUnfocused(turnToolCallCount)
         setResponseStatus("Done", loading = false)
-        addTimelineEvent(EventType.RESPONSE_RECEIVED, "Response received")
         saveTurnStatistics(prompt, turnToolCallCount, turnModelId)
         saveConversation()
         billing.recordTurnCompleted(getModelMultiplier(turnModelId))
@@ -1562,29 +1652,25 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         SwingUtilities.invokeLater {
             consolePanel.component.revalidate()
             consolePanel.component.repaint()
-            if (com.github.catatafishen.ideagentforcopilot.services.CopilotSettings.getFollowAgentFiles(project)) {
+            if (ActiveAgentManager.getFollowAgentFiles(project)) {
                 promptTextArea.requestFocusInWindow()
             }
         }
     }
 
-    private fun executePrompt(prompt: String) {
+    private fun executePrompt(prompt: String, contextItems: List<ContextItemData> = emptyList()) {
         try {
             if (isBlockedByAuth()) return
 
-            val service = CopilotService.getInstance(project)
-            val client = service.getClient()
+            val client = agentManager.client
             val sessionId = ensureSessionCreated(client)
             wirePermissionListener(client)
 
-            addTimelineEvent(EventType.MESSAGE_SENT, "Prompt: " + prompt.take(80))
-
             val modelId = prepareModelAndTurnState()
 
-            val references = buildContextReferences()
-            val effectivePrompt = buildEffectivePrompt(prompt)
-            addContextEntries(references)
-            SwingUtilities.invokeLater { contextListModel.clear() }
+            val references = contextManager.buildContextReferences(contextItems.ifEmpty { null })
+            val effectivePrompt = buildEffectivePromptWithContent(client, prompt, references, contextItems)
+            addContextEntries(references, contextItems)
 
             dispatchPromptWithRetry(client, sessionId, effectivePrompt, modelId, references)
 
@@ -1601,7 +1687,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         initialSessionId: String,
         effectivePrompt: String,
         modelId: String,
-        references: List<AcpClient.ResourceReference>
+        references: List<ResourceReference>
     ) {
         var receivedContent = false
         val refs = references.ifEmpty { null }
@@ -1609,11 +1695,12 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         val onUpdate = java.util.function.Consumer<com.google.gson.JsonObject> { update ->
             handlePromptStreamingUpdate(update, receivedContent)
         }
-        var sessionId = initialSessionId
-        val sendPromptCall: () -> Unit = {
-            client.sendPrompt(sessionId, effectivePrompt, modelId, refs, onChunk, onUpdate, null)
+        // Pass the session ID as a parameter so the retry uses the freshly created session,
+        // not the stale ID captured in the closure.
+        val sendPromptCall: (String) -> Unit = { sid ->
+            client.sendPrompt(sid, effectivePrompt, modelId, refs, onChunk, onUpdate, null)
         }
-        sessionId = sendWithSessionRetry(client, sessionId, sendPromptCall) { receivedContent = false }
+        sendWithSessionRetry(client, initialSessionId, sendPromptCall) { receivedContent = false }
     }
 
     private fun isBlockedByAuth(): Boolean {
@@ -1630,7 +1717,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             ApplicationManager.getApplication().invokeLater {
                 consolePanel.showPermissionRequest(
                     req.reqId.toString(), req.displayName, req.description
-                ) { allowed -> req.respond(allowed) }
+                ) { response -> req.respond(response) }
                 notifyPermissionRequestIfUnfocused(req.displayName)
             }
         }
@@ -1644,18 +1731,16 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         activeSubAgentId = null
         turnModelId = modelId
         SwingUtilities.invokeLater {
+            consolePanel.setCurrentProfile(agentManager.activeProfileId)
             consolePanel.setCurrentModel(modelId)
             consolePanel.setPromptStats(modelId, getModelMultiplier(modelId))
         }
         return modelId
     }
 
-    private fun addContextEntries(references: List<AcpClient.ResourceReference>) {
-        if (references.isNotEmpty()) {
-            val contextFiles = (0 until contextListModel.size()).map { i ->
-                val item = contextListModel.getElementAt(i)
-                Pair(item.name, item.path)
-            }
+    private fun addContextEntries(references: List<ResourceReference>, contextItems: List<ContextItemData>) {
+        if (references.isNotEmpty() && contextItems.isNotEmpty()) {
+            val contextFiles = contextItems.map { Pair(it.name, it.path) }
             consolePanel.addContextFilesEntry(contextFiles)
         }
     }
@@ -1673,44 +1758,30 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     /**
-     * Attempts to call [sendCall]. If it fails with a "not found" session error,
+     * Attempts to call [sendCall] with [initialSessionId]. If it fails with a "not found" session error,
      * invalidates the current session, creates a fresh one, resets state via [onRetry],
-     * and retries once. Returns the (possibly new) session ID.
+     * and retries once with the new session ID. Returns the (possibly new) session ID.
      */
     private fun sendWithSessionRetry(
         client: AcpClient,
         initialSessionId: String,
-        sendCall: () -> Unit,
+        sendCall: (String) -> Unit,
         onRetry: () -> Unit
     ): String {
         try {
-            sendCall()
+            sendCall(initialSessionId)
             return initialSessionId
-        } catch (e: com.github.catatafishen.ideagentforcopilot.bridge.CopilotException) {
+        } catch (e: AcpException) {
             if (e.message != null && e.message!!.contains("not found", ignoreCase = true)) {
                 LOG.info("Session expired ('not found'), creating new session and retrying")
                 currentSessionId = null
                 val newSessionId = ensureSessionCreated(client)
                 onRetry()
-                sendCall()
+                sendCall(newSessionId)
                 return newSessionId
             }
             throw e
         }
-    }
-
-    private fun buildContextReferences(): List<AcpClient.ResourceReference> {
-        val references = mutableListOf<AcpClient.ResourceReference>()
-        for (i in 0 until contextListModel.size()) {
-            val item = contextListModel.getElementAt(i)
-            try {
-                val ref = buildSingleReference(item)
-                if (ref != null) references.add(ref)
-            } catch (_: Exception) {
-                appendResponse("\u26a0 Could not read context: ${item.name}\n")
-            }
-        }
-        return references
     }
 
     /** Send a quick-reply directly without touching the user's input field. */
@@ -1728,18 +1799,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         setSendingState(true)
         setResponseStatus(MSG_THINKING)
 
-        if (currentSessionId == null && consolePanel.hasContent()) {
-            val ts = java.text.SimpleDateFormat("MMM d, yyyy h:mm a").format(java.util.Date())
-            consolePanel.addSessionSeparator(ts)
-        }
-
-        val ctxFiles = if (contextListModel.size() > 0) {
-            (0 until contextListModel.size()).map { i ->
-                val item = contextListModel.getElementAt(i)
-                Triple(item.name, item.path, if (item.isSelection) item.startLine else 0)
-            }
-        } else null
-        consolePanel.addPromptEntry(trimmed, ctxFiles)
+        // Quick-replies don't carry context items
+        consolePanel.addPromptEntry(trimmed, null)
 
         ApplicationManager.getApplication().executeOnPooledThread {
             currentPromptThread = Thread.currentThread()
@@ -1754,88 +1815,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private fun detectQuickReplies(responseText: String): List<String> {
         val match = QUICK_REPLY_TAG_REGEX.findAll(responseText).lastOrNull() ?: return emptyList()
         return match.groupValues[1].split("|").map { it.trim() }.filter { it.isNotEmpty() }
-    }
-
-    /** Build inline snippet text for selections so the agent sees the code in the prompt itself */
-    private fun buildSnippetSuffix(): String {
-        val parts = mutableListOf<String>()
-        for (i in 0 until contextListModel.size()) {
-            val item = contextListModel.getElementAt(i)
-            if (!item.isSelection || item.startLine <= 0) continue
-            try {
-                val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(item.path)
-                    ?: continue
-                var doc: com.intellij.openapi.editor.Document? = null
-                com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction {
-                    doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file)
-                }
-                val document = doc ?: continue
-                var snippet = ""
-                com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction {
-                    val s = document.getLineStartOffset((item.startLine - 1).coerceIn(0, document.lineCount - 1))
-                    val e = document.getLineEndOffset((item.endLine - 1).coerceIn(0, document.lineCount - 1))
-                    snippet = document.getText(com.intellij.openapi.util.TextRange(s, e))
-                }
-                val fileName = item.path.substringAfterLast("/")
-                val ext = fileName.substringAfterLast(".", "")
-                parts.add("Selected lines ${item.startLine}-${item.endLine} of `$fileName`:\n```$ext\n$snippet\n```")
-            } catch (_: Exception) { /* skip */
-            }
-        }
-        return parts.joinToString("\n\n")
-    }
-
-    private fun buildSingleReference(item: ContextItem): AcpClient.ResourceReference? {
-        val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(item.path)
-            ?: return null
-        var doc: com.intellij.openapi.editor.Document? = null
-        com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction {
-            doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file)
-        }
-        val document = doc ?: return null
-
-        var text = ""
-        com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction {
-            if (item.isSelection && item.startLine > 0) {
-                val startOffset = document.getLineStartOffset((item.startLine - 1).coerceIn(0, document.lineCount - 1))
-                val endOffset = document.getLineEndOffset((item.endLine - 1).coerceIn(0, document.lineCount - 1))
-                val snippet = document.getText(com.intellij.openapi.util.TextRange(startOffset, endOffset))
-                val fileName = item.path.substringAfterLast("/")
-                text = "// Selected lines ${item.startLine}-${item.endLine} of $fileName\n$snippet"
-            } else {
-                text = document.text
-            }
-        }
-
-        val uri = buildString {
-            append("file://")
-            append(item.path.replace("\\", "/"))
-            if (item.isSelection && item.startLine > 0) {
-                append("#L${item.startLine}-L${item.endLine}")
-            }
-        }
-        val mimeType = getMimeTypeForFileType(file.fileType.name.lowercase())
-        val contextLog = com.intellij.openapi.diagnostic.Logger.getInstance("ContextSnippet")
-        contextLog.info(
-            "Context ref: uri=$uri, isSelection=${item.isSelection}, lines=${item.startLine}-${item.endLine}, textLength=${text.length}, textPreview=${
-                text.take(
-                    100
-                )
-            }"
-        )
-        return AcpClient.ResourceReference(uri, mimeType, text)
-    }
-
-    private fun getMimeTypeForFileType(fileTypeName: String): String {
-        return when (fileTypeName) {
-            "java" -> "text/x-java"
-            "kotlin" -> "text/x-kotlin"
-            "python" -> "text/x-python"
-            "javascript" -> "text/javascript"
-            "typescript" -> "text/typescript"
-            "xml", "html" -> "text/$fileTypeName"
-            else -> "text/plain"
-        }
     }
 
     private fun handlePromptStreamingUpdate(update: com.google.gson.JsonObject, receivedContent: Boolean) {
@@ -1876,8 +1855,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 if (::processingTimerPanel.isInitialized) processingTimerPanel.incrementToolCalls()
                 toolCallTitles[toolCallId] = "task" // mark as sub-agent for update routing
                 activeSubAgentId = toolCallId
-                CopilotService.getInstance(project).getClient().setSubAgentActive(true)
-                CopilotSettings.setActiveAgentLabel(agentType)
+                agentManager.client.setSubAgentActive(true)
+                agentManager.settings.setActiveAgentLabel(agentType)
                 setResponseStatus("Running: $title")
                 val description = title.ifBlank { extractJsonField(arguments, "description") ?: "Sub-agent task" }
                 val prompt = extractJsonField(arguments, "prompt")
@@ -1919,8 +1898,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             setResponseStatus(MSG_THINKING)
             if (isSubAgent) {
                 activeSubAgentId = null
-                CopilotService.getInstance(project).getClient().setSubAgentActive(false)
-                CopilotSettings.setActiveAgentLabel(null)
+                agentManager.client.setSubAgentActive(false)
+                agentManager.settings.setActiveAgentLabel(null)
                 consolePanel.updateSubAgentResult(toolCallId, "completed", result)
             } else if (isInternal) {
                 consolePanel.updateSubAgentToolCall(toolCallId, "completed", result)
@@ -1933,8 +1912,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 ?: update.toString().take(500)
             if (isSubAgent) {
                 activeSubAgentId = null
-                CopilotService.getInstance(project).getClient().setSubAgentActive(false)
-                CopilotSettings.setActiveAgentLabel(null)
+                agentManager.client.setSubAgentActive(false)
+                agentManager.settings.setActiveAgentLabel(null)
                 consolePanel.updateSubAgentResult(toolCallId, "failed", error)
             } else if (isInternal) {
                 consolePanel.updateSubAgentToolCall(toolCallId, "failed", error)
@@ -1994,7 +1973,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
         consolePanel.addErrorEntry("Error: $msg")
         setResponseStatus("Error", loading = false)
-        addTimelineEvent(EventType.ERROR, "Error: ${msg.take(80)}")
 
         // Show the auth banner immediately when an auth error is detected
         if (authService.isAuthenticationError(msg)) {
@@ -2003,7 +1981,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
 
         val isRecoverable = e is InterruptedException || e.cause is InterruptedException ||
-            (e is com.github.catatafishen.ideagentforcopilot.bridge.CopilotException && e.isRecoverable)
+            (e is AcpException && e.isRecoverable)
         if (!isRecoverable) {
             currentSessionId = null
             updateSessionInfo()
@@ -2013,7 +1991,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
     private fun getModelMultiplier(modelId: String): String {
         return try {
-            CopilotService.getInstance(project).getClient().getModelMultiplier(modelId)
+            agentManager.client.getModelMultiplier(modelId)
         } catch (_: Exception) {
             "1x"
         }
@@ -2069,12 +2047,12 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         // Balloon attached to the Copilot tool window tab (same style as build/test notifications)
         com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
             .notifyByBalloon(
-                "IDE Agent for Copilot",
+                "AgentBridge",
                 com.intellij.openapi.ui.MessageType.INFO,
                 "<b>$title</b><br>$content"
             )
         // OS-native notification with sound
-        com.intellij.ui.SystemNotifications.getInstance().notify("Copilot Notifications", title, content)
+        com.intellij.ui.SystemNotifications.getInstance().notify("AgentBridge Notifications", title, content)
         // Flash the taskbar icon
         com.intellij.ui.AppIcon.getInstance().requestAttention(project, false)
     }
@@ -2082,15 +2060,15 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private fun notifyPermissionRequestIfUnfocused(toolName: String) {
         val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project) ?: return
         if (frame.isActive) return
-        val title = "Copilot needs approval"
+        val title = "Agent needs approval"
         val content = "Permission requested for: $toolName"
         com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
             .notifyByBalloon(
-                "IDE Agent for Copilot",
+                "AgentBridge",
                 com.intellij.openapi.ui.MessageType.WARNING,
                 "<b>$title</b><br>$content"
             )
-        com.intellij.ui.SystemNotifications.getInstance().notify("Copilot Notifications", title, content)
+        com.intellij.ui.SystemNotifications.getInstance().notify("AgentBridge Notifications", title, content)
         com.intellij.ui.AppIcon.getInstance().requestAttention(project, true)
     }
 
@@ -2116,119 +2094,158 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
     }
 
-    private fun restoreConversation() {
+    private fun restoreConversation(onComplete: () -> Unit = {}) {
         com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 val file = conversationFile()
                 if (!file.exists() || file.length() < 10) {
-                    SwingUtilities.invokeLater {
-                        consolePanel.showPlaceholder("Start a conversation with Copilot...")
-                    }
+                    SwingUtilities.invokeLater { onComplete() }
                     return@executeOnPooledThread
                 }
                 val json = file.readText()
                 SwingUtilities.invokeLater {
                     consolePanel.restoreEntries(json)
+                    onComplete()
                 }
             } catch (_: Exception) {
-                SwingUtilities.invokeLater {
-                    consolePanel.showPlaceholder("Start a conversation with Copilot...")
-                }
+                SwingUtilities.invokeLater { onComplete() }
             }
         }
     }
 
-    private fun handleAddCurrentFile() {
-        val fileEditorManager = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
-        val currentFile = fileEditorManager.selectedFiles.firstOrNull()
+    private fun handlePasteToScratch(text: String) {
+        val settings = com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings.getInstance()
+        val enabledLanguages = settings.enabledLanguages
 
-        if (currentFile == null) {
-            Messages.showWarningDialog(project, "No file is currently open in the editor", "No File")
-            return
-        }
-
-        val path = currentFile.path
-        val lineCount = try {
-            fileEditorManager.selectedTextEditor?.document?.lineCount ?: 0
-        } catch (_: Exception) {
-            0
-        }
-
-        val exists = (0 until contextListModel.size()).any { contextListModel[it].path == path }
-        if (exists) {
-            Messages.showInfoMessage(project, "File already in context: ${currentFile.name}", "Duplicate File")
-            return
-        }
-
-        contextListModel.addElement(
-            ContextItem(
-                path = path, name = currentFile.name, startLine = 1, endLine = lineCount,
-                fileType = currentFile.fileType, isSelection = false
+        if (enabledLanguages.isEmpty()) {
+            Messages.showInfoMessage(
+                project,
+                "No languages are enabled. Configure them in Settings → Tools → Scratch File Types.",
+                "No Scratch Languages"
             )
-        )
+            return
+        }
+
+        // Build ordered list: detected language first, then Plain Text, then the rest
+        val detected = com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat
+            .detectLanguageFromContent(text)
+        val detectedMatch = if (detected != null) enabledLanguages.find { it.id == detected.id } else null
+        val plainText = enabledLanguages.find { it.id == com.intellij.openapi.fileTypes.PlainTextLanguage.INSTANCE.id }
+
+        val orderedLanguages = buildList {
+            if (detectedMatch != null) add(detectedMatch)
+            if (plainText != null && plainText != detectedMatch) add(plainText)
+            for (lang in enabledLanguages) {
+                if (lang != detectedMatch && lang != plainText) add(lang)
+            }
+        }
+
+        val popup = com.intellij.ide.scratch.LRUPopupBuilder
+            .languagePopupBuilder(project, "Paste as Scratch File (paste again to skip)") { lang ->
+                lang.associatedFileType?.icon ?: com.intellij.icons.AllIcons.FileTypes.Any_type
+            }
+            .forValues(orderedLanguages)
+            .onChosen { lang ->
+                val ext = lang.associatedFileType?.defaultExtension ?: return@onChosen
+                createAndAttachScratch(ext, text)
+            }
+            .buildPopup()
+
+        registerPasteToSkip(popup, text)
+
+        popup.showCenteredInCurrentWindow(project)
     }
 
-    private fun handleAddSelection() {
-        val fileEditorManager = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
-        val editor = fileEditorManager.selectedTextEditor
-        val currentFile = fileEditorManager.selectedFiles.firstOrNull()
-
-        if (editor == null || currentFile == null) {
-            Messages.showWarningDialog(project, "No editor is currently open", "No Editor")
-            return
-        }
-
-        val selectionModel = editor.selectionModel
-        if (!selectionModel.hasSelection()) {
-            Messages.showWarningDialog(project, "No text is selected. Select some code first.", "No Selection")
-            return
-        }
-
-        val document = editor.document
-        val startLine = document.getLineNumber(selectionModel.selectionStart) + 1
-        val endLine = document.getLineNumber(selectionModel.selectionEnd) + 1
-
-        contextListModel.addElement(
-            ContextItem(
-                path = currentFile.path, name = "${currentFile.name}:$startLine-$endLine",
-                startLine = startLine, endLine = endLine,
-                fileType = currentFile.fileType, isSelection = true
+    /**
+     * Registers an [IdeEventQueue] **preprocessor** so that pressing paste (Ctrl/Cmd+V or Shift+Insert)
+     * while the scratch-type popup is visible cancels the popup and inserts the text directly
+     * into the prompt editor instead.
+     *
+     * We use [IdeEventQueue.addPreprocessor] rather than [IdeEventQueue.addDispatcher] because
+     * the popup's own event dispatcher (registered by [com.intellij.ide.IdePopupManager]) runs
+     * before regular dispatchers — so using `addDispatcher` lets the popup's speed-search text
+     * field consume the Ctrl+V keystroke before our handler sees it. Preprocessors run before
+     * popup dispatchers, so the paste is reliably intercepted.
+     *
+     * **Double-paste prevention:** calling [com.intellij.openapi.ui.popup.JBPopup.cancel] fires
+     * [com.intellij.openapi.ui.popup.JBPopupListener.onClosed] *synchronously*, which would
+     * dispose the preprocessor before it can swallow the follow-up KEY_TYPED / KEY_RELEASED
+     * events. We guard against this with [pasteIntercepted]: when set, [onClosed] skips disposal
+     * and the preprocessor self-disposes after KEY_RELEASED via [invokeLater].
+     */
+    private fun registerPasteToSkip(popup: com.intellij.openapi.ui.popup.JBPopup, text: String) {
+        val pasteStrokes = setOf(
+            javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.CTRL_DOWN_MASK),
+            javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.META_DOWN_MASK),
+            javax.swing.KeyStroke.getKeyStroke(
+                java.awt.event.KeyEvent.VK_INSERT, java.awt.event.InputEvent.SHIFT_DOWN_MASK
             )
         )
-    }
 
-    private fun openFileSearchPopup() {
-        val model = com.intellij.ide.util.gotoByName.GotoFileModel(project)
-        val popup = com.intellij.ide.util.gotoByName.ChooseByNamePopup.createPopup(
-            project,
-            model,
-            null as com.intellij.psi.PsiElement?
-        )
-        popup.invoke(object : com.intellij.ide.util.gotoByName.ChooseByNamePopupComponent.Callback() {
-            override fun elementChosen(element: Any?) {
-                val psiFile = element as? com.intellij.psi.PsiFile ?: return
-                val vf = psiFile.virtualFile ?: return
-                val path = vf.path
-                val exists = (0 until contextListModel.size()).any { contextListModel[it].path == path }
-                if (exists) return
+        // Track whether we consumed a KEY_PRESSED paste so we also swallow the follow-up
+        // KEY_TYPED and KEY_RELEASED events from the same keystroke.
+        var swallowFollowUp = false
 
-                val lineCount = try {
-                    com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf)?.lineCount ?: 0
-                } catch (_: Exception) {
-                    0
+        // True once we intercept a paste stroke. Prevents onClosed from disposing the
+        // preprocessor before it finishes swallowing follow-up events (see Javadoc above).
+        var pasteIntercepted = false
+
+        val disposable = com.intellij.openapi.util.Disposer.newDisposable("pasteToSkip")
+        com.intellij.ide.IdeEventQueue.getInstance().addPreprocessor(
+            com.intellij.ide.IdeEventQueue.EventDispatcher { event ->
+                if (event !is java.awt.event.KeyEvent) return@EventDispatcher false
+
+                // Must check swallowFollowUp BEFORE popup.isVisible: popup.cancel() makes
+                // isVisible false immediately, so KEY_TYPED/KEY_RELEASED would slip through
+                // and trigger a second paste in the editor.
+                if (swallowFollowUp && event.id != java.awt.event.KeyEvent.KEY_PRESSED) {
+                    if (event.id == java.awt.event.KeyEvent.KEY_RELEASED) {
+                        swallowFollowUp = false
+                        // Self-dispose now that all follow-up events are consumed. Use
+                        // invokeLater to avoid modifying the preprocessor list mid-dispatch.
+                        ApplicationManager.getApplication().invokeLater {
+                            com.intellij.openapi.util.Disposer.dispose(disposable)
+                        }
+                    }
+                    return@EventDispatcher true
                 }
 
-                contextListModel.addElement(
-                    ContextItem(
-                        path = path, name = vf.name, startLine = 1, endLine = lineCount,
-                        fileType = vf.fileType, isSelection = false
-                    )
-                )
+                if (!popup.isVisible) return@EventDispatcher false
+
+                if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return@EventDispatcher false
+                val stroke = javax.swing.KeyStroke.getKeyStrokeForEvent(event)
+                if (stroke !in pasteStrokes) return@EventDispatcher false
+
+                swallowFollowUp = true
+                pasteIntercepted = true
+                popup.cancel()
+                com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+                    val editor = promptTextArea.editor ?: return@runWriteCommandAction
+                    val offset = editor.caretModel.offset
+                    editor.document.insertString(offset, text)
+                    editor.caretModel.moveToOffset(offset + text.length)
+                }
+                // Return focus to prompt so user can keep typing
+                ApplicationManager.getApplication().invokeLater {
+                    promptTextArea.editor?.contentComponent?.requestFocusInWindow()
+                }
+                true
+            },
+            disposable
+        )
+
+        popup.addListener(object : com.intellij.openapi.ui.popup.JBPopupListener {
+            override fun onClosed(event: com.intellij.openapi.ui.popup.LightweightWindowEvent) {
+                // Skip disposal if a paste was intercepted — the preprocessor will self-dispose
+                // after it finishes swallowing the follow-up KEY_TYPED / KEY_RELEASED events.
+                if (!pasteIntercepted) {
+                    com.intellij.openapi.util.Disposer.dispose(disposable)
+                }
             }
-        }, com.intellij.openapi.application.ModalityState.current(), false)
+        })
     }
 
-    private fun handleCreateScratch(e: AnActionEvent) {
+    private fun handleCreateScratch() {
         val settings = com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings.getInstance()
         val enabledLanguages = settings.enabledLanguages
 
@@ -2254,7 +2271,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             .showCenteredInCurrentWindow(project)
     }
 
-    private fun createAndAttachScratch(ext: String) {
+    private fun createAndAttachScratch(ext: String, initialContent: String? = null) {
         ApplicationManager.getApplication().invokeLater {
             try {
                 val scratchService = com.intellij.ide.scratch.ScratchFileService.getInstance()
@@ -2265,10 +2282,14 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 val file = ApplicationManager.getApplication().runWriteAction(
                     com.intellij.openapi.util.Computable<com.intellij.openapi.vfs.VirtualFile?> {
                         try {
-                            scratchService.findFile(
+                            val vf = scratchService.findFile(
                                 scratchRoot, name,
                                 com.intellij.ide.scratch.ScratchFileService.Option.create_new_always
                             )
+                            if (vf != null && !initialContent.isNullOrEmpty()) {
+                                vf.setBinaryContent(initialContent.toByteArray(Charsets.UTF_8))
+                            }
+                            vf
                         } catch (e: java.io.IOException) {
                             LOG.warn("Failed to create scratch file", e)
                             null
@@ -2279,13 +2300,22 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 if (file != null) {
                     com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
                         .openFile(file, true)
-                    contextListModel.addElement(
-                        ContextItem(
-                            path = file.path, name = file.name,
-                            startLine = 1, endLine = 0,
-                            fileType = file.fileType, isSelection = false
+                    val promptEditor = promptTextArea.editor as? EditorEx
+                    if (promptEditor != null) {
+                        contextManager.insertInlineChip(
+                            promptEditor,
+                            ContextItemData(
+                                path = file.path, name = file.name,
+                                startLine = 1, endLine = 0,
+                                fileTypeName = file.fileType.name, isSelection = false
+                            )
                         )
-                    )
+                    }
+                    // openFile(focus=true) steals focus; schedule a second invokeLater so
+                    // this runs after the file editor has finished grabbing focus.
+                    ApplicationManager.getApplication().invokeLater {
+                        promptTextArea.editor?.contentComponent?.requestFocusInWindow()
+                    }
                 }
             } catch (e: Exception) {
                 LOG.warn("Failed to create scratch file from attach menu", e)
@@ -2293,11 +2323,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
     }
 
-    // Debug/Timeline/Settings tabs extracted to DebugPanel.kt
     fun getComponent(): JComponent = mainPanel
     fun openSettings() = com.github.catatafishen.ideagentforcopilot.settings.PluginSettingsConfigurable.open(project)
-    fun openDebug() = debugPanel.openDebug()
-    fun openSessionFiles() = debugPanel.openSessionFiles()
 
     fun resetSession() {
         currentSessionId = null
@@ -2305,9 +2332,9 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         billing.billingCycleStartUsed = -1
         billing.resetLocalCounter()
         if (::processingTimerPanel.isInitialized) processingTimerPanel.resetSession()
+        com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).clearSessionAllowedTools()
         consolePanel.clear()
         consolePanel.showPlaceholder("New conversation started.")
-        addTimelineEvent(EventType.SESSION_START, "New conversation started")
         updateSessionInfo()
         archiveConversation()
         SwingUtilities.invokeLater {
@@ -2327,12 +2354,12 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         billing.billingCycleStartUsed = -1
         billing.resetLocalCounter()
         if (::processingTimerPanel.isInitialized) processingTimerPanel.resetSession()
-        addTimelineEvent(EventType.SESSION_START, "New session started (history kept)")
+        com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).clearSessionAllowedTools()
         updateSessionInfo()
     }
 
-    private fun restoreModelSelection(models: List<AcpClient.Model>) {
-        val savedModel = CopilotSettings.getSelectedModel()
+    private fun restoreModelSelection(models: List<Model>) {
+        val savedModel = agentManager.settings.selectedModel
         LOG.info("Restoring model selection: saved='$savedModel', available=${models.map { it.id }}")
         if (savedModel != null) {
             val idx = models.indexOfFirst { it.id == savedModel }
@@ -2344,7 +2371,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         if (models.isNotEmpty()) selectedModelIndex = 0
     }
 
-    private fun loadModelsAsync(onSuccess: (List<AcpClient.Model>) -> Unit) {
+    private fun loadModelsAsync(onSuccess: (List<Model>) -> Unit) {
         SwingUtilities.invokeLater {
             modelsStatusText = MSG_LOADING
             selectedModelIndex = -1
@@ -2353,7 +2380,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             var lastError: Exception? = null
             for (attempt in 1..3) {
                 try {
-                    val models = CopilotService.getInstance(project).getClient().listModels().toList()
+                    val models = agentManager.client.listModels().toList()
                     SwingUtilities.invokeLater {
                         modelsStatusText = null
                         restoreModelSelection(models)
@@ -2363,6 +2390,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 } catch (e: Exception) {
                     lastError = e
                     if (authService.isAuthenticationError(e.message ?: "")) break
+                    if (isCLINotFoundError(e)) break
                     if (attempt < 3) Thread.sleep(2000L)
                 }
             }
@@ -2370,25 +2398,32 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             LOG.warn("Failed to load models: $errorMsg")
             SwingUtilities.invokeLater {
                 modelsStatusText = "Unavailable"
-                if (authService.isAuthenticationError(errorMsg)) {
-                    authService.markAuthError(errorMsg)
-                    copilotBanner?.triggerCheck()
+                if (lastError != null && isCLINotFoundError(lastError)) {
+                    // Non-recoverable: return to connect panel with the error
+                    agentManager.setAcpConnected(false)
+                    connectPanel.showError(errorMsg)
+                    cardLayout.show(mainPanel, CARD_CONNECT)
+                } else {
+                    statusBanner?.showError(errorMsg)
+                    if (authService.isAuthenticationError(errorMsg)) {
+                        authService.markAuthError(errorMsg)
+                        copilotBanner?.triggerCheck()
+                    }
                 }
             }
         }
     }
 
-    // Data classes
-    private data class ContextItem(
-        val path: String,
-        val name: String,
-        val startLine: Int,
-        val endLine: Int,
-        val fileType: com.intellij.openapi.fileTypes.FileType?,
-        val isSelection: Boolean
-    )
+    /** Returns true if the exception (or its cause chain) indicates the agent CLI binary was not found. */
+    private fun isCLINotFoundError(e: Exception): Boolean {
+        var cause: Throwable? = e
+        while (cause != null) {
+            if (cause is com.github.catatafishen.ideagentforcopilot.bridge.AcpException && !cause.isRecoverable) return true
+            cause = cause.cause
+        }
+        return false
+    }
 
-// TimelineEvent and EventType extracted to DebugPanel.kt
 
     /** Tree node that holds file content and path for the Plans tab. */
     private class FileTreeNode(

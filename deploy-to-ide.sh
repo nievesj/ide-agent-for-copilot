@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 #
-# Deploy plugin to the main IDE and attempt dynamic reload.
+# Deploy plugin to the main IDE.
 #
 # Usage:
-#   ./deploy-to-ide.sh          # build + deploy + reload
+#   ./deploy-to-ide.sh          # build + deploy
 #   ./deploy-to-ide.sh --skip-build   # deploy only (assumes ZIP is fresh)
 #
 set -euo pipefail
 
 DIST_DIR="plugin-core/build/distributions"
-BRIDGE_FILE="$HOME/.copilot/psi-bridge.json"
 
 # Detect the top-level directory name inside the ZIP (e.g. "ide-agent-for-copilot")
 detect_zip_root_dir() {
@@ -58,7 +57,6 @@ if [[ -z "$LATEST_ZIP" ]]; then
     echo "❌ No ZIP found in $DIST_DIR"
     exit 1
 fi
-LATEST_ZIP_ABS=$(realpath "$LATEST_ZIP")
 echo "📦 ZIP: $(basename "$LATEST_ZIP")"
 
 # Step 3: Detect plugin directory name from ZIP contents
@@ -86,34 +84,5 @@ if [[ ! -d "$INSTALL_DIR" ]]; then
     echo "❌ Extraction failed"
     exit 1
 fi
-echo "✅ Files deployed"
-
-# Step 5: Try dynamic reload via PSI bridge (best-effort)
-if [[ -f "$BRIDGE_FILE" ]]; then
-    PORT=$(python3 -c "
-import json, sys
-try:
-    reg = json.load(open('$BRIDGE_FILE'))
-    for v in reg.values():
-        print(v.get('port', '')); break
-except: pass
-" 2>/dev/null || true)
-
-    if [[ -n "$PORT" ]]; then
-        echo "🔄 Requesting dynamic reload on port $PORT..."
-        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST "http://127.0.0.1:$PORT/reload-plugin" \
-            -H "Content-Type: application/json" \
-            -d "{\"zipPath\":\"$LATEST_ZIP_ABS\"}" \
-            --connect-timeout 3 --max-time 5 2>/dev/null || echo "000")
-        if [[ "$HTTP_CODE" == "200" ]]; then
-            echo "🔄 Reload requested — if it fails, restart IDE to apply"
-        else
-            echo "ℹ️  Dynamic reload unavailable (HTTP $HTTP_CODE) — restart IDE to apply"
-        fi
-    else
-        echo "ℹ️  No PSI bridge found — restart IDE to apply"
-    fi
-else
-    echo "ℹ️  No running IDE detected — restart IDE to apply"
-fi
+echo "✅ Plugin deployed"
+echo "⚠️  Restart IntelliJ to apply the new version."

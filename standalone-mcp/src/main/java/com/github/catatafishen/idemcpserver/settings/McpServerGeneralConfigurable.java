@@ -1,8 +1,9 @@
 package com.github.catatafishen.idemcpserver.settings;
 
-import com.github.catatafishen.idemcpserver.McpHttpServer;
-import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings;
+import com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings;
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
+import com.github.catatafishen.ideagentforcopilot.settings.TransportMode;
+import com.github.catatafishen.ideagentforcopilot.services.McpHttpServer;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.options.Configurable;
@@ -19,7 +20,7 @@ import java.awt.datatransfer.StringSelection;
 
 /**
  * Settings page: Settings → Tools → IDE Agent for Copilot → MCP Server → General.
- * Port, auto-start, follow mode, restart and copy config buttons.
+ * Port, transport mode, auto-start, follow agent, restart and copy config buttons.
  */
 public final class McpServerGeneralConfigurable implements Configurable {
 
@@ -27,6 +28,7 @@ public final class McpServerGeneralConfigurable implements Configurable {
 
     private final Project project;
     private JSpinner portSpinner;
+    private JComboBox<TransportMode> transportModeCombo;
     private JBCheckBox autoStartCheckbox;
     private JBCheckBox followModeCheckbox;
 
@@ -44,16 +46,29 @@ public final class McpServerGeneralConfigurable implements Configurable {
         McpServerSettings settings = McpServerSettings.getInstance(project);
 
         portSpinner = new JSpinner(new SpinnerNumberModel(
-                settings.getPort(), 1024, 65535, 1));
+            settings.getPort(), 1024, 65535, 1));
+
+        transportModeCombo = new JComboBox<>(TransportMode.values());
+        transportModeCombo.setSelectedItem(settings.getTransportMode());
+        transportModeCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value,
+                                                          int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof TransportMode mode) {
+                    setText(mode.getDisplayName());
+                }
+                return this;
+            }
+        });
+
         autoStartCheckbox = new JBCheckBox("Start MCP server automatically when project opens",
-                settings.isAutoStart());
-        followModeCheckbox = new JBCheckBox("Follow agent actions in the editor",
-                CopilotSettings.getFollowAgentFiles(project));
-        followModeCheckbox.setToolTipText(
-                "Open files and highlight regions as the agent reads or edits them");
+            settings.isAutoStart());
+        followModeCheckbox = new JBCheckBox("Follow Agent — open files and highlight regions as the agent reads or edits them",
+            ToolLayerSettings.getInstance(project).getFollowAgentFiles());
 
         JButton restartButton = new JButton("Restart Server");
-        restartButton.setToolTipText("Stop and restart the MCP server");
+        restartButton.setToolTipText("Stop and restart the MCP server with current settings");
         restartButton.addActionListener(e -> restartMcpServer(restartButton));
 
         JButton copyConfigButton = new JButton("Copy MCP Config");
@@ -65,36 +80,41 @@ public final class McpServerGeneralConfigurable implements Configurable {
         buttonPanel.add(copyConfigButton);
 
         return FormBuilder.createFormBuilder()
-                .addLabeledComponent("MCP server port:", portSpinner)
-                .addComponent(autoStartCheckbox)
-                .addComponent(followModeCheckbox)
-                .addComponent(buttonPanel)
-                .addComponentFillVertically(new JPanel(), 0)
-                .getPanel();
+            .addLabeledComponent("MCP server port:", portSpinner)
+            .addLabeledComponent("Transport mode:", transportModeCombo)
+            .addComponent(autoStartCheckbox)
+            .addComponent(followModeCheckbox)
+            .addComponent(buttonPanel)
+            .addComponentFillVertically(new JPanel(), 0)
+            .getPanel();
     }
 
     @Override
     public boolean isModified() {
         McpServerSettings settings = McpServerSettings.getInstance(project);
         if ((Integer) portSpinner.getValue() != settings.getPort()) return true;
+        if (transportModeCombo.getSelectedItem() != settings.getTransportMode()) return true;
         if (autoStartCheckbox.isSelected() != settings.isAutoStart()) return true;
-        return followModeCheckbox.isSelected() != CopilotSettings.getFollowAgentFiles(project);
+        return followModeCheckbox.isSelected() != ToolLayerSettings.getInstance(project).getFollowAgentFiles();
     }
 
     @Override
     public void apply() {
         McpServerSettings settings = McpServerSettings.getInstance(project);
         settings.setPort((Integer) portSpinner.getValue());
+        settings.setTransportMode((TransportMode) transportModeCombo.getSelectedItem());
         settings.setAutoStart(autoStartCheckbox.isSelected());
-        CopilotSettings.setFollowAgentFiles(project, followModeCheckbox.isSelected());
+        com.intellij.ide.util.PropertiesComponent.getInstance(project)
+            .setValue(ToolLayerSettings.FOLLOW_AGENT_FILES_KEY, followModeCheckbox.isSelected(), true);
     }
 
     @Override
     public void reset() {
         McpServerSettings settings = McpServerSettings.getInstance(project);
         portSpinner.setValue(settings.getPort());
+        transportModeCombo.setSelectedItem(settings.getTransportMode());
         autoStartCheckbox.setSelected(settings.isAutoStart());
-        followModeCheckbox.setSelected(CopilotSettings.getFollowAgentFiles(project));
+        followModeCheckbox.setSelected(ToolLayerSettings.getInstance(project).getFollowAgentFiles());
     }
 
     private void restartMcpServer(JButton button) {
@@ -121,15 +141,20 @@ public final class McpServerGeneralConfigurable implements Configurable {
     private void copyMcpConfig(JButton button) {
         McpServerSettings settings = McpServerSettings.getInstance(project);
         int port = settings.getPort();
+        TransportMode mode = settings.getTransportMode();
+        String url = (mode == TransportMode.SSE)
+            ? "http://127.0.0.1:" + port + "/sse"
+            : "http://127.0.0.1:" + port + "/mcp";
+
         String config = "{\n"
-                + "  \"mcpServers\": {\n"
-                + "    \"ide-mcp-server\": {\n"
-                + "      \"url\": \"http://127.0.0.1:" + port + "/mcp\"\n"
-                + "    }\n"
-                + "  }\n"
-                + "}";
+            + "  \"mcpServers\": {\n"
+            + "    \"ide-mcp-server\": {\n"
+            + "      \"url\": \"" + url + "\"\n"
+            + "    }\n"
+            + "  }\n"
+            + "}";
         Toolkit.getDefaultToolkit().getSystemClipboard()
-                .setContents(new StringSelection(config), null);
+            .setContents(new StringSelection(config), null);
         button.setText("Copied!");
         Timer reset = new Timer(2000, e -> button.setText("Copy MCP Config"));
         reset.setRepeats(false);

@@ -10,24 +10,27 @@
   2. WORKSPACE: ALL temp files, plans, notes MUST go in '.agent-work/' (git-ignored, persists across sessions). \
      NEVER write to /tmp/, home directory, or outside the project.
 
-  3. MULTIPLE SEQUENTIAL EDITS: Set auto_format=false to prevent reformatting between edits. \
+  3. MULTIPLE SEQUENTIAL EDITS: Set auto_format_and_optimize_imports=false to prevent reformatting between edits. \
      After all edits, call format_code and optimize_imports ONCE. \
-     ⚠️ auto_format includes optimize_imports which REMOVES imports it considers unused. \
-     If you add imports in one edit and code using them later, combine them in ONE edit or set auto_format=false. \
-     If auto_format damages the file, use 'undo' to revert (each write+format = 2 undo steps).
+     ⚠️ auto_format_and_optimize_imports includes optimize_imports which REMOVES imports it considers unused. \
+     If you add imports in one edit and code using them later, combine them in ONE edit or set auto_format_and_optimize_imports=false. \
+     If auto_format_and_optimize_imports damages the file, use 'undo' to revert (each write+format = 2 undo steps).
 
   4. EDITING TOOL SELECTION — choose the right tool for the edit scope: \
      **Symbol-based tools** (`replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`): \
-       - PREFER for replacing entire method/class/field bodies or inserting new members. \
+       - **DEFAULT CHOICE for code edits.** Use these FIRST whenever you are changing a method, class, field, or function. \
        - PSI-aware: finds symbols by name, no line numbers or exact text matching needed. \
-       - Resilient to formatting changes between read and write. \
+       - Immune to formatting/whitespace changes — never fails due to reformatted code. \
+       - Auto-formats and optimizes imports on every call — no manual format_code needed. \
        - Use `replace_symbol_body` when rewriting a method. Use `insert_after_symbol` to add a new method after an existing one. \
-     **Text-based tools** (`intellij_write_file` with `old_str`/`new_str`): \
-       - Use for surgical edits WITHIN a method body (a few lines, a single expression). \
-       - Use for non-symbol content: imports, comments, annotations, XML/config files. \
-       - Requires exact text match — read the file first to get the precise string. \
-     **Line-range replace** (`intellij_write_file` with `start_line`/`end_line`/`new_str`): \
-       - Last resort. Use only when old_str matching fails (e.g., duplicate text) and no symbol applies.
+     **`edit_text`** (surgical find-and-replace with `old_str`/`new_str`): \
+       - Use ONLY when symbol tools cannot apply: small edits within a method body (a few lines, a single expression), \
+         imports, comments, annotations, XML/config files. \
+       - Requires exact text match — fragile if the file was reformatted since last read. \
+       - NEVER use `edit_text` to replace an entire method — use `replace_symbol_body` instead. \
+     **`intellij_write_file`** (full file write with `content`): \
+       - Use ONLY when writing an entire file from scratch or replacing all content. \
+       - Creates the file if it doesn't exist.
 
   5. BEFORE EDITING UNFAMILIAR FILES: If you get old_str match failures, \
      call format_code first to normalize whitespace, then re-read.
@@ -35,7 +38,7 @@
   6. GIT: Use built-in git tools (git_status, git_diff, git_log, git_commit, etc.). \
      NEVER use run_command for git — shell git bypasses IntelliJ's VCS layer and causes editor buffer desync.
 
-  7. GrazieInspection (grammar) does NOT support apply_quickfix → use intellij_write_file instead.
+  7. GrazieInspection (grammar) does NOT support apply_quickfix → use edit_text instead.
 
   8. VERIFICATION HIERARCHY (use the lightest tool that suffices): \
      a) Auto-highlights in write response → after EACH edit. Instant. Catches most errors. \
@@ -44,8 +47,10 @@
 
   SUB-AGENT TOOL GUIDANCE:
   Sub-agents do not see these instructions. When launching sub-agents via the Task tool, \
-  include relevant tool guidance in the prompt you write for them: \
-  - Explore agents: "Use `intellij_read_file` to read files, `search_text` to search code." \
+  PREFER the custom `@ide-explore` agent over the built-in `explore` agent — it uses \
+  IntelliJ code intelligence tools (live editor buffers) instead of CLI tools (stale disk files). \
+  Include relevant tool guidance in the prompt you write for them: \
+  - ide-explore agents: Already configured to use IntelliJ tools. Just describe what you need found. \
   - Task agents: "Use `run_command` for shell commands. Use `intellij_read_file` to read files." \
   - All sub-agents: "Use IDE git tools (git_status, git_diff, git_log, etc.) for reading git state — never shell git." \
   - All sub-agents: "Do NOT use git write commands (git_commit, git_stage, etc.) — only the main agent may write."
@@ -114,6 +119,11 @@ Use **conventional commits**:
 - **Use `PlatformApiCompat`** for any JetBrains API call that differs across supported IDE versions (changed signatures,
   moved classes, renamed methods). Wrap the call in a static method there with a Javadoc `<b>Why extracted:</b>` block
   explaining the incompatibility. This keeps version-specific logic in one place and out of business code.
+- **Before calling a JetBrains API directly**, check whether `PlatformApiCompat` already provides a wrapper for it.
+  Many APIs (e.g., `ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()`, `PluginManagerCore.getPlugin()`,
+  `FileTypeDetector.EP_NAME`) cause false-positive compilation errors in the IDE daemon because the extension point
+  generic differs between IDE SDK versions — even though Gradle compiles fine. `PlatformApiCompat` centralises these
+  calls so the daemon errors are confined to one file. **Never bypass it by calling the raw API from business code.**
 
 ### Null Safety
 

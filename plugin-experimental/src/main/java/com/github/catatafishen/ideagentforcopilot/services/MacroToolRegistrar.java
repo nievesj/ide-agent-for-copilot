@@ -76,31 +76,6 @@ public final class MacroToolRegistrar {
     }
 
     /**
-     * Returns ToolEntry instances for all currently registered macro tools,
-     * suitable for inclusion in tool lists.
-     */
-    public List<ToolRegistry.ToolEntry> getRegisteredToolEntries() {
-        MacroToolSettings settings = MacroToolSettings.getInstance(project);
-        List<ToolRegistry.ToolEntry> entries = new ArrayList<>();
-        for (MacroRegistration reg : settings.getRegistrations()) {
-            if (reg.enabled && !reg.toolName.isEmpty() && !reg.macroName.isEmpty()) {
-                entries.add(new ToolRegistry.ToolEntry(
-                    reg.toolName,
-                    "Macro: " + reg.macroName,
-                    reg.description.isEmpty()
-                        ? "User-recorded macro: " + reg.macroName
-                        : reg.description,
-                    ToolRegistry.Category.MACRO,
-                    false,  // not built-in
-                    true,   // hasDenyControl — agents should ask permission
-                    true    // supportsPathSubPermissions — has file parameter
-                ));
-            }
-        }
-        return entries;
-    }
-
-    /**
      * Sanitizes a macro name into a valid MCP tool ID.
      * Converts to lowercase, replaces non-alphanumeric with underscores,
      * collapses multiple underscores, and adds "macro_" prefix.

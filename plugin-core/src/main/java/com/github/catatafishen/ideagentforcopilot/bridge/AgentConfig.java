@@ -37,22 +37,23 @@ public interface AgentConfig {
      * Find the agent binary on the system.
      *
      * @return absolute path to the agent binary
-     * @throws CopilotException if the binary cannot be found
+     * @throws AcpException if the binary cannot be found
      */
     @NotNull
-    String findAgentBinary() throws CopilotException;
+    String findAgentBinary() throws AcpException;
 
     /**
      * Build the ProcessBuilder for launching the agent in ACP mode.
      *
      * @param binaryPath      path returned by {@link #findAgentBinary()}
      * @param projectBasePath project root (for config-dir, working directory)
+     * @param mcpPort         port the MCP HTTP server listens on (for stdio proxy)
      * @return configured ProcessBuilder ready to start
-     * @throws CopilotException if the command cannot be built
+     * @throws AcpException if the command cannot be built
      */
     @NotNull
-    ProcessBuilder buildAcpProcess(@NotNull String binaryPath, @Nullable String projectBasePath)
-        throws CopilotException;
+    ProcessBuilder buildAcpProcess(@NotNull String binaryPath, @Nullable String projectBasePath,
+                                   int mcpPort) throws AcpException;
 
     /**
      * Extract agent-specific data from the ACP {@code initialize} response.
@@ -75,11 +76,63 @@ public interface AgentConfig {
      * @return auth method, or null if not available or not applicable
      */
     @Nullable
-    AcpClient.AuthMethod getAuthMethod();
+    AuthMethod getAuthMethod();
 
     /**
      * Get the resolved path to the agent binary (for external commands like login/logout).
      */
     @Nullable
     String getAgentBinaryPath();
+
+    /**
+     * Returns the path (relative to project root) where agent definition files ({@code *.md}) live.
+     * When non-null, an agent selector dropdown is shown; selecting an agent prepends
+     * {@code @agent-name } to the prompt. {@code null} = no dropdown shown.
+     */
+    @Nullable
+    default String getAgentsDirectory() {
+        return null;
+    }
+
+    /**
+     * Whether ACP {@code ResourceReference} objects need their content duplicated as
+     * plain text in the prompt. GitHub Copilot surfaces resource references as
+     * metadata-only (path + line count) without inlining the content for the model,
+     * so the plugin appends the text as a workaround. Agents that honour structured
+     * resource references natively should return {@code false}.
+     *
+     * @return {@code true} if resource content must be appended as plain text
+     */
+    default boolean requiresResourceContentDuplication() {
+        return false;
+    }
+
+    /**
+     * Whether to send {@code excludedTools} in the {@code session/new} request
+     * to remove the agent's built-in tools (view, edit, bash, etc.).
+     * Agents like OpenCode honour this parameter; Copilot CLI ignores it (bug #556).
+     */
+    default boolean shouldExcludeBuiltInTools() {
+        return false;
+    }
+
+    /**
+     * Returns the permission injection method for this agent.
+     * Controls how per-tool ALLOW/ASK/DENY settings are communicated to the agent process.
+     */
+    @NotNull
+    default com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod getPermissionInjectionMethod() {
+        return com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod.NONE;
+    }
+
+    /**
+     * Returns the name under which the plugin's MCP server is registered for this agent session.
+     * Normally {@code "intellij-code-tools"} (the injected server name), but may differ if the
+     * user has pre-registered the server under a different name in the agent's persistent config.
+     * Used to strip the server-name prefix from incoming tool-call names when resolving tool IDs.
+     */
+    @NotNull
+    default String getEffectiveMcpServerName() {
+        return "intellij-code-tools";
+    }
 }

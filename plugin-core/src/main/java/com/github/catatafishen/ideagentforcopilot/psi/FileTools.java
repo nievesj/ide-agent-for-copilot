@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
-import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
@@ -23,9 +22,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Handles file read/write/create/delete tool calls for the PSI Bridge.
@@ -40,16 +39,20 @@ class FileTools extends AbstractToolHandler {
     private static final String PARAM_END_LINE = "end_line";
     private static final String PARAM_NEW_STR = "new_str";
     private static final String FORMAT_CHARS_SUFFIX = " chars)";
+    private static final String PARAM_COUNT = "count";
+    private static final String AUTO_FORMAT_SUFFIX = " (auto-format queued)";
     static final java.awt.Color HIGHLIGHT_EDIT = new java.awt.Color(80, 160, 80, 40);
     static final java.awt.Color HIGHLIGHT_READ = new java.awt.Color(80, 120, 200, 35);
+    private static final int MAX_READ_LINES = 2000;
 
     /**
      * Returns a label like "ui-reviewer", "claude-sonnet-4.5", or "Agent" as fallback.
      */
-    static String agentLabel() {
-        String agent = CopilotSettings.getActiveAgentLabel();
+    static String agentLabel(Project project) {
+        ToolLayerSettings settings = ToolLayerSettings.getInstance(project);
+        String agent = settings.getActiveAgentLabel();
         if (agent != null) return agent;
-        String model = CopilotSettings.getSelectedModel();
+        String model = settings.getSelectedModel();
         return model != null ? model : "Agent";
     }
 
@@ -92,9 +95,13 @@ class FileTools extends AbstractToolHandler {
         register("intellij_read_file", this::readFile);
         register("write_file", this::writeFile);
         register("intellij_write_file", this::writeFile);
+        register("edit_text", this::writeFile);
         register("create_file", this::createFile);
         register("delete_file", this::deleteFile);
+        register("rename_file", this::renameFile);
+        register("move_file", this::moveFile);
         register("undo", this::undo);
+        register("redo", this::redo);
         register("reload_from_disk", this::reloadFromDisk);
     }
 
@@ -118,10 +125,10 @@ class FileTools extends AbstractToolHandler {
 
             // Add directory marking hint for excluded/generated files
             String hint = getDirectoryMarkingHint(vf);
-            return hint != null ? hint + "\n" + content : content;
+            return applyReadHintAndTruncate(content, hint);
         });
 
-        followFileIfEnabled(project, pathStr, startLine > 0 ? startLine : -1, endLine > 0 ? endLine : -1, HIGHLIGHT_READ, agentLabel() + " is reading");
+        followFileIfEnabled(project, pathStr, startLine > 0 ? startLine : -1, endLine > 0 ? endLine : -1, HIGHLIGHT_READ, agentLabel(project) + " is reading");
         FileAccessTracker.recordRead(project, pathStr);
         return result;
     }
@@ -146,7 +153,24 @@ class FileTools extends AbstractToolHandler {
         if (fileIndex.isInGeneratedSources(vf)) {
             return "[generated – this file is auto-generated; prefer editing the source instead]";
         }
+        if (fileIndex.isInTestSourceContent(vf)) {
+            return "[test]";
+        }
+        if (fileIndex.isInSourceContent(vf)) {
+            return "[source]";
+        }
         return null;
+    }
+
+    private String applyReadHintAndTruncate(String content, String hint) {
+        String[] lines = content.split("\n", -1);
+        if (lines.length > MAX_READ_LINES) {
+            String truncated = String.join("\n", java.util.Arrays.copyOfRange(lines, 0, MAX_READ_LINES));
+            String header = "[Large file: " + lines.length + " lines total — showing first " + MAX_READ_LINES
+                + " lines. Use start_line/end_line to read specific sections.]\n";
+            return (hint != null ? hint + "\n" : "") + header + truncated;
+        }
+        return hint != null ? hint + "\n" + content : content;
     }
 
     private String extractLineRange(String content, int startLine, int endLine) {
@@ -174,7 +198,7 @@ class FileTools extends AbstractToolHandler {
      */
     static void followFileIfEnabled(Project project, String pathStr, int startLine, int endLine,
                                     java.awt.Color highlightColor, String actionLabel) {
-        if (!CopilotSettings.getFollowAgentFiles(project)) return;
+        if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
 
         EdtUtil.invokeLater(() -> {
             if (!navigating.compareAndSet(false, true)) return;
@@ -194,10 +218,7 @@ class FileTools extends AbstractToolHandler {
                     fem.openFile(vf, false);
                 }
 
-                // Also select in the Project View so the tree follows along
                 selectInProjectView(project, vf);
-            } catch (Exception e) {
-                LOG.debug("Follow agent file failed: " + pathStr, e);
             } finally {
                 navigating.set(false);
             }
@@ -244,8 +265,6 @@ class FileTools extends AbstractToolHandler {
                 int lineCount = doc.getLineCount();
                 if (midLine - 1 >= lineCount) break;
 
-                // If the highlighted range fits in the viewport, center it;
-                // otherwise scroll so the start (with the action label) is visible near the top.
                 int visibleLines = editor.getScrollingModel().getVisibleArea().height
                     / editor.getLineHeight();
                 int rangeLines = endLine - startLine + 1;
@@ -306,6 +325,7 @@ class FileTools extends AbstractToolHandler {
                 markup.removeHighlighter(hl);
                 if (inlay != null) inlay.dispose();
             } catch (Exception ignored) {
+                // Safe to ignore: highlighter cleanup is non-critical
             }
         }, 2500);
     }
@@ -358,11 +378,24 @@ class FileTools extends AbstractToolHandler {
         }
     }
 
+    private static final String PARAM_AUTO_FORMAT = "auto_format_and_optimize_imports";
+    private static final String PARAM_AUTO_FORMAT_LEGACY = "auto_format";
+
+    /**
+     * Resolves the auto-format flag from tool args, supporting both the new
+     * {@code auto_format_and_optimize_imports} name and the legacy {@code auto_format} name.
+     */
+    private static boolean resolveAutoFormat(JsonObject args) {
+        if (args.has(PARAM_AUTO_FORMAT)) return args.get(PARAM_AUTO_FORMAT).getAsBoolean();
+        if (args.has(PARAM_AUTO_FORMAT_LEGACY)) return args.get(PARAM_AUTO_FORMAT_LEGACY).getAsBoolean();
+        return true; // default
+    }
+
     private String writeFile(JsonObject args) throws Exception {
         if (!args.has("path") || args.get("path").isJsonNull())
             return ToolUtils.ERROR_PATH_REQUIRED;
         String pathStr = args.get("path").getAsString();
-        boolean autoFormat = !args.has("auto_format") || args.get("auto_format").getAsBoolean();
+        boolean autoFormat = resolveAutoFormat(args);
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         // [0] = start line, [1] = end line (1-based) to scroll/highlight after write; -1 = don't.
@@ -392,7 +425,7 @@ class FileTools extends AbstractToolHandler {
         });
 
         String result = resultFuture.get(15, TimeUnit.SECONDS);
-        followFileIfEnabled(project, pathStr, followRange[0], followRange[1], HIGHLIGHT_EDIT, agentLabel() + " is editing");
+        followFileIfEnabled(project, pathStr, followRange[0], followRange[1], HIGHLIGHT_EDIT, agentLabel(project) + " is editing");
         FileAccessTracker.recordWrite(project, pathStr);
         return result;
     }
@@ -412,7 +445,8 @@ class FileTools extends AbstractToolHandler {
             FileDocumentManager.getInstance().saveDocument(doc);
             String syntaxWarning = checkSyntaxErrors(pathStr);
             if (autoFormat && syntaxWarning.isEmpty()) pendingAutoFormat.add(pathStr);
-            resultFuture.complete("Written: " + pathStr + " (" + newContent.length() + FORMAT_CHARS_SUFFIX + syntaxWarning);
+            String formatNote = autoFormat && syntaxWarning.isEmpty() ? AUTO_FORMAT_SUFFIX : "";
+            resultFuture.complete("Written: " + pathStr + " (" + newContent.length() + FORMAT_CHARS_SUFFIX + formatNote + syntaxWarning);
         } else {
             ApplicationManager.getApplication().runWriteAction(() -> {
                 try (var os = vf.getOutputStream(this)) {
@@ -496,8 +530,9 @@ class FileTools extends AbstractToolHandler {
         followRange[0] = doc.getLineNumber(finalIdx) + 1;
         int ctxEnd = Math.min(finalIdx + normalizedNew.length(), doc.getTextLength());
         followRange[1] = doc.getLineNumber(Math.max(ctxEnd - 1, finalIdx)) + 1;
+        String formatNote = autoFormat && syntaxWarning.isEmpty() ? AUTO_FORMAT_SUFFIX : "";
         resultFuture.complete("Edited: " + pathStr + " (replaced " + finalLen + " chars with " + normalizedNew.length() + FORMAT_CHARS_SUFFIX
-            + contextLines(doc, finalIdx, ctxEnd) + syntaxWarning);
+            + contextLines(doc, finalIdx, ctxEnd) + formatNote + syntaxWarning);
     }
 
     /**
@@ -555,9 +590,10 @@ class FileTools extends AbstractToolHandler {
         if (autoFormat && syntaxWarning.isEmpty()) pendingAutoFormat.add(pathStr);
         int ctxEnd = Math.min(fStart + fNew.length(), doc.getTextLength());
         followRange[1] = doc.getLineNumber(Math.max(ctxEnd - 1, fStart)) + 1;
+        String formatNote = autoFormat && syntaxWarning.isEmpty() ? AUTO_FORMAT_SUFFIX : "";
         resultFuture.complete("Edited: " + pathStr + " (replaced lines " + startLine + "-" + endLine
             + " (" + replacedLines + " lines) with " + fNew.length() + FORMAT_CHARS_SUFFIX
-            + contextLines(doc, fStart, ctxEnd) + syntaxWarning);
+            + contextLines(doc, fStart, ctxEnd) + formatNote + syntaxWarning);
     }
 
     /**
@@ -700,7 +736,7 @@ class FileTools extends AbstractToolHandler {
 
             if (errors.isEmpty()) return "";
             int count = Math.min(errors.size(), 5);
-            String summary = "\n\n\u26A0\uFE0F WARNING: " + errors.size() + " syntax error(s) after write:\n"
+            String summary = "\n\nWARNING: " + errors.size() + " syntax error(s) after write:\n"
                 + String.join("\n", errors.subList(0, count));
             if (errors.size() > count) summary += "\n  ... and " + (errors.size() - count) + " more";
             return summary;
@@ -741,7 +777,7 @@ class FileTools extends AbstractToolHandler {
 
         if (Files.exists(filePath)) {
             return "Error: File already exists: " + pathStr +
-                ". Use intellij_write_file to modify existing files.";
+                ". Use edit_text to modify existing files.";
         }
 
         // Create parent directories
@@ -765,7 +801,7 @@ class FileTools extends AbstractToolHandler {
         });
 
         String result = resultFuture.get(10, TimeUnit.SECONDS);
-        followFileIfEnabled(project, pathStr, 1, lineCount, HIGHLIGHT_EDIT, agentLabel() + " created");
+        followFileIfEnabled(project, pathStr, 1, lineCount, HIGHLIGHT_EDIT, agentLabel(project) + " created");
         FileAccessTracker.recordWrite(project, pathStr);
         return result;
     }
@@ -814,12 +850,111 @@ class FileTools extends AbstractToolHandler {
                         "Delete File: " + vf.getName(),
                         null
                     );
-                    resultFuture.complete("✅ Deleted file: " + pathStr);
+                    resultFuture.complete("Deleted file: " + pathStr);
                 } catch (Exception e) {
                     resultFuture.complete("Error deleting file: " + e.getMessage());
                 }
             })
         );
+    }
+
+    private String renameFile(JsonObject args) throws Exception {
+        if (!args.has("path") || !args.has("new_name"))
+            return ToolUtils.ERROR_PREFIX + "'path' and 'new_name' parameters are required";
+        String pathStr = args.get("path").getAsString();
+        String newName = args.get("new_name").getAsString();
+
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+
+        ReadAction.nonBlocking(() -> {
+            try {
+                VirtualFile vf = resolveVirtualFile(pathStr);
+                if (vf == null) {
+                    resultFuture.complete(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
+                    return null;
+                }
+                String oldName = vf.getName();
+                EdtUtil.invokeLater(() ->
+                    ApplicationManager.getApplication().runWriteAction(() -> {
+                        try {
+                            com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
+                                project,
+                                () -> {
+                                    try {
+                                        vf.rename(FileTools.this, newName);
+                                    } catch (IOException e) {
+                                        throw new RuntimeException(e);
+                                    }
+                                },
+                                "Rename File: " + oldName + " to " + newName,
+                                null
+                            );
+                            resultFuture.complete("Renamed " + oldName + " to " + newName);
+                        } catch (Exception e) {
+                            resultFuture.complete("Error renaming file: " + e.getMessage());
+                        }
+                    })
+                );
+                return null;
+            } catch (Exception e) {
+                resultFuture.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
+                return null;
+            }
+        }).inSmartMode(project).submit(AppExecutorUtil.getAppExecutorService());
+
+        return resultFuture.get(10, TimeUnit.SECONDS);
+    }
+
+    private String moveFile(JsonObject args) throws Exception {
+        if (!args.has("path") || !args.has("destination"))
+            return ToolUtils.ERROR_PREFIX + "'path' and 'destination' parameters are required";
+        String pathStr = args.get("path").getAsString();
+        String destStr = args.get("destination").getAsString();
+
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+
+        ReadAction.nonBlocking(() -> {
+            try {
+                VirtualFile vf = resolveVirtualFile(pathStr);
+                if (vf == null) {
+                    resultFuture.complete(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
+                    return null;
+                }
+                VirtualFile destDir = resolveVirtualFile(destStr);
+                if (destDir == null || !destDir.isDirectory()) {
+                    resultFuture.complete(ToolUtils.ERROR_PREFIX + "Destination directory not found: " + destStr);
+                    return null;
+                }
+                String oldPath = vf.getPath();
+                EdtUtil.invokeLater(() ->
+                    ApplicationManager.getApplication().runWriteAction(() -> {
+                        try {
+                            com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
+                                project,
+                                () -> {
+                                    try {
+                                        vf.move(FileTools.this, destDir);
+                                    } catch (IOException e) {
+                                        throw new RuntimeException(e);
+                                    }
+                                },
+                                "Move File: " + vf.getName(),
+                                null
+                            );
+                            resultFuture.complete("Moved " + oldPath + " to " + destDir.getPath() + "/" + vf.getName());
+                        } catch (Exception e) {
+                            resultFuture.complete("Error moving file: " + e.getMessage());
+                        }
+                    })
+                );
+                return null;
+            } catch (Exception e) {
+                resultFuture.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
+                return null;
+            }
+        }).inSmartMode(project).submit(AppExecutorUtil.getAppExecutorService());
+
+        return resultFuture.get(10, TimeUnit.SECONDS);
     }
 
     /**
@@ -871,11 +1006,55 @@ class FileTools extends AbstractToolHandler {
     private String undo(JsonObject args) throws Exception {
         if (!args.has("path")) return ToolUtils.ERROR_PATH_REQUIRED;
         String pathStr = args.get("path").getAsString();
-        int count = args.has("count") ? args.get("count").getAsInt() : 1;
+        int count = args.has(PARAM_COUNT) ? args.get(PARAM_COUNT).getAsInt() : 1;
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> performUndo(pathStr, count, resultFuture));
         return resultFuture.get(10, TimeUnit.SECONDS);
+    }
+
+    private String redo(JsonObject args) throws Exception {
+        if (!args.has("path")) return ToolUtils.ERROR_PATH_REQUIRED;
+        String pathStr = args.get("path").getAsString();
+        int count = args.has(PARAM_COUNT) ? args.get(PARAM_COUNT).getAsInt() : 1;
+
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> performRedo(pathStr, count, resultFuture));
+        return resultFuture.get(10, TimeUnit.SECONDS);
+    }
+
+    private void performRedo(String pathStr, int count, CompletableFuture<String> resultFuture) {
+        try {
+            VirtualFile vf = resolveVirtualFile(pathStr);
+            if (vf == null) {
+                resultFuture.complete(ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
+                return;
+            }
+            com.intellij.openapi.fileEditor.FileEditor fileEditor = findFileEditor(vf);
+            UndoManager undoManager = UndoManager.getInstance(project);
+            String result = executeRedoSteps(undoManager, fileEditor, count, pathStr);
+            resultFuture.complete(result);
+        } catch (Exception e) {
+            resultFuture.complete("Redo failed: " + e.getMessage());
+        }
+    }
+
+    private String executeRedoSteps(UndoManager undoManager, com.intellij.openapi.fileEditor.FileEditor fileEditor, int count, String pathStr) {
+        StringBuilder actions = new StringBuilder();
+        int redone = 0;
+        for (int i = 0; i < count; i++) {
+            if (!undoManager.isRedoAvailable(fileEditor)) break;
+            String actionName = PlatformApiCompat.getRedoActionName(undoManager, fileEditor);
+            undoManager.redo(fileEditor);
+            redone++;
+            if (!actions.isEmpty()) actions.append(", ");
+            actions.append(actionName != null && !actionName.isEmpty() ? actionName : "unknown");
+        }
+        if (redone == 0) {
+            return "Nothing to redo for " + pathStr;
+        }
+        FileDocumentManager.getInstance().saveAllDocuments();
+        return "Redid " + redone + " action(s) on " + pathStr + ": " + actions;
     }
 
     /**

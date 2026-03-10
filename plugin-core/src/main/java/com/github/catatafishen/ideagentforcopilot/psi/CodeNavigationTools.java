@@ -21,7 +21,7 @@ import com.intellij.psi.search.searches.ReferencesSearch;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -53,34 +53,92 @@ class CodeNavigationTools extends AbstractToolHandler {
 
     // ---- list_project_files ----
 
+    /**
+     * Shows a transient message in IntelliJ's status bar when follow-agent mode is active.
+     * Used to give visual feedback during search operations.
+     */
+    private void showSearchFeedback(String message) {
+        if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
+        EdtUtil.invokeLater(() -> {
+            var statusBar = com.intellij.openapi.wm.WindowManager.getInstance().getStatusBar(project);
+            if (statusBar != null) {
+                statusBar.setInfo(message);
+            }
+        });
+    }
+
     String listProjectFiles(JsonObject args) {
         String dir = args.has("directory") ? args.get("directory").getAsString() : "";
         String pattern = args.has("pattern") ? args.get("pattern").getAsString() : "";
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> computeProjectFilesList(dir, pattern));
+        String sort = args.has("sort") ? args.get("sort").getAsString() : "name";
+        long minSize = args.has("min_size") ? args.get("min_size").getAsLong() : -1;
+        long maxSize = args.has("max_size") ? args.get("max_size").getAsLong() : -1;
+        long modifiedAfter = args.has("modified_after") ? ToolUtils.parseDateParam(args.get("modified_after").getAsString()) : -1;
+        long modifiedBefore = args.has("modified_before") ? ToolUtils.parseDateParam(args.get("modified_before").getAsString()) : -1;
+        return ApplicationManager.getApplication().runReadAction(
+            (Computable<String>) () -> computeProjectFilesList(dir, pattern, sort, minSize, maxSize, modifiedAfter, modifiedBefore));
     }
 
-    String computeProjectFilesList(String dir, String pattern) {
+    String computeProjectFilesList(String dir, String pattern, String sort,
+                                   long minSize, long maxSize, long modifiedAfter, long modifiedBefore) {
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
-        List<String> files = new ArrayList<>();
+        record FileEntry(String relPath, String tag, String typeName, long size, long timestamp) {
+        }
+
+        List<FileEntry> entries = new ArrayList<>();
         ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
         fileIndex.iterateContent(vf -> {
             if (vf.isDirectory()) return true;
             String relPath = relativize(basePath, vf.getPath());
             if (relPath == null) return true;
             if (!dir.isEmpty() && !relPath.startsWith(dir)) return true;
-            if (!pattern.isEmpty() && ToolUtils.doesNotMatchGlob(vf.getName(), pattern)) return true;
-            String tag = fileIndex.isExcluded(vf) ? "excluded "
-                : fileIndex.isInGeneratedSources(vf) ? "generated "
-                : fileIndex.isInTestSourceContent(vf) ? "test " : "";
-            files.add(String.format("%s [%s%s]", relPath, tag, ToolUtils.fileType(vf.getName())));
-            return files.size() < 500;
+            if (!pattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, pattern)) return true;
+            long size = vf.getLength();
+            long ts = vf.getTimeStamp();
+            if (!matchesSizeAndDateFilters(size, ts, minSize, maxSize, modifiedAfter, modifiedBefore)) return true;
+            String tag = resolveTag(fileIndex, vf);
+            entries.add(new FileEntry(relPath, tag, ToolUtils.fileType(vf.getName()), size, ts));
+            return entries.size() < 500;
         });
 
-        if (files.isEmpty()) return "No files found";
-        Collections.sort(files);
-        return files.size() + " files:\n" + String.join("\n", files);
+        if (entries.isEmpty()) return "No files found";
+
+        Comparator<FileEntry> comparator = switch (sort) {
+            case "size" -> Comparator.comparingLong(FileEntry::size).reversed();
+            case "modified" -> Comparator.comparingLong(FileEntry::timestamp).reversed();
+            default -> Comparator.comparing(FileEntry::relPath);
+        };
+        entries.sort(comparator);
+
+        List<String> lines = new ArrayList<>(entries.size());
+        for (FileEntry e : entries) {
+            lines.add(String.format("%s [%s%s, %s, %s]",
+                e.relPath(), e.tag(), e.typeName(),
+                ToolUtils.formatFileSize(e.size()),
+                ToolUtils.formatFileTimestamp(e.timestamp())));
+        }
+        return entries.size() + " files:\n" + String.join("\n", lines);
+    }
+
+    private static boolean matchesSizeAndDateFilters(long size, long ts,
+                                                     long minSize, long maxSize,
+                                                     long modifiedAfter, long modifiedBefore) {
+        if (minSize >= 0 && size < minSize) return false;
+        if (maxSize >= 0 && size > maxSize) return false;
+        return (modifiedAfter < 0 || ts >= modifiedAfter)
+            && (modifiedBefore < 0 || ts <= modifiedBefore);
+    }
+
+    private static String resolveTag(ProjectFileIndex fileIndex, VirtualFile vf) {
+        if (fileIndex.isInGeneratedSources(vf)) {
+            // A generated root can be either production-generated or test-generated
+            return fileIndex.isInTestSourceContent(vf) ? "generated-test " : "generated ";
+        }
+        if (fileIndex.isInTestSourceContent(vf)) return "test ";
+        if (fileIndex.isInSourceContent(vf)) return "source ";
+        return "";
     }
 
     // ---- get_file_outline ----
@@ -155,12 +213,15 @@ class CodeNavigationTools extends AbstractToolHandler {
         String query = args.has(PARAM_QUERY) ? args.get(PARAM_QUERY).getAsString() : "";
         String typeFilter = args.has("type") ? args.get("type").getAsString() : "";
 
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+        showSearchFeedback("🔍 Searching symbols: " + query);
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             if (query.isEmpty() || "*".equals(query)) {
                 return searchSymbolsWildcard(typeFilter);
             }
             return searchSymbolsExact(query, typeFilter);
         });
+        showSearchFeedback("✓ Symbol search complete: " + query);
+        return result;
     }
 
     String searchSymbolsWildcard(String typeFilter) {
@@ -267,19 +328,18 @@ class CodeNavigationTools extends AbstractToolHandler {
         String symbol = args.get(PARAM_SYMBOL).getAsString();
         String filePattern = args.has(PARAM_FILE_PATTERN) ? args.get(PARAM_FILE_PATTERN).getAsString() : "";
 
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+        showSearchFeedback("🔍 Finding references: " + symbol);
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             List<String> results = new ArrayList<>();
             String basePath = project.getBasePath();
             GlobalSearchScope scope = GlobalSearchScope.projectScope(project);
 
-            // Try to find the definition first for accurate ReferencesSearch
             PsiElement definition = findDefinition(symbol, scope);
 
             if (definition != null) {
                 collectPsiReferences(definition, scope, filePattern, basePath, results);
             }
 
-            // Fall back to word search if no PSI references found
             if (results.isEmpty()) {
                 collectWordReferences(symbol, scope, filePattern, basePath, results);
             }
@@ -287,28 +347,32 @@ class CodeNavigationTools extends AbstractToolHandler {
             if (results.isEmpty()) return "No references found for '" + symbol + "'";
             return results.size() + " references found:\n" + String.join("\n", results);
         });
+        showSearchFeedback("✓ Reference search complete: " + symbol);
+        return result;
     }
 
     void collectPsiReferences(PsiElement definition, GlobalSearchScope scope,
                               String filePattern, String basePath, List<String> results) {
         for (PsiReference ref : ReferencesSearch.search(definition, scope).findAll()) {
             if (results.size() >= 100) break;
-
-            PsiElement refEl = ref.getElement();
-            PsiFile file = refEl.getContainingFile();
-            if (file != null && file.getVirtualFile() != null
-                && (filePattern.isEmpty() || !ToolUtils.doesNotMatchGlob(file.getName(), filePattern))) {
-                Document doc = FileDocumentManager.getInstance().getDocument(file.getVirtualFile());
-                if (doc != null) {
-                    int line = doc.getLineNumber(refEl.getTextOffset()) + 1;
-                    String relPath = basePath != null
-                        ? relativize(basePath, file.getVirtualFile().getPath())
-                        : file.getVirtualFile().getPath();
-                    String lineText = ToolUtils.getLineText(doc, line - 1);
-                    results.add(String.format(FORMAT_LINE_REF, relPath, line, lineText));
-                }
-            }
+            String entry = buildReferenceEntry(ref, filePattern, basePath);
+            if (entry != null) results.add(entry);
         }
+    }
+
+    private String buildReferenceEntry(PsiReference ref, String filePattern, String basePath) {
+        PsiElement refEl = ref.getElement();
+        PsiFile file = refEl.getContainingFile();
+        if (file == null || file.getVirtualFile() == null) return null;
+        String relPath = basePath != null
+            ? relativize(basePath, file.getVirtualFile().getPath())
+            : file.getVirtualFile().getPath();
+        if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, filePattern)) return null;
+        Document doc = FileDocumentManager.getInstance().getDocument(file.getVirtualFile());
+        if (doc == null) return null;
+        int line = doc.getLineNumber(refEl.getTextOffset()) + 1;
+        String lineText = ToolUtils.getLineText(doc, line - 1);
+        return String.format(FORMAT_LINE_REF, relPath, line, lineText);
     }
 
     void collectWordReferences(String symbol, GlobalSearchScope scope,
@@ -317,16 +381,16 @@ class CodeNavigationTools extends AbstractToolHandler {
             (element, offsetInElement) -> {
                 PsiFile file = element.getContainingFile();
                 if (file == null || file.getVirtualFile() == null) return true;
-                if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(file.getName(), filePattern))
+                String relPath = basePath != null
+                    ? relativize(basePath, file.getVirtualFile().getPath())
+                    : file.getVirtualFile().getPath();
+                if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, filePattern))
                     return true;
 
                 Document doc = FileDocumentManager.getInstance()
                     .getDocument(file.getVirtualFile());
                 if (doc != null) {
                     int line = doc.getLineNumber(element.getTextOffset()) + 1;
-                    String relPath = basePath != null
-                        ? relativize(basePath, file.getVirtualFile().getPath())
-                        : file.getVirtualFile().getPath();
                     String lineText = ToolUtils.getLineText(doc, line - 1);
                     String entry = String.format(FORMAT_LINE_REF, relPath, line, lineText);
                     if (!results.contains(entry)) results.add(entry);
@@ -360,18 +424,11 @@ class CodeNavigationTools extends AbstractToolHandler {
 
     // ---- search_text ----
 
-    private void searchFileForPattern(VirtualFile vf, String filePattern, java.util.regex.Pattern pattern,
-                                      String basePath, List<String> results, int maxResults) {
-        if (vf.isDirectory() || vf.getLength() > 1_000_000) return;
-        if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(vf.getName(), filePattern)) return;
-
+    private void searchFileForPattern(VirtualFile vf, java.util.regex.Pattern pattern,
+                                      String relPath, List<String> results, int maxResults) {
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         if (doc == null) return;
-
         String text = doc.getText();
-        String relPath = relativize(basePath, vf.getPath());
-        if (relPath == null) return;
-
         java.util.regex.Matcher matcher = pattern.matcher(text);
         while (matcher.find() && results.size() < maxResults) {
             int line = doc.getLineNumber(matcher.start()) + 1;
@@ -380,10 +437,6 @@ class CodeNavigationTools extends AbstractToolHandler {
         }
     }
 
-    /**
-     * Full-text regex/literal search across project files, reading from IntelliJ buffers
-     * (not disk). This replaces the need for external grep/ripgrep tools.
-     */
     String searchText(JsonObject args) {
         if (!args.has(PARAM_QUERY) || args.get(PARAM_QUERY).isJsonNull())
             return "Error: 'query' parameter is required";
@@ -393,7 +446,11 @@ class CodeNavigationTools extends AbstractToolHandler {
         boolean caseSensitive = !args.has("case_sensitive") || args.get("case_sensitive").getAsBoolean();
         int maxResults = args.has("max_results") ? args.get("max_results").getAsInt() : 100;
 
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> performSearch(query, filePattern, isRegex, caseSensitive, maxResults));
+        showSearchFeedback("🔍 Searching text: " + query);
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
+            performSearch(query, filePattern, isRegex, caseSensitive, maxResults));
+        showSearchFeedback("✓ Text search complete: " + query);
+        return result;
     }
 
     private String performSearch(String query, String filePattern, boolean isRegex, boolean caseSensitive, int maxResults) {
@@ -404,14 +461,31 @@ class CodeNavigationTools extends AbstractToolHandler {
         if (pattern == null) return "Error: invalid regex: " + query;
 
         List<String> results = new ArrayList<>();
+        int[] skippedLarge = {0};
         ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
         fileIndex.iterateContent(vf -> {
-            searchFileForPattern(vf, filePattern, pattern, basePath, results, maxResults);
+            if (vf.isDirectory()) return true;
+            String relPath = relativize(basePath, vf.getPath());
+            if (relPath == null) return true;
+            if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, filePattern)) return true;
+            if (vf.getLength() > 1_000_000) {
+                skippedLarge[0]++;
+                return results.size() < maxResults;
+            }
+            searchFileForPattern(vf, pattern, relPath, results, maxResults);
             return results.size() < maxResults;
         });
 
-        if (results.isEmpty()) return "No matches found for '" + query + "'";
-        return results.size() + " matches:\n" + String.join("\n", results);
+        StringBuilder sb = new StringBuilder();
+        if (results.isEmpty()) {
+            sb.append("No matches found for '").append(query).append("'");
+        } else {
+            sb.append(results.size()).append(" matches:\n").append(String.join("\n", results));
+        }
+        if (skippedLarge[0] > 0) {
+            sb.append("\n(").append(skippedLarge[0]).append(" file(s) >1 MB skipped)");
+        }
+        return sb.toString();
     }
 
     private java.util.regex.Pattern compileSearchPattern(String query, boolean isRegex, boolean caseSensitive) {

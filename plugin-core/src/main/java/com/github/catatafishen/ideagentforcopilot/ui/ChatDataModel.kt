@@ -34,7 +34,12 @@ internal val QUICK_REPLY_TAG_REGEX = Regex("""\[quick-reply:\s*([^\]]+)]""", Reg
 // ── Data model ────────────────────────────────────────────────────────────────
 
 internal sealed class EntryData {
-    class Prompt(val text: String, val timestamp: String = "") : EntryData()
+    class Prompt(
+        val text: String,
+        val timestamp: String = "",
+        val contextFiles: List<Triple<String, String, Int>>? = null
+    ) : EntryData()
+
     class Text(val raw: StringBuilder = StringBuilder()) : EntryData()
     class Thinking(val raw: StringBuilder = StringBuilder()) : EntryData()
     class ToolCall(
@@ -57,7 +62,7 @@ internal sealed class EntryData {
 
     class ContextFiles(val files: List<Pair<String, String>>) : EntryData()
     class Status(val icon: String, val message: String) : EntryData()
-    class SessionSeparator(val timestamp: String) : EntryData()
+    class SessionSeparator(val timestamp: String, val agent: String = "") : EntryData()
 }
 
 // ── Tool / sub-agent metadata ─────────────────────────────────────────────────
@@ -129,6 +134,11 @@ internal val TOOL_SUBTITLE_KEY = mapOf(
     "web_search" to "query",
     "web_fetch" to "url",
 )
+
+private val MCP_PREFIX_REGEX = Regex("^(?i)(intellij-code-tools|github-mcp-server)[-_]")
+
+/** Strips MCP server name prefixes from a raw tool name, handling both dash and underscore separators. */
+internal fun stripMcpPrefix(title: String): String = title.replace(MCP_PREFIX_REGEX, "")
 
 internal val TOOL_DISPLAY_INFO = mapOf(
     // Code Navigation

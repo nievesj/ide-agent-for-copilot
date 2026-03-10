@@ -60,6 +60,8 @@ class RefactoringTools extends AbstractToolHandler {
         register("go_to_declaration", this::goToDeclaration);
         if (isPluginInstalled("com.intellij.modules.java")) {
             register("get_type_hierarchy", this::getTypeHierarchyWrapper);
+            register("find_implementations", this::findImplementationsWrapper);
+            register("get_call_hierarchy", this::getCallHierarchyWrapper);
         }
         register("get_documentation", this::getDocumentation);
     }
@@ -293,7 +295,7 @@ class RefactoringTools extends AbstractToolHandler {
         String result = resultFuture.get(30, TimeUnit.SECONDS);
         if (!result.startsWith("Error")) {
             FileTools.followFileIfEnabled(project, pathStr, Math.max(targetLine, 1), Math.max(targetLine, 1),
-                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel() + " refactored");
+                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel(project) + " refactored");
         }
         return result;
     }
@@ -332,10 +334,10 @@ class RefactoringTools extends AbstractToolHandler {
             case "rename" -> performRename(targetElement, symbolName, newName, pathStr);
             case "safe_delete" -> performSafeDelete(targetElement, symbolName, pathStr);
             case "inline" -> "Error: 'inline' refactoring is not yet supported via this tool. " +
-                "Use intellij_write_file to manually inline the code.";
+                "Use edit_text to manually inline the code.";
             case "extract_method" -> "Error: 'extract_method' requires a code selection range " +
                 "which is not well-suited for tool-based invocation. " +
-                "Use intellij_write_file to manually extract the method.";
+                "Use edit_text to manually extract the method.";
             default -> "Error: Unknown operation '" + operation + "'. Supported: rename, safe_delete";
         };
     }
@@ -362,7 +364,7 @@ class RefactoringTools extends AbstractToolHandler {
         com.intellij.psi.PsiDocumentManager.getInstance(project).commitAllDocuments();
         FileDocumentManager.getInstance().saveAllDocuments();
 
-        return "✅ Renamed '" + symbolName + "' to '" + newName + "'\n" +
+        return "Renamed '" + symbolName + "' to '" + newName + "'\n" +
             "  Updated " + refCount + " references across the project.\n" +
             "  File: " + pathStr;
     }
@@ -383,7 +385,7 @@ class RefactoringTools extends AbstractToolHandler {
         com.intellij.psi.PsiDocumentManager.getInstance(project).commitAllDocuments();
         FileDocumentManager.getInstance().saveAllDocuments();
 
-        return "✅ Safely deleted '" + symbolName + "' (no usages found).\n  File: " + pathStr;
+        return "Safely deleted '" + symbolName + "' (no usages found).\n  File: " + pathStr;
     }
 
     private String formatUsageReport(String symbolName, Collection<PsiReference> refs) {
@@ -449,59 +451,64 @@ class RefactoringTools extends AbstractToolHandler {
         // [0] = declPath, [1] = declLine (as string)
         String[] declInfo = new String[2];
 
-        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
-            VirtualFile vf = resolveVirtualFile(pathStr);
-            if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
-
-            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-            if (psiFile == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
-
-            Document document = FileDocumentManager.getInstance().getDocument(vf);
-            if (document == null) return "Error: Cannot get document for: " + pathStr;
-
-            if (targetLine < 1 || targetLine > document.getLineCount()) {
-                return "Error: Line " + targetLine + " is out of bounds (file has " +
-                    document.getLineCount() + FORMAT_LINES_SUFFIX;
-            }
-            int lineStartOffset = document.getLineStartOffset(targetLine - 1);
-            int lineEndOffset = document.getLineEndOffset(targetLine - 1);
-
-            List<PsiElement> declarations = findDeclarationsOnLine(
-                psiFile, lineStartOffset, lineEndOffset, symbolName);
-
-            if (declarations.isEmpty()) {
-                declarations = findDeclarationByOffset(
-                    psiFile, document, lineStartOffset, lineEndOffset, symbolName);
-            }
-
-            if (declarations.isEmpty()) {
-                return "Could not resolve declaration for '" + symbolName + "' at line " + targetLine +
-                    " in " + pathStr + ". The symbol may be unresolved or from an unindexed library.";
-            }
-
-            // Capture first declaration location for follow mode
-            PsiElement firstDecl = declarations.getFirst();
-            PsiFile declFile = firstDecl.getContainingFile();
-            if (declFile != null && declFile.getVirtualFile() != null) {
-                String basePath = project.getBasePath();
-                VirtualFile declVf = declFile.getVirtualFile();
-                declInfo[0] = basePath != null ? relativize(basePath, declVf.getPath()) : declVf.getPath();
-                Document declDoc = FileDocumentManager.getInstance().getDocument(declVf);
-                if (declDoc != null) {
-                    declInfo[1] = String.valueOf(declDoc.getLineNumber(firstDecl.getTextOffset()) + 1);
-                }
-            }
-
-            return formatDeclarationResults(declarations, symbolName);
-        });
+        String result = ApplicationManager.getApplication().runReadAction(
+            (Computable<String>) () -> findAndFormatDeclaration(pathStr, targetLine, symbolName, declInfo));
 
         if (declInfo[0] != null && declInfo[1] != null) {
             int declLine = Integer.parseInt(declInfo[1]);
             FileTools.followFileIfEnabled(project, declInfo[0], declLine, declLine,
-                FileTools.HIGHLIGHT_READ, FileTools.agentLabel() + " found declaration");
+                FileTools.HIGHLIGHT_READ, FileTools.agentLabel(project) + " found declaration");
+        }
+        return result;
+    }
+
+    /**
+     * Must be called inside a read action.
+     */
+    private String findAndFormatDeclaration(String pathStr, int targetLine,
+                                            String symbolName, String[] declInfo) {
+        VirtualFile vf = resolveVirtualFile(pathStr);
+        if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
+
+        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+        if (psiFile == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
+
+        Document document = FileDocumentManager.getInstance().getDocument(vf);
+        if (document == null) return "Error: Cannot get document for: " + pathStr;
+
+        if (targetLine < 1 || targetLine > document.getLineCount()) {
+            return "Error: Line " + targetLine + " is out of bounds (file has " +
+                document.getLineCount() + FORMAT_LINES_SUFFIX;
+        }
+        int lineStartOffset = document.getLineStartOffset(targetLine - 1);
+        int lineEndOffset = document.getLineEndOffset(targetLine - 1);
+
+        List<PsiElement> declarations = findDeclarationsOnLine(
+            psiFile, lineStartOffset, lineEndOffset, symbolName);
+        if (declarations.isEmpty()) {
+            declarations = findDeclarationByOffset(
+                psiFile, document, lineStartOffset, lineEndOffset, symbolName);
+        }
+        if (declarations.isEmpty()) {
+            return "Could not resolve declaration for '" + symbolName + "' at line " + targetLine +
+                " in " + pathStr + ". The symbol may be unresolved or from an unindexed library.";
         }
 
-        return result;
+        captureDeclInfo(declarations.getFirst(), declInfo);
+        return formatDeclarationResults(declarations, symbolName);
+    }
+
+    private void captureDeclInfo(PsiElement firstDecl, String[] declInfo) {
+        PsiFile declFile = firstDecl.getContainingFile();
+        if (declFile == null || declFile.getVirtualFile() == null) return;
+
+        String basePath = project.getBasePath();
+        VirtualFile declVf = declFile.getVirtualFile();
+        declInfo[0] = basePath != null ? relativize(basePath, declVf.getPath()) : declVf.getPath();
+        Document declDoc = FileDocumentManager.getInstance().getDocument(declVf);
+        if (declDoc != null) {
+            declInfo[1] = String.valueOf(declDoc.getLineNumber(firstDecl.getTextOffset()) + 1);
+        }
     }
 
     private List<PsiElement> findDeclarationsOnLine(
@@ -622,6 +629,34 @@ class RefactoringTools extends AbstractToolHandler {
     }
 
     // ---- Utilities ----
+
+    private String findImplementationsWrapper(JsonObject args) {
+        if (!args.has(PARAM_SYMBOL)) return "Error: 'symbol' parameter is required";
+        String symbolName = args.get(PARAM_SYMBOL).getAsString();
+        String filePath = args.has("file") ? args.get("file").getAsString() : null;
+        int line = args.has("line") ? args.get("line").getAsInt() : 0;
+
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
+            com.github.catatafishen.ideagentforcopilot.psi.java.RefactoringJavaSupport
+                .findImplementations(project, symbolName, filePath, line)
+        );
+        return truncateOutput(result);
+    }
+
+    private String getCallHierarchyWrapper(JsonObject args) {
+        if (!args.has(PARAM_SYMBOL) || !args.has("file") || !args.has("line")) {
+            return "Error: 'symbol', 'file', and 'line' parameters are required";
+        }
+        String methodName = args.get(PARAM_SYMBOL).getAsString();
+        String filePath = args.get("file").getAsString();
+        int line = args.get("line").getAsInt();
+
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
+            com.github.catatafishen.ideagentforcopilot.psi.java.RefactoringJavaSupport
+                .getCallHierarchy(project, methodName, filePath, line)
+        );
+        return truncateOutput(result);
+    }
 
     private static String truncateOutput(String output) {
         if (output.length() <= 8000) return output;

@@ -48,6 +48,16 @@ class TestTools extends AbstractToolHandler {
     private static final String TEST_TYPE_PATTERN = "pattern";
     private static final String ERROR_NO_PROJECT_PATH = "No project base path";
     private static final String JUNIT_TYPE_ID = "junit";
+    private static final String LAUNCH_FAILED = "launch_failed";
+    private static final String TESTS_PASSED = "Tests PASSED";
+    private static final String TESTS_FAILED_PREFIX = "Tests FAILED (exit code ";
+    private static final String NO_PROCESS_HANDLE_MSG =
+        "\nCould not capture process handle. Check the Run panel for results.";
+    private static final String FIELD_TEST_OBJECT = "TEST_OBJECT";
+    private static final String ERROR_PROCESS_FAILED_TO_START = "Error: Test process failed to start for ";
+    private static final String ERROR_TESTS_TIMED_OUT = "Tests timed out after 120 seconds: ";
+    private static final String STARTED_TESTS_MSG = "Started tests via IntelliJ JUnit runner: ";
+    private static final String RESULTS_IN_RUNNER_PANEL = "\nResults are visible in the IntelliJ test runner panel.";
 
     private final RefactoringTools refactoringTools;
 
@@ -235,10 +245,6 @@ class TestTools extends AbstractToolHandler {
         return null;
     }
 
-    /**
-     * Create a temporary JUnit run configuration and execute it via IntelliJ's native test runner.
-     * This gives proper test tree UI, pass/fail counts, and rerun-failed support.
-     */
     private String tryRunJUnitNatively(String target) {
         try {
             var junitType = findJUnitConfigurationType();
@@ -252,83 +258,29 @@ class TestTools extends AbstractToolHandler {
             if (classInfo.fqn() == null) return null;
 
             final String resolvedClass = classInfo.fqn();
-            final String resolvedMethod = testMethod;
             final Module resolvedModule = classInfo.module();
             String simpleName = resolvedClass.substring(resolvedClass.lastIndexOf('.') + 1);
-            String configName = "Test: " + (resolvedMethod != null
-                ? simpleName + "." + resolvedMethod : simpleName);
+            String configName = "Test: " + (testMethod != null
+                ? simpleName + "." + testMethod : simpleName);
 
-            // Subscribe to execution events before launching (on any thread)
             CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
-            AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> { });
-            disconnect.set(PlatformApiCompat.subscribeExecutionListener(project, new com.intellij.execution.ExecutionListener() {
-                @Override
-                public void processStarted(@NotNull String executorId,
-                                           @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
-                                           @NotNull ProcessHandler handler) {
-                    if (env.getRunnerAndConfigurationSettings() != null
-                        && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
-                        handlerFuture.complete(handler);
-                        disconnect.get().run();
-                    }
-                }
+            AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> {
+            });
+            disconnect.set(subscribeToExecution(configName, handlerFuture, disconnect));
 
-                @Override
-                public void processNotStarted(@NotNull String executorId,
-                                              @NotNull com.intellij.execution.runners.ExecutionEnvironment env) {
-                    if (env.getRunnerAndConfigurationSettings() != null
-                        && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
-                        handlerFuture.complete(null);
-                        disconnect.get().run();
-                    }
-                }
-            }));
-
-            // Launch on EDT (non-blocking)
             CompletableFuture<String> launchFuture = new CompletableFuture<>();
             EdtUtil.invokeLater(() -> {
                 try {
                     String error = launchJUnitConfig(
-                        junitType, resolvedClass, resolvedMethod, resolvedModule, configName);
+                        junitType, resolvedClass, testMethod, resolvedModule, configName);
                     launchFuture.complete(error);
                 } catch (Exception e) {
                     LOG.warn("Failed to run JUnit natively, will fall back to Gradle", e);
-                    launchFuture.complete("launch_failed");
+                    launchFuture.complete(LAUNCH_FAILED);
                 }
             });
 
-            String launchError = launchFuture.get(10, TimeUnit.SECONDS);
-            if (launchError != null) {
-                disconnect.get().run();
-                return "launch_failed".equals(launchError) ? null : launchError;
-            }
-
-            // Wait for the process to start (up to 15s) — off EDT
-            ProcessHandler handler;
-            try {
-                handler = handlerFuture.get(15, TimeUnit.SECONDS);
-            } catch (Exception e) {
-                disconnect.get().run();
-                return "Started tests via IntelliJ JUnit runner: " + configName
-                    + "\nCould not capture process handle. Check the Run panel for results.";
-            }
-
-            if (handler == null) {
-                return "Error: Test process failed to start for " + configName;
-            }
-
-            // Wait for the process to finish (up to 120s) — off EDT
-            if (!handler.waitFor(120_000)) {
-                return "Tests timed out after 120 seconds: " + configName;
-            }
-
-            int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
-
-            String summary = (exitCode == 0 ? "\u2705 Tests PASSED" : "\u274C Tests FAILED (exit code " + exitCode + ")")
-                + " — " + configName;
-
-            String testOutput = collectTestRunOutput(configName);
-            return testOutput.isEmpty() ? summary + "\nResults are visible in the IntelliJ test runner panel." : summary + "\n" + testOutput;
+            return awaitTestExecution(configName, launchFuture, handlerFuture, disconnect);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.warn("tryRunJUnitNatively failed", e);
@@ -340,6 +292,180 @@ class TestTools extends AbstractToolHandler {
     }
 
     /**
+     * Resolve wildcard target to matching test class FQNs from the project index.
+     */
+    private List<String> resolveMatchingTestClasses(String target) {
+        return ApplicationManager.getApplication().runReadAction((Computable<List<String>>) () -> {
+            List<String> classes = new ArrayList<>();
+            ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
+            fileIndex.iterateContent(vf -> {
+                if (!fileIndex.isInTestSourceContent(vf)) return true;
+                if (vf.isDirectory()) return true;
+                String name = vf.getName();
+                if (!name.endsWith(ToolUtils.JAVA_EXTENSION) && !name.endsWith(".kt")) return true;
+                String simpleName = name.substring(0, name.lastIndexOf('.'));
+                if (ToolUtils.doesNotMatchGlob(simpleName, target)) return true;
+
+                PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+                if (psiFile == null) return true;
+                String fqn = extractClassFqn(psiFile, simpleName);
+                if (fqn != null) classes.add(fqn);
+                return classes.size() < 200;
+            });
+            return classes;
+        });
+    }
+
+    /**
+     * Wait for test execution to complete and format the result.
+     */
+    private String awaitTestExecution(String configName,
+                                      CompletableFuture<String> launchFuture,
+                                      CompletableFuture<ProcessHandler> handlerFuture,
+                                      AtomicReference<Runnable> disconnect) throws Exception {
+        String launchError = launchFuture.get(10, TimeUnit.SECONDS);
+        if (launchError != null) {
+            disconnect.get().run();
+            return LAUNCH_FAILED.equals(launchError) ? null : launchError;
+        }
+
+        ProcessHandler handler;
+        try {
+            handler = handlerFuture.get(15, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            disconnect.get().run();
+            return STARTED_TESTS_MSG + configName + NO_PROCESS_HANDLE_MSG;
+        }
+
+        if (handler == null) return ERROR_PROCESS_FAILED_TO_START + configName;
+        if (!handler.waitFor(120_000)) return ERROR_TESTS_TIMED_OUT + configName;
+
+        int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
+        String summary = (exitCode == 0 ? TESTS_PASSED : TESTS_FAILED_PREFIX + exitCode + ")")
+            + " — " + configName;
+
+        String testOutput = collectTestRunOutput(configName);
+        return testOutput.isEmpty()
+            ? summary + RESULTS_IN_RUNNER_PANEL
+            : summary + "\n" + testOutput;
+    }
+
+    /**
+     * Wait for Gradle test execution, with JUnit XML fallback for result parsing.
+     */
+    private String awaitGradleTestExecution(String configName,
+                                            CompletableFuture<String> launchFuture,
+                                            CompletableFuture<ProcessHandler> handlerFuture,
+                                            AtomicReference<Runnable> disconnect,
+                                            String target, String module) throws Exception {
+        String launchError = launchFuture.get(10, TimeUnit.SECONDS);
+        if (launchError != null) {
+            disconnect.get().run();
+            if (LAUNCH_FAILED.equals(launchError)) {
+                return "Error: Failed to create Gradle test run configuration for: " + target;
+            }
+            return launchError;
+        }
+
+        ProcessHandler handler;
+        try {
+            handler = handlerFuture.get(15, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            disconnect.get().run();
+            return "Started tests via Gradle run configuration: " + configName + NO_PROCESS_HANDLE_MSG;
+        }
+
+        if (handler == null) return ERROR_PROCESS_FAILED_TO_START + configName;
+        if (!handler.waitFor(120_000)) return ERROR_TESTS_TIMED_OUT + configName;
+
+        int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
+        String basePath = project.getBasePath();
+        if (basePath != null) {
+            String xmlResults = parseJunitXmlResults(basePath, module);
+            if (!xmlResults.isEmpty()) return xmlResults;
+        }
+
+        String summary = (exitCode == 0 ? TESTS_PASSED : TESTS_FAILED_PREFIX + exitCode + ")")
+            + " — " + configName;
+        String testOutput = collectTestRunOutput(configName);
+        return testOutput.isEmpty() ? summary : summary + "\n" + testOutput;
+    }
+
+    /**
+     * Subscribe to execution events to capture the process handler for a named config.
+     */
+    private Runnable subscribeToExecution(String configName,
+                                          CompletableFuture<ProcessHandler> handlerFuture,
+                                          AtomicReference<Runnable> disconnect) {
+        return PlatformApiCompat.subscribeExecutionListener(project, new com.intellij.execution.ExecutionListener() {
+            @Override
+            public void processStarted(@NotNull String executorId,
+                                       @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
+                                       @NotNull ProcessHandler handler) {
+                if (env.getRunnerAndConfigurationSettings() != null
+                    && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
+                    handlerFuture.complete(handler);
+                    disconnect.get().run();
+                }
+            }
+
+            @Override
+            public void processNotStarted(@NotNull String executorId,
+                                          @NotNull com.intellij.execution.runners.ExecutionEnvironment env) {
+                if (env.getRunnerAndConfigurationSettings() != null
+                    && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
+                    handlerFuture.complete(null);
+                    disconnect.get().run();
+                }
+            }
+        });
+    }
+
+    /**
+     * Create and launch a JUnit pattern-based run configuration on the EDT.
+     */
+    private void launchPatternConfig(com.intellij.execution.configurations.ConfigurationType junitType, String configName,
+                                     List<String> matchingClasses,
+                                     CompletableFuture<String> launchFuture) {
+        try {
+            RunManager runManager = RunManager.getInstance(project);
+            var factory = junitType.getConfigurationFactories()[0];
+            var settings = runManager.createConfiguration(configName, factory);
+            RunConfiguration config = settings.getConfiguration();
+
+            var getData = config.getClass().getMethod("getPersistentData");
+            Object data = getData.invoke(config);
+            data.getClass().getField(FIELD_TEST_OBJECT).set(data, TEST_TYPE_PATTERN);
+            data.getClass().getField("PATTERNS").set(data,
+                new java.util.LinkedHashSet<>(matchingClasses));
+
+            try {
+                config.checkConfiguration();
+            } catch (com.intellij.execution.configurations.RuntimeConfigurationException e) {
+                launchFuture.complete("Error: Invalid pattern config: " + e.getLocalizedMessage());
+                return;
+            }
+
+            settings.setTemporary(true);
+            runManager.addConfiguration(settings);
+
+            var executor = DefaultRunExecutor.getRunExecutorInstance();
+            var envBuilder = ExecutionEnvironmentBuilder.createOrNull(executor, settings);
+            if (envBuilder == null) {
+                launchFuture.complete("Error: Cannot create execution environment");
+                return;
+            }
+            ExecutionManager.getInstance(project).restartRunProfile(envBuilder.build());
+            launchFuture.complete(null);
+        } catch (Exception e) {
+            LOG.warn("Failed to run JUnit pattern config", e);
+            launchFuture.complete(LAUNCH_FAILED);
+        }
+    }
+
+    /**
      * Resolve wildcard target to matching test class FQNs and create a JUnit "pattern" config.
      */
     private String tryRunJUnitPattern(String target) {
@@ -347,127 +473,21 @@ class TestTools extends AbstractToolHandler {
             var junitType = findJUnitConfigurationType();
             if (junitType == null) return null;
 
-            // Resolve matching test classes from the project index
-            List<String> matchingClasses = ApplicationManager.getApplication().runReadAction((Computable<List<String>>) () -> {
-                List<String> classes = new ArrayList<>();
-                ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
-                fileIndex.iterateContent(vf -> {
-                    if (!fileIndex.isInTestSourceContent(vf)) return true;
-                    if (vf.isDirectory()) return true;
-                    String name = vf.getName();
-                    if (!name.endsWith(ToolUtils.JAVA_EXTENSION) && !name.endsWith(".kt")) return true;
-                    String simpleName = name.substring(0, name.lastIndexOf('.'));
-                    if (ToolUtils.doesNotMatchGlob(simpleName, target)) return true;
-
-                    PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-                    if (psiFile == null) return true;
-                    // Extract FQN from the PSI file
-                    String fqn = extractClassFqn(psiFile, simpleName);
-                    if (fqn != null) classes.add(fqn);
-                    return classes.size() < 200;
-                });
-                return classes;
-            });
-
+            List<String> matchingClasses = resolveMatchingTestClasses(target);
             if (matchingClasses.isEmpty()) return null;
 
             String configName = "Test: " + target + " (" + matchingClasses.size() + " classes)";
 
             CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
-            AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> { });
-            disconnect.set(PlatformApiCompat.subscribeExecutionListener(project, new com.intellij.execution.ExecutionListener() {
-                @Override
-                public void processStarted(@NotNull String executorId,
-                                           @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
-                                           @NotNull ProcessHandler handler) {
-                    if (env.getRunnerAndConfigurationSettings() != null
-                        && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
-                        handlerFuture.complete(handler);
-                        disconnect.get().run();
-                    }
-                }
-
-                @Override
-                public void processNotStarted(@NotNull String executorId,
-                                              @NotNull com.intellij.execution.runners.ExecutionEnvironment env) {
-                    if (env.getRunnerAndConfigurationSettings() != null
-                        && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
-                        handlerFuture.complete(null);
-                        disconnect.get().run();
-                    }
-                }
-            }));
+            AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> {
+            });
+            disconnect.set(subscribeToExecution(configName, handlerFuture, disconnect));
 
             CompletableFuture<String> launchFuture = new CompletableFuture<>();
-            EdtUtil.invokeLater(() -> {
-                try {
-                    RunManager runManager = RunManager.getInstance(project);
-                    var factory = junitType.getConfigurationFactories()[0];
-                    var settings = runManager.createConfiguration(configName, factory);
-                    RunConfiguration config = settings.getConfiguration();
+            EdtUtil.invokeLater(() -> launchPatternConfig(
+                junitType, configName, matchingClasses, launchFuture));
 
-                    // Configure as pattern-based test
-                    var getData = config.getClass().getMethod("getPersistentData");
-                    Object data = getData.invoke(config);
-                    data.getClass().getField("TEST_OBJECT").set(data, TEST_TYPE_PATTERN);
-                    data.getClass().getField("PATTERNS").set(data,
-                        new java.util.LinkedHashSet<>(matchingClasses));
-
-                    // Validate before running — prevents edit-config dialog on errors
-                    try {
-                        config.checkConfiguration();
-                    } catch (com.intellij.execution.configurations.RuntimeConfigurationException e) {
-                        launchFuture.complete("Error: Invalid pattern config: " + e.getLocalizedMessage());
-                        return;
-                    }
-
-                    settings.setTemporary(true);
-                    runManager.addConfiguration(settings);
-
-                    var executor = DefaultRunExecutor.getRunExecutorInstance();
-                    var envBuilder = ExecutionEnvironmentBuilder.createOrNull(executor, settings);
-                    if (envBuilder == null) {
-                        launchFuture.complete("Error: Cannot create execution environment");
-                        return;
-                    }
-                    ExecutionManager.getInstance(project).restartRunProfile(envBuilder.build());
-                    launchFuture.complete(null);
-                } catch (Exception e) {
-                    LOG.warn("Failed to run JUnit pattern config", e);
-                    launchFuture.complete("launch_failed");
-                }
-            });
-
-            String launchError = launchFuture.get(10, TimeUnit.SECONDS);
-            if (launchError != null) {
-                disconnect.get().run();
-                return "launch_failed".equals(launchError) ? null : launchError;
-            }
-
-            ProcessHandler handler;
-            try {
-                handler = handlerFuture.get(15, TimeUnit.SECONDS);
-            } catch (Exception e) {
-                disconnect.get().run();
-                return "Started tests via IntelliJ JUnit runner: " + configName
-                    + "\nCould not capture process handle. Check the Run panel for results.";
-            }
-
-            if (handler == null) {
-                return "Error: Test process failed to start for " + configName;
-            }
-
-            if (!handler.waitFor(120_000)) {
-                return "Tests timed out after 120 seconds: " + configName;
-            }
-
-            int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
-
-            String summary = (exitCode == 0 ? "\u2705 Tests PASSED" : "\u274C Tests FAILED (exit code " + exitCode + ")")
-                + " \u2014 " + configName;
-
-            String testOutput = collectTestRunOutput(configName);
-            return testOutput.isEmpty() ? summary + "\nResults are visible in the IntelliJ test runner panel." : summary + "\n" + testOutput;
+            return awaitTestExecution(configName, launchFuture, handlerFuture, disconnect);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.warn("tryRunJUnitPattern failed", e);
@@ -560,7 +580,14 @@ class TestTools extends AbstractToolHandler {
         String name = (String) getName.invoke(test);
         boolean passed = (boolean) isPassed.invoke(test);
         boolean defect = (boolean) isDefect.invoke(test);
-        String status = passed ? "\u2705 PASSED" : defect ? "\u274C FAILED" : "\u26A0 UNKNOWN";
+        String status;
+        if (passed) {
+            status = "PASSED";
+        } else if (defect) {
+            status = "FAILED";
+        } else {
+            status = "UNKNOWN";
+        }
         sb.append("  ").append(status).append(" ").append(name).append("\n");
 
         if (defect) {
@@ -579,39 +606,15 @@ class TestTools extends AbstractToolHandler {
         }
     }
 
-    /**
-     * Create and run a Gradle run configuration for tests (instead of shelling out).
-     * This gives proper IntelliJ Run panel integration with test tree UI.
-     */
     private String runTestsViaGradleConfig(String target, String module) {
         try {
             String taskPrefix = module.isEmpty() ? "" : ":" + module + ":";
             String configName = "Gradle Test: " + target;
 
             CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
-            AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> { });
-            disconnect.set(PlatformApiCompat.subscribeExecutionListener(project, new com.intellij.execution.ExecutionListener() {
-                @Override
-                public void processStarted(@NotNull String executorId,
-                                           @NotNull com.intellij.execution.runners.ExecutionEnvironment env,
-                                           @NotNull ProcessHandler handler) {
-                    if (env.getRunnerAndConfigurationSettings() != null
-                        && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
-                        handlerFuture.complete(handler);
-                        disconnect.get().run();
-                    }
-                }
-
-                @Override
-                public void processNotStarted(@NotNull String executorId,
-                                              @NotNull com.intellij.execution.runners.ExecutionEnvironment env) {
-                    if (env.getRunnerAndConfigurationSettings() != null
-                        && configName.equals(env.getRunnerAndConfigurationSettings().getName())) {
-                        handlerFuture.complete(null);
-                        disconnect.get().run();
-                    }
-                }
-            }));
+            AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> {
+            });
+            disconnect.set(subscribeToExecution(configName, handlerFuture, disconnect));
 
             CompletableFuture<String> launchFuture = new CompletableFuture<>();
             EdtUtil.invokeLater(() -> {
@@ -620,48 +623,13 @@ class TestTools extends AbstractToolHandler {
                     launchFuture.complete(error);
                 } catch (Exception e) {
                     LOG.warn("Failed to create Gradle test config", e);
-                    launchFuture.complete("launch_failed");
+                    launchFuture.complete(LAUNCH_FAILED);
                 }
             });
 
-            String launchError = launchFuture.get(10, TimeUnit.SECONDS);
-            if (launchError != null) {
-                disconnect.get().run();
-                if ("launch_failed".equals(launchError)) {
-                    return "Error: Failed to create Gradle test run configuration for: " + target;
-                }
-                return launchError;
-            }
-
-            ProcessHandler handler;
-            try {
-                handler = handlerFuture.get(15, TimeUnit.SECONDS);
-            } catch (Exception e) {
-                disconnect.get().run();
-                return "Started tests via Gradle run configuration: " + configName
-                    + "\nCould not capture process handle. Check the Run panel for results.";
-            }
-
-            if (handler == null) {
-                return "Error: Test process failed to start for " + configName;
-            }
-
-            if (!handler.waitFor(120_000)) {
-                return "Tests timed out after 120 seconds: " + configName;
-            }
-
-            int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
-            String basePath = project.getBasePath();
-            if (basePath != null) {
-                String xmlResults = parseJunitXmlResults(basePath, module);
-                if (!xmlResults.isEmpty()) return xmlResults;
-            }
-
-            String summary = (exitCode == 0 ? "\u2705 Tests PASSED" : "\u274C Tests FAILED (exit code " + exitCode + ")")
-                + " \u2014 " + configName;
-
-            String testOutput = collectTestRunOutput(configName);
-            return testOutput.isEmpty() ? summary : summary + "\n" + testOutput;
+            String result = awaitGradleTestExecution(
+                configName, launchFuture, handlerFuture, disconnect, target, module);
+            return result;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "Error: Test execution interrupted";
@@ -719,7 +687,7 @@ class TestTools extends AbstractToolHandler {
             return null;
         } catch (Exception e) {
             LOG.warn("createAndRunGradleTestConfig failed", e);
-            return "launch_failed";
+            return LAUNCH_FAILED;
         }
     }
 
@@ -782,9 +750,9 @@ class TestTools extends AbstractToolHandler {
         data.getClass().getField("MAIN_CLASS_NAME").set(data, resolvedClass);
         if (resolvedMethod != null) {
             data.getClass().getField("METHOD_NAME").set(data, resolvedMethod);
-            data.getClass().getField("TEST_OBJECT").set(data, TEST_TYPE_METHOD);
+            data.getClass().getField(FIELD_TEST_OBJECT).set(data, TEST_TYPE_METHOD);
         } else {
-            data.getClass().getField("TEST_OBJECT").set(data, TEST_TYPE_CLASS);
+            data.getClass().getField(FIELD_TEST_OBJECT).set(data, TEST_TYPE_CLASS);
         }
 
         if (resolvedModule != null) {
@@ -953,7 +921,7 @@ class TestTools extends AbstractToolHandler {
                 String tcName = tc.getAttributes().getNamedItem("name").getNodeValue();
                 String cls = tc.getAttributes().getNamedItem("classname").getNodeValue();
                 String msg = failNodes.item(0).getAttributes().getNamedItem(PARAM_MESSAGE).getNodeValue();
-                failures.add(String.format("  \u274C %s.%s: %s", cls, tcName, msg));
+                failures.add(String.format("  %s.%s: %s", cls, tcName, msg));
             }
         }
     }

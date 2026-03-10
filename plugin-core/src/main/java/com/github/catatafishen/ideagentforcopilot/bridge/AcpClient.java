@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
-import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings;
 import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.Gson;
@@ -40,6 +39,7 @@ import java.util.function.Consumer;
 public class AcpClient implements Closeable {
     private static final Logger LOG = Logger.getInstance(AcpClient.class);
     private static final long REQUEST_TIMEOUT_SECONDS = 30;
+    private static final long INITIALIZE_TIMEOUT_SECONDS = 90;
 
     // JSON-RPC field names
     private static final String JSONRPC = "jsonrpc";
@@ -61,10 +61,12 @@ public class AcpClient implements Closeable {
     private static final String USER_HOME = "user.home";
     private static final String TITLE_KEY = "title";
     private static final String PARAMETERS_KEY = "parameters";
-    private static final String TOOL_DENIED_DEFAULT_MSG = "⚠ Tool denied. Use tools with 'intellij-code-tools-' prefix instead.";
+    private static final String TOOL_DENIED_DEFAULT_MSG_TEMPLATE = "⚠ Tool denied. Use tools with '%s' prefix instead.";
     private static final String PRE_REJECTION_GUIDANCE_EVENT = "PRE_REJECTION_GUIDANCE";
     private static final String SENDING_GUIDANCE_DESC = "Sending guidance before rejection";
     private static final String PERMISSION_DENIED_EVENT = "PERMISSION_DENIED";
+    private static final String PERMISSION_APPROVED_EVENT = "PERMISSION_APPROVED";
+    private static final String TOOL_PREFIX = " (tool=";
 
     // Note: DENIED_PERMISSION_KINDS was removed — permission denial is now handled by
     // per-tool ToolPermission settings in handlePermissionRequest, not a static set.
@@ -77,6 +79,12 @@ public class AcpClient implements Closeable {
     private final Object writerLock = new Object();
     private final String projectBasePath; // Project path for config-dir
     private final AgentConfig agentConfig;
+    private final AgentSettings agentSettings;
+    private final int mcpPort;
+    /**
+     * Prefix used to strip the MCP server name from incoming tool-call names (e.g. "intellij-code-tools-").
+     */
+    private volatile String effectiveMcpPrefix = "intellij-code-tools-";
     private Process process;
     private BufferedWriter writer;
     private Thread readerThread;
@@ -106,34 +114,25 @@ public class AcpClient implements Closeable {
         "git_pull", "git_merge", "git_rebase", "git_cherry_pick", "git_tag", "git_reset"
     );
 
-    // Permission request listener and pending ASK map
-    private volatile java.util.function.Consumer<PermissionRequest> permissionRequestListener;
-    private final ConcurrentHashMap<Long, CompletableFuture<Boolean>> pendingPermissionAsks = new ConcurrentHashMap<>();
+    private static final String SUBAGENT_WRITE_ABUSE_PREFIX = "subagent_write_abuse:";
+    private static final String KIND_BASH = "bash";
+    private static final String KIND_EXECUTE = "execute";
 
     /**
-     * A permission request surfaced to the UI when a tool has ASK permission mode.
-     * Call {@link #respond} with true to allow, false to deny.
+     * Built-in write/execute tools that sub-agents must not use.
+     * These go through request_permission, so we can deny them.
+     * Read-only built-ins (view, grep, glob) auto-execute without permission — unblockable.
      */
-    public static class PermissionRequest {
-        public final long reqId;
-        public final String toolId;
-        public final String displayName;
-        public final String description;
-        private final java.util.function.Consumer<Boolean> respondFn;
+    private static final Set<String> BUILTIN_WRITE_TOOLS = Set.of(
+        "edit", "create", KIND_BASH, "write", KIND_EXECUTE, "runInTerminal"
+    );
 
-        public PermissionRequest(long reqId, String toolId, String displayName, String description,
-                                 java.util.function.Consumer<Boolean> respondFn) {
-            this.reqId = reqId;
-            this.toolId = toolId;
-            this.displayName = displayName;
-            this.description = description;
-            this.respondFn = respondFn;
-        }
+    // Permission request listener and pending ASK map
+    private volatile java.util.function.Consumer<PermissionRequest> permissionRequestListener;
+    private final ConcurrentHashMap<Long, CompletableFuture<PermissionResponse>> pendingPermissionAsks = new ConcurrentHashMap<>();
+    private final java.util.Set<String> sessionAllowedTools = ConcurrentHashMap.newKeySet();
 
-        public void respond(boolean allowed) {
-            respondFn.accept(allowed);
-        }
-    }
+    // PermissionRequest is in separate file: PermissionRequest.java
 
     /**
      * Register a listener that is called when a tool with ASK permission needs user approval.
@@ -149,27 +148,7 @@ public class AcpClient implements Closeable {
     // Debug event listeners for UI debug tab
     private final CopyOnWriteArrayList<Consumer<DebugEvent>> debugListeners = new CopyOnWriteArrayList<>();
 
-    /**
-     * Debug event for UI debug tab showing permission requests, denials, tool calls, etc.
-     */
-    public static class DebugEvent {
-        public final String timestamp;
-        public final String type;  // "PERMISSION_REQUEST", "PERMISSION_DENIED", "RETRY_SENT", "TOOL_CALL", etc.
-        public final String message;
-        public final String details; // JSON or additional info
-
-        public DebugEvent(String type, String message, String details) {
-            this.timestamp = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS"));
-            this.type = type;
-            this.message = message;
-            this.details = details;
-        }
-
-        @Override
-        public String toString() {
-            return String.format("[%s] %s: %s", timestamp, type, message);
-        }
-    }
+    // DebugEvent is in separate file: DebugEvent.java
 
     /**
      * Register a debug event listener for the UI debug tab.
@@ -205,17 +184,20 @@ public class AcpClient implements Closeable {
     }
 
     /**
-     * Create ACP client with an agent configuration and optional project base path.
+     * Create ACP client with an agent configuration, settings, and optional project base path.
      */
-    public AcpClient(@NotNull AgentConfig agentConfig, @Nullable String projectBasePath) {
+    public AcpClient(@NotNull AgentConfig agentConfig, @NotNull AgentSettings agentSettings,
+                     @Nullable String projectBasePath, int mcpPort) {
         this.agentConfig = agentConfig;
+        this.agentSettings = agentSettings;
         this.projectBasePath = projectBasePath;
+        this.mcpPort = mcpPort;
     }
 
     /**
      * Start the ACP process and perform the initialization handshake.
      */
-    public synchronized void start() throws CopilotException {
+    public synchronized void start() throws AcpException {
         // Clean up the previous process if it died
         if (process != null) {
             LOG.info("Restarting ACP client (previous process died)");
@@ -238,7 +220,8 @@ public class AcpClient implements Closeable {
             String binaryPath = agentConfig.findAgentBinary();
             LOG.info("Starting " + agentConfig.getDisplayName() + " ACP: " + binaryPath);
 
-            ProcessBuilder pb = agentConfig.buildAcpProcess(binaryPath, projectBasePath);
+            ProcessBuilder pb = agentConfig.buildAcpProcess(binaryPath, projectBasePath, mcpPort);
+            effectiveMcpPrefix = agentConfig.getEffectiveMcpServerName() + "-";
             pb.redirectErrorStream(false);
             process = pb.start();
 
@@ -258,14 +241,14 @@ public class AcpClient implements Closeable {
             doInitialize();
 
         } catch (IOException e) {
-            throw new CopilotException("Failed to start " + agentConfig.getDisplayName() + " ACP process", e);
+            throw new AcpException("Failed to start " + agentConfig.getDisplayName() + " ACP process", e);
         }
     }
 
     /**
      * Perform the ACP initialize handshake.
      */
-    private void doInitialize() throws CopilotException {
+    private void doInitialize() throws AcpException {
         JsonObject params = new JsonObject();
         params.addProperty("protocolVersion", 1);
         JsonObject clientCapabilities = new JsonObject();
@@ -276,7 +259,9 @@ public class AcpClient implements Closeable {
         clientInfo.addProperty("version", "0.1.0");
         params.add("clientInfo", clientInfo);
 
-        JsonObject result = sendRequest("initialize", params);
+        // Use a longer timeout for initialize — the CLI spawns MCP server JVMs
+        // and may need >30s when the system is under load at IDE startup
+        JsonObject result = sendRequest("initialize", params, INITIALIZE_TIMEOUT_SECONDS);
 
         JsonObject agentInfo = result.has("agentInfo") ? result.getAsJsonObject("agentInfo") : null;
         JsonObject agentCapabilities = result.has("agentCapabilities") ? result.getAsJsonObject("agentCapabilities") : null;
@@ -291,7 +276,7 @@ public class AcpClient implements Closeable {
      * Create a new ACP session. Returns the session ID and populates available models.
      */
     @NotNull
-    public synchronized String createSession() throws CopilotException {
+    public synchronized String createSession() throws AcpException {
         return createSession(null);
     }
 
@@ -300,7 +285,7 @@ public class AcpClient implements Closeable {
      *
      * @param cwd The working directory for the session, or null to use user.home.
      */
-    public synchronized String createSession(@Nullable String cwd) throws CopilotException {
+    public synchronized String createSession(@Nullable String cwd) throws AcpException {
         ensureStarted();
 
         JsonObject params = new JsonObject();
@@ -311,10 +296,17 @@ public class AcpClient implements Closeable {
         // Empty array here because servers are loaded from the config file
         params.add("mcpServers", new JsonArray());
 
-        // Do NOT send availableTools param - it would filter out MCP tools!
-        // We want the agent to see both CLI tools AND MCP tools.
-        // Tool filtering doesn't work properly in ACP mode (CLI bug #556),
-        // so we handle it via permission denial (see handlePermissionRequest).
+        // Tool filtering: for agents that support it (e.g., OpenCode), send excludedTools
+        // to remove built-in tools so only IntelliJ MCP tools are available.
+        // Copilot CLI ignores this (bug #556) — those tools are denied via permissions instead.
+        if (agentConfig.shouldExcludeBuiltInTools()) {
+            JsonArray excluded = new JsonArray();
+            for (String toolId : com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getBuiltInToolIds()) {
+                excluded.add(toolId);
+            }
+            params.add("excludedTools", excluded);
+            LOG.info("Excluding built-in tools from session: " + excluded);
+        }
 
         LOG.info("Creating session (MCP servers configured via --additional-mcp-config)");
 
@@ -364,7 +356,7 @@ public class AcpClient implements Closeable {
      * @param sessionId The session to switch the model for.
      * @param modelId   The model ID to switch to (e.g., "gpt-4.1", "claude-opus-4.6").
      */
-    public void setModel(@NotNull String sessionId, @NotNull String modelId) throws CopilotException {
+    public void setModel(@NotNull String sessionId, @NotNull String modelId) throws AcpException {
         ensureStarted();
         JsonObject params = new JsonObject();
         params.addProperty(SESSION_ID, sessionId);
@@ -379,7 +371,7 @@ public class AcpClient implements Closeable {
      * Uses the project path as CWD so the CLI reads copilot-instructions.md correctly.
      */
     @NotNull
-    public List<Model> listModels() throws CopilotException {
+    public List<Model> listModels() throws AcpException {
         if (availableModels == null) {
             createSession(projectBasePath);
         }
@@ -391,7 +383,7 @@ public class AcpClient implements Closeable {
      * Useful after authentication changes to pick up fresh tokens.
      */
     @NotNull
-    public List<Model> refreshModels() throws CopilotException {
+    public List<Model> refreshModels() throws AcpException {
         availableModels = null;
         currentSessionId = null;
         createSession();
@@ -411,7 +403,7 @@ public class AcpClient implements Closeable {
     @NotNull
     public String sendPrompt(@NotNull String sessionId, @NotNull String prompt,
                              @Nullable String model, @Nullable Consumer<String> onChunk)
-        throws CopilotException {
+        throws AcpException {
         return sendPrompt(sessionId, prompt, model, null, onChunk);
     }
 
@@ -422,7 +414,7 @@ public class AcpClient implements Closeable {
     public String sendPrompt(@NotNull String sessionId, @NotNull String prompt,
                              @Nullable String model, @Nullable List<ResourceReference> references,
                              @Nullable Consumer<String> onChunk)
-        throws CopilotException {
+        throws AcpException {
         return sendPrompt(sessionId, prompt, model, references, onChunk, null);
     }
 
@@ -436,7 +428,7 @@ public class AcpClient implements Closeable {
                              @Nullable String model, @Nullable List<ResourceReference> references,
                              @Nullable Consumer<String> onChunk,
                              @Nullable Consumer<JsonObject> onUpdate)
-        throws CopilotException {
+        throws AcpException {
         return sendPrompt(sessionId, prompt, model, references, onChunk, onUpdate, null);
     }
 
@@ -452,7 +444,7 @@ public class AcpClient implements Closeable {
                              @Nullable Consumer<String> onChunk,
                              @Nullable Consumer<JsonObject> onUpdate,
                              @Nullable Runnable onRequest)
-        throws CopilotException {
+        throws AcpException {
         ensureStarted();
 
         int refCount = references != null ? references.size() : 0;
@@ -489,7 +481,8 @@ public class AcpClient implements Closeable {
                     LOG.info("Turn ended with denied tools - auto-retry #" + retryCount);
                     fireDebugEvent("AUTO_RETRY", "Retrying after tool denial #" + retryCount,
                         "Last denied: " + getLastDeniedKind());
-                    currentPrompt = "The previous tool calls were denied. Please continue with the task using the correct tools with 'intellij-code-tools-' prefix.";
+                    currentPrompt = "The previous tool calls were denied. Please continue with the task using the correct tools with '"
+                        + effectiveMcpPrefix + "' prefix.";
                     continue;
                 }
 
@@ -518,8 +511,8 @@ public class AcpClient implements Closeable {
      * On either condition, terminates the CLI process gracefully.
      */
     @NotNull
-    private JsonObject sendPromptRequest(@NotNull JsonObject params) throws CopilotException {
-        if (closed) throw new CopilotException("ACP client is closed", null, false);
+    private JsonObject sendPromptRequest(@NotNull JsonObject params) throws AcpException {
+        if (closed) throw new AcpException("ACP client is closed", null, false);
 
         long id = requestIdCounter.getAndIncrement();
         CompletableFuture<JsonObject> future = new CompletableFuture<>();
@@ -545,15 +538,15 @@ public class AcpClient implements Closeable {
         } catch (ExecutionException e) {
             pendingRequests.remove(id);
             Throwable cause = e.getCause();
-            if (cause instanceof CopilotException copilotException) throw copilotException;
-            throw new CopilotException("ACP request failed: session/prompt - " + cause.getMessage(), e, false);
+            if (cause instanceof AcpException copilotException) throw copilotException;
+            throw new AcpException("ACP request failed: session/prompt - " + cause.getMessage(), e, false);
         } catch (InterruptedException e) {
             pendingRequests.remove(id);
             Thread.currentThread().interrupt();
-            throw new CopilotException("ACP request interrupted: session/prompt", e, true);
+            throw new AcpException("ACP request interrupted: session/prompt", e, true);
         } catch (IOException e) {
             pendingRequests.remove(id);
-            throw new CopilotException("ACP write failed: session/prompt", e, true);
+            throw new AcpException("ACP write failed: session/prompt", e, true);
         }
     }
 
@@ -561,9 +554,9 @@ public class AcpClient implements Closeable {
      * Polls for prompt completion, checking for inactivity timeout and credit limit.
      */
     private JsonObject pollForPromptCompletion(long id, CompletableFuture<JsonObject> future)
-        throws CopilotException, ExecutionException, InterruptedException {
-        int inactivityTimeoutSec = CopilotSettings.getPromptTimeout();
-        int maxToolCalls = CopilotSettings.getMaxToolCallsPerTurn();
+        throws AcpException, ExecutionException, InterruptedException {
+        int inactivityTimeoutSec = agentSettings.getPromptTimeout();
+        int maxToolCalls = agentSettings.getMaxToolCallsPerTurn();
         long pollIntervalMs = 5000;
 
         while (true) {
@@ -577,7 +570,7 @@ public class AcpClient implements Closeable {
     }
 
     private void checkInactivityTimeout(long id, int inactivityTimeoutSec, TimeoutException cause)
-        throws CopilotException {
+        throws AcpException {
         long inactiveMs = System.currentTimeMillis() - lastActivityTimestamp;
         if (inactiveMs > inactivityTimeoutSec * 1000L) {
             pendingRequests.remove(id);
@@ -586,13 +579,13 @@ public class AcpClient implements Closeable {
                 "No activity for " + (inactiveMs / 1000) + "s (limit: " + inactivityTimeoutSec + "s)",
                 "Tool calls this turn: " + toolCallsInTurn.get());
             terminateAgent();
-            throw new CopilotException(
+            throw new AcpException(
                 "Agent stopped: no activity for " + (inactiveMs / 1000) + " seconds", cause, true);
         }
     }
 
     private void checkCreditLimit(long id, int maxToolCalls, TimeoutException cause)
-        throws CopilotException {
+        throws AcpException {
         if (maxToolCalls > 0 && toolCallsInTurn.get() >= maxToolCalls) {
             pendingRequests.remove(id);
             LOG.warn("Tool call limit reached: " + toolCallsInTurn.get() + "/" + maxToolCalls);
@@ -600,7 +593,7 @@ public class AcpClient implements Closeable {
                 "Tool call limit reached: " + toolCallsInTurn.get() + "/" + maxToolCalls,
                 "Terminating agent to prevent excess usage");
             terminateAgent();
-            throw new CopilotException(
+            throw new AcpException(
                 "Agent stopped: tool call limit reached (" + toolCallsInTurn.get() + "/" + maxToolCalls + ")", cause, true);
         }
     }
@@ -759,11 +752,29 @@ public class AcpClient implements Closeable {
     }
 
     /**
+     * Whether resource reference content must be duplicated as plain text in the prompt.
+     * Delegates to the underlying {@link AgentConfig}.
+     *
+     * @see AgentConfig#requiresResourceContentDuplication()
+     */
+    public boolean requiresResourceContentDuplication() {
+        return agentConfig.requiresResourceContentDuplication();
+    }
+
+    /**
      * Send a JSON-RPC request and wait for the response.
      */
     @NotNull
-    private JsonObject sendRequest(@NotNull String method, @NotNull JsonObject params) throws CopilotException {
-        if (closed) throw new CopilotException("ACP client is closed", null, false);
+    private JsonObject sendRequest(@NotNull String method, @NotNull JsonObject params) throws AcpException {
+        return sendRequest(method, params, REQUEST_TIMEOUT_SECONDS);
+    }
+
+    /**
+     * Send a JSON-RPC request and wait for the response with a custom timeout.
+     */
+    @NotNull
+    private JsonObject sendRequest(@NotNull String method, @NotNull JsonObject params, long timeoutSeconds) throws AcpException {
+        if (closed) throw new AcpException("ACP client is closed", null, false);
 
         long id = requestIdCounter.getAndIncrement();
         CompletableFuture<JsonObject> future = new CompletableFuture<>();
@@ -785,23 +796,24 @@ public class AcpClient implements Closeable {
                 writer.flush();
             }
 
-            return future.get(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            return future.get(timeoutSeconds, TimeUnit.SECONDS);
 
         } catch (TimeoutException e) {
             pendingRequests.remove(id);
-            throw new CopilotException("ACP request timed out: " + method, e, true);
+            throw new AcpException("ACP request timed out: " + method
+                + " (waited " + timeoutSeconds + "s)", e, true);
         } catch (ExecutionException e) {
             pendingRequests.remove(id);
             Throwable cause = e.getCause();
-            if (cause instanceof CopilotException copilotException) throw copilotException;
-            throw new CopilotException("ACP request failed: " + method + " - " + cause.getMessage(), e, false);
+            if (cause instanceof AcpException copilotException) throw copilotException;
+            throw new AcpException("ACP request failed: " + method + " - " + cause.getMessage(), e, false);
         } catch (InterruptedException e) {
             pendingRequests.remove(id);
             Thread.currentThread().interrupt();
-            throw new CopilotException("ACP request interrupted: " + method, e, true);
+            throw new AcpException("ACP request interrupted: " + method, e, true);
         } catch (IOException e) {
             pendingRequests.remove(id);
-            throw new CopilotException("ACP write failed: " + method, e, true);
+            throw new AcpException("ACP write failed: " + method, e, true);
         }
     }
 
@@ -884,7 +896,7 @@ public class AcpClient implements Closeable {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 LOG.warn("Restart attempt interrupted", e);
-            } catch (CopilotException e) {
+            } catch (AcpException e) {
                 LOG.warn("Failed to restart ACP process (attempt " + restartAttempts + ")", e);
                 attemptAutoRestart(); // Try again
             }
@@ -901,7 +913,7 @@ public class AcpClient implements Closeable {
     private void failAllPendingRequests() {
         for (Map.Entry<Long, CompletableFuture<JsonObject>> entry : pendingRequests.entrySet()) {
             entry.getValue().completeExceptionally(
-                new CopilotException("Connection lost — please retry your message", null, false));
+                new AcpException("Connection lost — please retry your message", null, false));
         }
         pendingRequests.clear();
     }
@@ -964,11 +976,11 @@ public class AcpClient implements Closeable {
                 LOG.debug("Error extracting error data as string", e);
             }
         }
-        future.completeExceptionally(new CopilotException("ACP error: " + errorMessage, null, false));
+        future.completeExceptionally(new AcpException("ACP error: " + errorMessage, null, false));
     }
 
     private void handleNotificationMessage(JsonObject msg) {
-        String method = msg.has(METHOD) ? msg.get(METHOD).getAsString() : "unknown";
+        String method = msg.has(METHOD) ? msg.get(METHOD).getAsString() : UNKNOWN;
         LOG.info("ACP notification: method=" + method + " keys=" + msg.keySet());
         if (method.contains("usage") || method.contains("quota") || method.contains("billing")
             || method.contains("premium") || method.contains("stats") || method.contains("turn")) {
@@ -1000,9 +1012,9 @@ public class AcpClient implements Closeable {
         }
     }
 
-    private void ensureStarted() throws CopilotException {
+    private void ensureStarted() throws AcpException {
         if (closed) {
-            throw new CopilotException("ACP client is closed", null, false);
+            throw new AcpException("ACP client is closed", null, false);
         }
         if (!initialized || process == null || !process.isAlive()) {
             initialized = false;
@@ -1095,13 +1107,46 @@ public class AcpClient implements Closeable {
             return;
         }
 
+        // Check if a sub-agent is trying to use built-in write/execute tools
+        // (edit, create, bash, etc.) — these bypass IntelliJ's editor buffer.
+        // Sub-agents can't receive session/message guidance, so denial is the only signal.
+        String writeAbuse = detectSubAgentWriteTool(toolCall);
+        if (writeAbuse != null) {
+            String rejectOptionId = findRejectOption(reqParams);
+            LOG.info("ACP request_permission: DENYING sub-agent built-in write tool: " + writeAbuse);
+
+            Map<String, Object> retryParams = buildRetryParams(SUBAGENT_WRITE_ABUSE_PREFIX + writeAbuse);
+            String retryMessage = (String) retryParams.get(MESSAGE);
+            fireDebugEvent(PRE_REJECTION_GUIDANCE_EVENT, SENDING_GUIDANCE_DESC, retryMessage);
+            sendPromptMessage(retryMessage);
+
+            fireDebugEvent(PERMISSION_DENIED_EVENT, "Sub-agent write tool: " + writeAbuse,
+                toolCall != null ? toolCall.toString() : "");
+            builtInActionDeniedDuringTurn = true;
+            lastDeniedKind = SUBAGENT_WRITE_ABUSE_PREFIX + writeAbuse;
+            sendPermissionResponse(reqId, rejectOptionId);
+            return;
+        }
+
         // Use per-tool permission settings (DENY / ASK / ALLOW)
         String toolId = resolveToolId(permKind, toolCall);
-        ToolPermission perm = resolveEffectivePermission(toolId, permKind, toolCall);
+        ToolPermission perm = resolveEffectivePermission(toolId, toolCall);
+
+        // Auto-approve: profile's usePluginPermissions=false promotes ASK → ALLOW (DENY stays DENY)
+        if (perm == ToolPermission.ASK && agentSettings.isAutoApprovePermissions()) {
+            LOG.info("ACP request_permission: auto-approve promoting ASK→ALLOW for " + toolId);
+            perm = ToolPermission.ALLOW;
+        }
+
+        // Session-scoped allow: if user previously chose "Allow for session", skip the prompt
+        if (perm == ToolPermission.ASK && sessionAllowedTools.contains(toolId)) {
+            LOG.info("ACP request_permission: session-allowed for " + toolId);
+            perm = ToolPermission.ALLOW;
+        }
 
         if (perm == ToolPermission.DENY) {
             String rejectOptionId = findRejectOption(reqParams);
-            LOG.info("ACP request_permission: DENYING " + permKind + " (tool=" + toolId + "), option=" + rejectOptionId);
+            LOG.info("ACP request_permission: DENYING " + permKind + TOOL_PREFIX + toolId + "), option=" + rejectOptionId);
 
             // Send guidance BEFORE rejecting so agent sees it while still in turn
             Map<String, Object> retryParams = buildRetryParams(permKind);
@@ -1109,13 +1154,13 @@ public class AcpClient implements Closeable {
             fireDebugEvent(PRE_REJECTION_GUIDANCE_EVENT, SENDING_GUIDANCE_DESC, retryMessage);
             sendPromptMessage(retryMessage);
 
-            fireDebugEvent(PERMISSION_DENIED_EVENT, "Denied: " + permKind + " (tool=" + toolId + ")",
+            fireDebugEvent(PERMISSION_DENIED_EVENT, "Denied: " + permKind + TOOL_PREFIX + toolId + ")",
                 "Permission mode: DENY");
             builtInActionDeniedDuringTurn = true;
             lastDeniedKind = permKind;
             sendPermissionResponse(reqId, rejectOptionId);
         } else if (perm == ToolPermission.ASK) {
-            // ASK: fire permission request to UI and block until user responds (60s timeout)
+            // ASK: fire permission request to UI and block until user responds (120s timeout)
             var listener = permissionRequestListener;
             if (listener == null) {
                 // No UI listener registered — fall back to auto-deny for safety
@@ -1124,27 +1169,32 @@ public class AcpClient implements Closeable {
                 sendPermissionResponse(reqId, rejectOptionId);
                 return;
             }
-            CompletableFuture<Boolean> future = new CompletableFuture<>();
+            CompletableFuture<PermissionResponse> future = new CompletableFuture<>();
             pendingPermissionAsks.put(reqId, future);
             ToolRegistry.ToolEntry toolEntry = ToolRegistry.findById(toolId);
             String displayName = toolEntry != null ? toolEntry.displayName : permKind;
             PermissionRequest req = new PermissionRequest(reqId, toolId, displayName, formattedPermission,
                 future::complete);
             listener.accept(req);
-            boolean allowed;
+            PermissionResponse response;
             try {
-                allowed = future.get(60, java.util.concurrent.TimeUnit.SECONDS);
+                response = future.get(120, java.util.concurrent.TimeUnit.SECONDS);
             } catch (Exception e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                 LOG.info("ACP request_permission: ASK timed out / cancelled for " + toolId + " — denying");
-                allowed = false;
+                response = PermissionResponse.DENY;
             } finally {
                 pendingPermissionAsks.remove(reqId);
             }
-            if (allowed) {
-                String allowOptionId = findAllowOption(reqParams);
-                LOG.info("ACP request_permission: ASK approved by user for " + toolId);
-                fireDebugEvent("PERMISSION_APPROVED", formattedPermission, "user-approved");
-                sendPermissionResponse(reqId, allowOptionId);
+            if (response == PermissionResponse.ALLOW_SESSION) {
+                sessionAllowedTools.add(toolId);
+                LOG.info("ACP request_permission: ASK approved for session for " + toolId);
+                fireDebugEvent(PERMISSION_APPROVED_EVENT, formattedPermission, "session-approved");
+                sendPermissionResponse(reqId, findAllowOption(reqParams));
+            } else if (response == PermissionResponse.ALLOW_ONCE) {
+                LOG.info("ACP request_permission: ASK approved (once) for " + toolId);
+                fireDebugEvent(PERMISSION_APPROVED_EVENT, formattedPermission, "user-approved");
+                sendPermissionResponse(reqId, findAllowOption(reqParams));
             } else {
                 String rejectOptionId = findRejectOption(reqParams);
                 LOG.info("ACP request_permission: ASK denied by user for " + toolId);
@@ -1156,42 +1206,45 @@ public class AcpClient implements Closeable {
         } else {
             // ALLOW
             String allowOptionId = findAllowOption(reqParams);
-            LOG.info("ACP request_permission: auto-approving " + permKind + " (tool=" + toolId + "), option=" + allowOptionId);
-            fireDebugEvent("PERMISSION_APPROVED", formattedPermission, "");
+            LOG.info("ACP request_permission: auto-approving " + permKind + TOOL_PREFIX + toolId + "), option=" + allowOptionId);
+            fireDebugEvent(PERMISSION_APPROVED_EVENT, formattedPermission, "");
             sendPermissionResponse(reqId, allowOptionId);
         }
     }
 
     /**
-     * Strip "intellij-code-tools-" prefix and normalise the tool ID from permKind / toolCall name.
+     * Strip the MCP server-name prefix and normalise the tool ID from permKind / toolCall name.
+     * The prefix is determined dynamically ({@link #effectiveMcpPrefix}) so it works regardless
+     * of the name the user registered the server under.
      */
     private String resolveToolId(@Nullable String permKind, @Nullable JsonObject toolCall) {
         String name = "";
         if (toolCall != null && toolCall.has("name")) {
             name = toolCall.get("name").getAsString();
         }
-        if (name.startsWith("intellij-code-tools-")) {
-            name = name.substring("intellij-code-tools-".length());
+        if (name.startsWith(effectiveMcpPrefix)) {
+            name = name.substring(effectiveMcpPrefix.length());
         }
-        return name.isEmpty() ? (permKind != null ? permKind : "") : name;
+        String fallback = permKind != null ? permKind : "";
+        return name.isEmpty() ? fallback : name;
     }
 
     /**
      * Look up the effective ToolPermission for a tool call.
      * For file tools, checks inside/outside-project sub-permission when a path is present.
      */
-    private ToolPermission resolveEffectivePermission(String toolId, String permKind, @Nullable JsonObject toolCall) {
+    private ToolPermission resolveEffectivePermission(String toolId, @Nullable JsonObject toolCall) {
         ToolRegistry.ToolEntry entry = ToolRegistry.findById(toolId);
 
-        // Path-based sub-permissions for file tools (ceiling enforced by CopilotSettings)
+        // Path-based sub-permissions for file tools (ceiling enforced by AgentSettings)
         if (entry != null && entry.supportsPathSubPermissions && toolCall != null) {
             String path = extractPathFromToolCall(toolCall);
             if (path != null && !path.isEmpty()) {
                 boolean insideProject = isPathInsideProject(path);
-                return CopilotSettings.resolveEffectivePermission(toolId, insideProject);
+                return agentSettings.resolveEffectivePermission(toolId, insideProject);
             }
         }
-        return CopilotSettings.getToolPermission(toolId);
+        return agentSettings.getToolPermission(toolId);
     }
 
     /**
@@ -1205,7 +1258,7 @@ public class AcpClient implements Closeable {
             }
         }
         // Also check inside a nested "arguments" / "input" object
-        for (String wrapper : new String[]{"arguments", "input", "params"}) {
+        for (String wrapper : new String[]{"arguments", "input", PARAMS}) {
             if (toolCall.has(wrapper) && toolCall.get(wrapper).isJsonObject()) {
                 JsonObject inner = toolCall.getAsJsonObject(wrapper);
                 for (String key : new String[]{"path", "file", "file1", "file2"}) {
@@ -1237,16 +1290,22 @@ public class AcpClient implements Closeable {
     }
 
     /**
-     * Detect if run_command is being abused to do something we have a dedicated tool for.
-     * Returns abuse type if detected, null otherwise.
+     * Detect if run_command or the bash built-in tool is being abused to do something
+     * we have a dedicated tool for. Returns abuse type if detected, null otherwise.
      */
     private String detectCommandAbuse(JsonObject toolCall) {
         if (toolCall == null) return null;
 
         String toolName = toolCall.has("name") ? toolCall.get("name").getAsString() : "";
-        if (!"run_command".equals(toolName) && !"intellij-code-tools-run_command".equals(toolName)) {
-            return null;
-        }
+        String permKind = toolCall.has("kind") ? toolCall.get("kind").getAsString() : "";
+        String expectedMcpName = effectiveMcpPrefix + "run_command";
+
+        boolean isRunCommand = "run_command".equals(toolName) || expectedMcpName.equals(toolName);
+        // Also intercept the bash built-in tool (kind=execute or kind=bash)
+        boolean isBashTool = KIND_BASH.equals(permKind) || KIND_EXECUTE.equals(permKind)
+            || KIND_BASH.equals(toolName);
+
+        if (!isRunCommand && !isBashTool) return null;
 
         String command = extractCommand(toolCall);
         if (command.isEmpty()) return null;
@@ -1277,9 +1336,27 @@ public class AcpClient implements Closeable {
         if (!subAgentActive || toolCall == null) return null;
 
         String toolName = toolCall.has("name") ? toolCall.get("name").getAsString() : "";
-        // Strip MCP prefix if present
-        String shortName = toolName.replace("intellij-code-tools-", "");
+        // Strip MCP prefix (dynamic — matches whatever name the server is registered under)
+        String shortName = toolName.startsWith(effectiveMcpPrefix)
+            ? toolName.substring(effectiveMcpPrefix.length())
+            : toolName;
         return GIT_WRITE_TOOLS.contains(shortName) ? shortName : null;
+    }
+
+    /**
+     * Detect if a sub-agent is trying to use a built-in write/execute tool.
+     * Returns the tool kind (e.g. "edit", "bash") if blocked, null otherwise.
+     * <p>
+     * Built-in write tools bypass IntelliJ's editor buffer, causing desync.
+     * Sub-agents can't receive guidance via session/message (CLI limitation),
+     * so we must deny unconditionally — the denial itself is the only signal
+     * the sub-agent receives.
+     */
+    private String detectSubAgentWriteTool(JsonObject toolCall) {
+        if (!subAgentActive || toolCall == null) return null;
+
+        String kind = toolCall.has("kind") ? toolCall.get("kind").getAsString() : "";
+        return BUILTIN_WRITE_TOOLS.contains(kind) ? kind : null;
     }
 
     /**
@@ -1287,43 +1364,55 @@ public class AcpClient implements Closeable {
      * Returns a map with "message" key containing the instruction text.
      */
     private Map<String, Object> buildRetryParams(@NotNull String deniedKind) {
+        String p = effectiveMcpPrefix; // shorthand for tool name prefixing
         String instruction;
 
         // Specific guidance for run_command abuse
         if (deniedKind.startsWith(RUN_COMMAND_ABUSE_PREFIX)) {
             String abuseType = deniedKind.substring(RUN_COMMAND_ABUSE_PREFIX.length());
             instruction = switch (abuseType) {
-                case "test" -> "⚠ Don't use run_command for tests (including build/check/verify which " +
-                    "implicitly run tests). Use 'intellij-code-tools-run_tests' instead. " +
-                    "Provides structured results, coverage, and failure details.";
-                case "sed" -> "⚠ Don't use sed. Use 'intellij-code-tools-intellij_write_file' instead. " +
-                    "It provides proper file editing with undo/redo and live editor buffer access.";
-                case "cat" ->
-                    "⚠ Don't use cat/head/tail/less/more. Use 'intellij-code-tools-intellij_read_file' instead. " +
-                        "It reads from the live editor buffer, not stale disk files.";
-                case "grep" -> "⚠ Don't use grep. Use 'intellij-code-tools-search_symbols' or " +
-                    "'intellij-code-tools-find_references' instead. They search live editor buffers.";
-                case "find" -> "⚠ Don't use find. Use 'intellij-code-tools-list_project_files' instead.";
+                case "compile" -> "⚠ Don't run Gradle compile tasks directly. Use '" + p + "build_project' instead. "
+                    + "It uses IntelliJ's incremental compiler which is faster and keeps editor buffers in sync.";
+                case "test" -> "⚠ Don't run tests from the command line (including build/check/verify which "
+                    + "implicitly run tests). Use '" + p + "run_tests' instead. "
+                    + "Provides structured results, coverage, and failure details.";
+                case "sed" -> "⚠ Don't use sed. Use '" + p + "edit_text' for surgical edits " +
+                    "or '" + p + "replace_symbol_body' for replacing whole methods/classes. " +
+                    "They provide proper undo/redo and live editor buffer access.";
+                case "cat" -> "⚠ Don't use cat/head/tail/less/more. Use '" + p + "intellij_read_file' instead. " +
+                    "It reads from the live editor buffer, not stale disk files.";
+                case "grep" -> "⚠ Don't use grep. Use '" + p + "search_symbols' or " +
+                    "'" + p + "find_references' instead. They search live editor buffers.";
+                case "find" -> "⚠ Don't use find. Use '" + p + "list_project_files' instead.";
                 case "git" -> "⚠ Don't use git commands via run_command — it desyncs IntelliJ editor buffers. " +
                     "Use dedicated git tools: git_status, git_diff, git_log, git_commit, git_stage, " +
                     "git_unstage, git_branch, git_stash, git_show, git_blame, git_push, git_remote, " +
                     "git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset.";
-                default -> TOOL_DENIED_DEFAULT_MSG;
+                default -> String.format(TOOL_DENIED_DEFAULT_MSG_TEMPLATE, p);
             };
         } else if (deniedKind.startsWith(GIT_WRITE_ABUSE_PREFIX)) {
             instruction = "⚠ Sub-agents must not use git write commands (git_commit, git_stage, git_unstage, " +
                 "git_branch, git_stash, git_push, git_remote, git_pull, git_merge, git_rebase, " +
                 "git_cherry_pick, git_tag, git_reset). Only the parent agent may perform git writes. " +
                 "Use read-only git tools (git_status, git_diff, git_log, git_show, git_blame, git_fetch) instead.";
-        } else if ("bash".equals(deniedKind) || "execute".equals(deniedKind)) {
+        } else if (deniedKind.startsWith(SUBAGENT_WRITE_ABUSE_PREFIX)) {
+            String tool = deniedKind.substring(SUBAGENT_WRITE_ABUSE_PREFIX.length());
+            instruction = "⚠ Sub-agents must not use built-in '" + tool + "' — it writes to disk, bypassing " +
+                "IntelliJ's editor buffer. Use '" + p + "' prefixed tools instead: " +
+                "'" + p + "intellij_write_file' to write files, " +
+                "'" + p + "edit_text' for surgical edits, " +
+                "'" + p + "create_file' to create files, " +
+                "'" + p + "run_command' for shell commands. " +
+                "These tools write through IntelliJ's Document API (undo/redo, live buffers, no desync).";
+        } else if (KIND_BASH.equals(deniedKind) || KIND_EXECUTE.equals(deniedKind)) {
             instruction = "⚠ Don't use bash/shell execution — it reads/writes disk directly, bypassing IntelliJ editor buffers. " +
-                "Use 'intellij-code-tools-run_command' for shell commands (flushes buffers first). " +
-                "For file operations use intellij_read_file, intellij_write_file, search_text, etc. " +
+                "Use '" + p + "run_command' for shell commands (flushes buffers first). " +
+                "For file operations use intellij_read_file, edit_text, replace_symbol_body, search_text, etc. " +
                 "For git use dedicated git tools: git_status, git_diff, git_log, git_commit, git_stage, " +
                 "git_push, git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset.";
         } else {
             // Generic message for other denials
-            instruction = TOOL_DENIED_DEFAULT_MSG;
+            instruction = String.format(TOOL_DENIED_DEFAULT_MSG_TEMPLATE, p);
         }
 
         return Map.of(MESSAGE, instruction);
@@ -1431,6 +1520,7 @@ public class AcpClient implements Closeable {
     @Override
     public void close() {
         closed = true;
+        sessionAllowedTools.clear();
         failAllPendingRequests();
         if (writer != null) {
             try {
@@ -1457,109 +1547,5 @@ public class AcpClient implements Closeable {
         LOG.info("ACP client closed");
     }
 
-    // DTOs
-
-    public static class Model {
-        private String id;
-        private String name;
-        private String description;
-        private String usage; // e.g., "1x", "3x", "0.33x"
-
-        public String getId() {
-            return id;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setId(String id) {
-            this.id = id;
-        }
-
-        public String getName() {
-            return name;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setName(String name) {
-            this.name = name;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public String getDescription() {
-            return description;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setDescription(String description) {
-            this.description = description;
-        }
-
-        public String getUsage() {
-            return usage;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setUsage(String usage) {
-            this.usage = usage;
-        }
-    }
-
-    /**
-     * ACP resource reference ? file or selection context sent with prompts.
-     */
-    public record ResourceReference(@NotNull String uri, @Nullable String mimeType, @NotNull String text) {
-    }
-
-    public static class AuthMethod {
-        private String id;
-        private String name;
-        private String description;
-        private String command;
-        private List<String> args;
-
-        public String getId() {
-            return id;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setId(String id) {
-            this.id = id;
-        }
-
-        public String getName() {
-            return name;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setName(String name) {
-            this.name = name;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public String getDescription() {
-            return description;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setDescription(String description) {
-            this.description = description;
-        }
-
-        public String getCommand() {
-            return command;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setCommand(String command) {
-            this.command = command;
-        }
-
-        public List<String> getArgs() {
-            return args;
-        }
-
-        @SuppressWarnings("unused") // Public API for external use
-        public void setArgs(List<String> args) {
-            this.args = args;
-        }
-    }
+    // DTOs are in separate files: Model.java, ResourceReference.java, AuthMethod.java
 }

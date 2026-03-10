@@ -2,17 +2,15 @@ package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.intellij.openapi.options.Configurable;
 import com.intellij.ui.ToolbarDecorator;
-import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.JComponent;
-import javax.swing.JPanel;
+import javax.swing.*;
 import javax.swing.table.AbstractTableModel;
-import java.awt.BorderLayout;
+import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -39,9 +37,9 @@ public final class ProjectFilesConfigurable implements Configurable {
         loadFromSettings();
 
         table = new JBTable(tableModel);
-        table.getColumnModel().getColumn(0).setPreferredWidth(150);
-        table.getColumnModel().getColumn(1).setPreferredWidth(300);
-        table.getColumnModel().getColumn(2).setPreferredWidth(60);
+        table.getColumnModel().getColumn(0).setPreferredWidth(JBUI.scale(150));
+        table.getColumnModel().getColumn(1).setPreferredWidth(JBUI.scale(300));
+        table.getColumnModel().getColumn(2).setPreferredWidth(JBUI.scale(60));
 
         JPanel decorated = ToolbarDecorator.createDecorator(table)
             .setAddAction(b -> {

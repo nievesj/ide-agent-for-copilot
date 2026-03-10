@@ -10,7 +10,6 @@ import com.intellij.ui.components.JBPanel
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
-import java.awt.FlowLayout
 import java.awt.Font
 import java.awt.datatransfer.StringSelection
 import java.util.concurrent.ScheduledFuture
@@ -24,15 +23,14 @@ import javax.swing.SwingUtilities
  * Uses [InlineBanner] for native JetBrains look and feel, with an optional device-code row
  * shown during inline auth flows.
  *
- * The banner self-shows/hides by polling [diagnosticsFn].  When the diagnostic clears, [onFixed]
- * is called and the banner hides.  Polling uses [AppExecutorUtil] so no raw executor threads are
+ * The banner self-shows/hides by polling [diagnosticsFn]. When the diagnostic clears, [onFixed]
+ * is called and the banner hides. Polling uses [AppExecutorUtil] so no raw executor threads are
  * ever leaked.
  *
  * Callers configure the display state in [onDiagUpdate] via [updateState], which fires on the EDT
  * whenever a new (non-null) diagnostic value arrives.
  */
 class AuthSetupBanner(
-    @Suppress("UNUSED_PARAMETER") retryTooltip: String,
     private val pollIntervalDown: Long = 30,
     private val pollIntervalUp: Long = 60,
     private val diagnosticsFn: () -> String?,
@@ -43,10 +41,10 @@ class AuthSetupBanner(
 
     private val banner = InlineBanner("", EditorNotificationPanel.Status.Warning)
 
-    // Action links created once, visibility toggled as needed
-    private var installAction: javax.swing.JComponent = javax.swing.JPanel()
-    private var signInAction: javax.swing.JComponent = javax.swing.JPanel()
-    private var retryAction: javax.swing.JComponent = javax.swing.JPanel()
+    // Action links created once in init; visibility toggled as needed
+    private var installAction: javax.swing.JComponent? = null
+    private var signInAction: javax.swing.JComponent? = null
+    private var retryAction: javax.swing.JComponent? = null
 
     /** Set by callers to handle the "Install…" action click. */
     var installHandler: (() -> Unit)? = null
@@ -58,7 +56,8 @@ class AuthSetupBanner(
     var retryHandler: (() -> Unit)? = null
 
     // ── Device code row (shown when inline auth parses a code + URL) ─────────
-    private val deviceCodeRow = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
+    private val deviceCodeRow = JBPanel<JBPanel<*>>().apply {
+        layout = BoxLayout(this, BoxLayout.X_AXIS)
         isOpaque = false
         isVisible = false
         border = JBUI.Borders.emptyLeft(22)
@@ -75,6 +74,9 @@ class AuthSetupBanner(
     private var deviceUrl: String? = null
 
     private var scheduledFuture: ScheduledFuture<*>? = null
+
+    // Tracks the delayed "re-show sign in" future from showSignInPending()
+    private var pendingSignInFuture: ScheduledFuture<*>? = null
     private var wasDown = false
 
     init {
@@ -86,11 +88,11 @@ class AuthSetupBanner(
         deviceCodeRow.add(copyLink)
         deviceCodeRow.add(openBrowserLink)
 
-        val stack = JBPanel<JBPanel<*>>().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        // Use BorderLayout so banner fills width and deviceCodeRow sits below without alignment issues
+        val stack = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             isOpaque = false
-            add(banner)
-            add(deviceCodeRow)
+            add(banner, BorderLayout.CENTER)
+            add(deviceCodeRow, BorderLayout.SOUTH)
         }
         add(stack, BorderLayout.CENTER)
 
@@ -101,8 +103,8 @@ class AuthSetupBanner(
             retryHandler?.invoke()
             triggerCheck()
         }
-        installAction.isVisible = false
-        signInAction.isVisible = false
+        installAction?.isVisible = false
+        signInAction?.isVisible = false
 
         copyLink.addHyperlinkListener {
             val code = codeLabel.text.trim()
@@ -176,7 +178,7 @@ class AuthSetupBanner(
         banner.setMessage("Signing in\u2026 waiting for device code from CLI.")
         rebuildActions(showInstall = false, showSignIn = false)
         // Re-enable Sign In after a few seconds so the user can retry if nothing happened
-        AppExecutorUtil.getAppScheduledExecutorService().schedule(
+        pendingSignInFuture = AppExecutorUtil.getAppScheduledExecutorService().schedule(
             { SwingUtilities.invokeLater { rebuildActions(showInstall = false, showSignIn = true) } },
             8L, TimeUnit.SECONDS,
         )
@@ -185,9 +187,9 @@ class AuthSetupBanner(
     // ── Action management ─────────────────────────────────────────────────────
 
     private fun rebuildActions(showInstall: Boolean, showSignIn: Boolean) {
-        installAction.isVisible = showInstall
-        signInAction.isVisible = showSignIn
-        retryAction.isVisible = true
+        installAction?.isVisible = showInstall
+        signInAction?.isVisible = showSignIn
+        retryAction?.isVisible = true
     }
 
     // ── Polling ───────────────────────────────────────────────────────────────
@@ -209,6 +211,8 @@ class AuthSetupBanner(
     private fun cancelPoll() {
         scheduledFuture?.cancel(false)
         scheduledFuture = null
+        pendingSignInFuture?.cancel(false)
+        pendingSignInFuture = null
     }
 
     private fun runCheck() {
@@ -230,6 +234,7 @@ class AuthSetupBanner(
             onDiagUpdate(this, diag)
         } else {
             hideDeviceCode()
+            banner.setMessage("")
         }
         isVisible = nowDown
         if (wasDown && !nowDown) onFixed()

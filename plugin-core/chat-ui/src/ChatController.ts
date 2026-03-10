@@ -11,14 +11,23 @@ const ChatController = {
         return document.querySelector('#messages')!;
     },
 
-    _container(): HTMLElement & { scrollIfNeeded(): void; forceScroll(): void } | null {
+    _container(): HTMLElement & {
+        scrollIfNeeded(): void;
+        forceScroll(): void;
+        workingIndicator: HTMLElement & { show(): void; hide(): void; resetTimer(): void }
+    } | null {
         return document.querySelector('chat-container') as any;
     },
 
+    _resetWorkingTimer(): void {
+        const wi = this._container()?.workingIndicator;
+        if (wi && !wi.hidden) wi.resetTimer();
+    },
+
     _thinkingCounter: 0,
-    _modelColors: {} as Record<string, number>,
-    _nextModelColor: 0,
-    _currentModel: '',
+    _profileColors: {} as Record<string, number>,
+    _nextProfileColor: 0,
+    _currentProfile: '',
     _ctx: {} as Record<string, TurnContext & { thinkingMsg?: HTMLElement | null; thinkingChip?: HTMLElement | null }>,
 
     _getCtx(turnId: string, agentId: string): TurnContext & {
@@ -44,14 +53,15 @@ const ChatController = {
         if (!ctx.msg) {
             const msg = document.createElement('chat-message');
             msg.setAttribute('type', 'agent');
-            // Apply model-based color class for main agent messages
-            if (this._currentModel && agentId === 'main') {
-                if (!(this._currentModel in this._modelColors)) {
-                    this._modelColors[this._currentModel] = this._nextModelColor++ % 6;
+            // Apply profile-based color class for main agent messages
+            if (this._currentProfile && agentId === 'main') {
+                if (!(this._currentProfile in this._profileColors)) {
+                    this._profileColors[this._currentProfile] = this._nextProfileColor++ % 6;
                 }
-                msg.classList.add('model-c' + this._modelColors[this._currentModel]);
+                msg.classList.add('model-c' + this._profileColors[this._currentProfile]);
             }
             const meta = document.createElement('message-meta');
+            meta.className = 'meta';
             const now = new Date();
             const ts = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
             const tsSpan = document.createElement('span');
@@ -101,15 +111,19 @@ const ChatController = {
 
     // ── Public API ─────────────────────────────────────────────
 
-    addUserMessage(text: string, timestamp: string, ctxChipsHtml?: string): void {
+    addUserMessage(text: string, timestamp: string, encodedBubbleHtml?: string): void {
         const msg = document.createElement('chat-message');
         msg.setAttribute('type', 'user');
         const meta = document.createElement('message-meta');
-        meta.innerHTML = '<span class="ts">' + timestamp + '</span>' + (ctxChipsHtml || '');
+        meta.innerHTML = '<span class="ts">' + timestamp + '</span>';
         msg.appendChild(meta);
         const bubble = document.createElement('message-bubble');
         bubble.setAttribute('type', 'user');
-        bubble.textContent = text;
+        if (encodedBubbleHtml) {
+            bubble.innerHTML = b64(encodedBubbleHtml);
+        } else {
+            bubble.textContent = text;
+        }
         msg.appendChild(bubble);
         this._msgs().appendChild(msg);
         this._container()?.forceScroll();
@@ -117,6 +131,7 @@ const ChatController = {
 
     appendAgentText(turnId: string, agentId: string, text: string): void {
         try {
+            this._resetWorkingTimer();
             const ctx = this._getCtx(turnId, agentId);
             this._collapseThinkingFor(ctx);
             if (!ctx.textBubble) {
@@ -149,7 +164,7 @@ const ChatController = {
                 }
             } else if (ctx.textBubble) {
                 ctx.textBubble.remove();
-                if (ctx.msg && !ctx.msg.querySelector('message-bubble, tool-section, thinking-block')) {
+                if (ctx.msg && !ctx.msg.querySelector('message-bubble, tool-chip, thinking-block')) {
                     ctx.msg.remove();
                     ctx.msg = null;
                     ctx.meta = null;
@@ -163,6 +178,7 @@ const ChatController = {
     },
 
     addThinkingText(turnId: string, agentId: string, text: string): void {
+        this._resetWorkingTimer();
         const ctx = this._ensureMsg(turnId, agentId);
         if (!ctx.thinkingBlock) {
             this._thinkingCounter++;
@@ -190,35 +206,28 @@ const ChatController = {
     },
 
     addToolCall(turnId: string, agentId: string, id: string, title: string, paramsJson?: string, kind?: string): void {
+        this._resetWorkingTimer();
         const ctx = this._ensureMsg(turnId, agentId);
         this._collapseThinkingFor(ctx);
-        const section = document.createElement('tool-section');
-        section.id = id;
-        section.setAttribute('title', title);
-        if (paramsJson) section.setAttribute('params', paramsJson);
-        ctx.details!.appendChild(section);
         const chip = document.createElement('tool-chip');
         chip.setAttribute('label', title);
         chip.setAttribute('status', 'running');
         if (kind) chip.setAttribute('kind', kind);
         (chip as HTMLElement).dataset.chipFor = id;
-        (chip as any).linkSection(section);
+        if (paramsJson) (chip as HTMLElement).dataset.params = paramsJson;
         ctx.meta!.appendChild(chip);
         ctx.meta!.classList.add('show');
         this._container()?.scrollIfNeeded();
     },
 
     updateToolCall(id: string, status: string, resultHtml?: string): void {
-        const section = document.getElementById(id);
-        if (section) {
-            (section as any).result = (typeof resultHtml === 'string') ? resultHtml : 'Completed';
-            if (status === 'failed') section.classList.add('failed');
-        }
+        this._resetWorkingTimer();
         const chip = document.querySelector('[data-chip-for="' + id + '"]');
         if (chip) chip.setAttribute('status', status === 'failed' ? 'failed' : 'complete');
     },
 
     addSubAgent(turnId: string, agentId: string, sectionId: string, displayName: string, colorIndex: number, promptText?: string): void {
+        this._resetWorkingTimer();
         const ctx = this._ensureMsg(turnId, agentId);
         this._collapseThinkingFor(ctx);
         ctx.textBubble = null;
@@ -237,12 +246,17 @@ const ChatController = {
         msg.id = 'sa-' + sectionId;
         msg.classList.add('subagent-indent', 'subagent-c' + colorIndex);
         const meta = document.createElement('message-meta');
+        meta.className = 'meta show';
         const now = new Date();
         const ts = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
         const tsSpan = document.createElement('span');
         tsSpan.className = 'ts';
         tsSpan.textContent = ts;
         meta.appendChild(tsSpan);
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'agent-name';
+        nameSpan.textContent = displayName;
+        meta.appendChild(nameSpan);
         msg.appendChild(meta);
         const saDetails = document.createElement('turn-details');
         msg.appendChild(saDetails);
@@ -269,18 +283,11 @@ const ChatController = {
         const msg = document.getElementById('sa-' + subAgentDomId);
         if (!msg) return;
         const meta = msg.querySelector('message-meta');
-        const section = document.createElement('tool-section');
-        section.id = toolDomId;
-        section.setAttribute('title', title);
-        if (paramsJson) section.setAttribute('params', paramsJson);
-        const details = msg.querySelector('turn-details');
-        if (details) details.appendChild(section);
-        else msg.appendChild(section);
         const chip = document.createElement('tool-chip');
         chip.setAttribute('label', title);
         chip.setAttribute('status', 'running');
         chip.dataset.chipFor = toolDomId;
-        (chip as any).linkSection(section);
+        if (paramsJson) chip.dataset.params = paramsJson;
         if (meta) {
             meta.appendChild(chip);
             meta.classList.add('show');
@@ -288,9 +295,10 @@ const ChatController = {
         this._container()?.scrollIfNeeded();
     },
 
-    addSessionSeparator(timestamp: string): void {
+    addSessionSeparator(timestamp: string, agent: string = ''): void {
         const el = document.createElement('session-divider');
         el.setAttribute('timestamp', timestamp);
+        if (agent) el.setAttribute('agent', agent);
         this._msgs().appendChild(el);
     },
 
@@ -300,15 +308,17 @@ const ChatController = {
     },
 
     clear(): void {
+        this.hideWorkingIndicator();
         this._msgs().innerHTML = '';
         this._ctx = {};
         this._thinkingCounter = 0;
-        this._modelColors = {};
-        this._nextModelColor = 0;
-        this._currentModel = '';
+        this._profileColors = {};
+        this._nextProfileColor = 0;
+        this._currentProfile = '';
     },
 
     finalizeTurn(turnId: string, statsJson?: string): void {
+        this.hideWorkingIndicator();
         const ctx = this._ctx[turnId + '-main'];
         if (ctx?.textBubble && !ctx.textBubble.textContent?.trim()) {
             ctx.textBubble.remove();
@@ -362,11 +372,11 @@ const ChatController = {
     },
 
     cancelAllRunning(): void {
+        this.hideWorkingIndicator();
         document.querySelectorAll('tool-chip[status="running"]').forEach(c => c.setAttribute('status', 'failed'));
         document.querySelectorAll('thinking-chip[status="running"], thinking-chip[status="thinking"]').forEach(c => c.setAttribute('status', 'complete'));
         document.querySelectorAll('subagent-chip[status="running"]').forEach(c => c.setAttribute('status', 'failed'));
         document.querySelectorAll('message-bubble[streaming]').forEach(b => b.removeAttribute('streaming'));
-        document.querySelectorAll('.tool-running-hint').forEach(h => { h.textContent = 'Cancelled'; });
     },
 
     setPromptStats(model: string, multiplier: string): void {
@@ -387,8 +397,12 @@ const ChatController = {
         meta.appendChild(chip);
     },
 
+    setCurrentProfile(profileId: string): void {
+        this._currentProfile = profileId;
+    },
+
     setCurrentModel(modelId: string): void {
-        this._currentModel = modelId;
+        // Kept for stats display compatibility; coloring is now profile-based.
     },
 
     restoreBatch(encodedHtml: string): void {
@@ -416,6 +430,15 @@ const ChatController = {
 
     removeLoadMore(): void {
         document.querySelector('load-more')?.remove();
+    },
+
+    showWorkingIndicator(): void {
+        this._container()?.workingIndicator?.show();
+        this._container()?.scrollIfNeeded();
+    },
+
+    hideWorkingIndicator(): void {
+        this._container()?.workingIndicator?.hide();
     },
 
     _trimMessages(): void {

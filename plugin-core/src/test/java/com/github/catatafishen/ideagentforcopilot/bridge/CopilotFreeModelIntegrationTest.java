@@ -1,5 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
+import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
+import com.github.catatafishen.ideagentforcopilot.services.GenericSettings;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,17 +55,20 @@ class CopilotFreeModelIntegrationTest {
     @BeforeEach
     void setUp() throws Exception {
         Assumptions.assumeTrue(copilotAvailable(), "Copilot CLI not available");
-        client = new AcpClient(new CopilotAgentConfig(), null);
+        client = new AcpClient(
+            new ProfileBasedAgentConfig(AgentProfileManager.createDefaultCopilotProfile()),
+            new GenericAgentSettings(new GenericSettings("copilot"), null),
+            null, 0);
         client.start();
         sessionId = client.createSession();
 
-        List<AcpClient.Model> models = client.listModels();
+        List<Model> models = client.listModels();
         // Select free model (0x) or cheapest available
         freeModelId = models.stream()
             .filter(m -> "0x".equals(m.getUsage()))
             .findFirst()
             .or(() -> models.stream().filter(m -> "0.33x".equals(m.getUsage())).findFirst())
-            .map(AcpClient.Model::getId)
+            .map(Model::getId)
             .orElse(null);
 
         Assumptions.assumeTrue(freeModelId != null,
@@ -78,8 +83,8 @@ class CopilotFreeModelIntegrationTest {
     @Test
     @Order(1)
     void testFreeModelExists() throws Exception {
-        List<AcpClient.Model> models = client.listModels();
-        AcpClient.Model freeModel = models.stream()
+        List<Model> models = client.listModels();
+        Model freeModel = models.stream()
             .filter(m -> m.getId().equals(freeModelId))
             .findFirst().orElse(null);
 
@@ -144,7 +149,10 @@ class CopilotFreeModelIntegrationTest {
         assertFalse(client.isHealthy());
 
         // Create new client
-        client = new AcpClient(new CopilotAgentConfig(), null);
+        client = new AcpClient(
+            new ProfileBasedAgentConfig(AgentProfileManager.createDefaultCopilotProfile()),
+            new GenericAgentSettings(new GenericSettings("copilot"), null),
+            null, 0);
         client.start();
         assertTrue(client.isHealthy());
 
@@ -152,11 +160,11 @@ class CopilotFreeModelIntegrationTest {
         assertNotNull(sessionId);
 
         // Re-resolve free model
-        List<AcpClient.Model> models = client.listModels();
+        List<Model> models = client.listModels();
         freeModelId = models.stream()
             .filter(m -> "0x".equals(m.getUsage()))
             .findFirst()
-            .map(AcpClient.Model::getId)
+            .map(Model::getId)
             .orElse(null);
         Assumptions.assumeTrue(freeModelId != null);
 
@@ -168,12 +176,12 @@ class CopilotFreeModelIntegrationTest {
     @Test
     @Order(6)
     void testMultipleModelsAvailable() throws Exception {
-        List<AcpClient.Model> models = client.listModels();
+        List<Model> models = client.listModels();
 
         assertTrue(models.size() >= 2, "Should have multiple models available");
 
         // All models should have required fields
-        for (AcpClient.Model model : models) {
+        for (Model model : models) {
             assertNotNull(model.getId(), "Model id required");
             assertFalse(model.getId().isEmpty(), "Model id should not be empty");
             assertNotNull(model.getName(), "Model name required");

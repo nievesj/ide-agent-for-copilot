@@ -18,8 +18,8 @@ function shortClass(fqn: string): string {
 export function toolDisplayName(rawTitle: string, paramsJson?: string): string {
     // Strip MCP server prefixes
     const name = rawTitle
-        .replace(/^[Ii]ntellij-code-tools-/, '')
-        .replace(/^github-mcp-server-/, 'gh:');
+        .replace(/^[Ii]ntellij-code-tools[-_]/, '')
+        .replace(/^github-mcp-server[-_]/, 'gh:');
 
     let p: Record<string, any> = {};
     if (paramsJson) {

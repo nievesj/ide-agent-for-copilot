@@ -12,73 +12,51 @@ JSON-RPC stdio interface.
 
 ## Architecture Diagram
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                     IntelliJ IDEA IDE                             │
-│                                                                   │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │              Agentic Copilot Plugin (Java 21)              │  │
-│  │                                                             │  │
-│  │  ┌──────────────────────────────────────────────────────┐  │  │
-│  │  │              PSI Bridge Service                       │  │  │
-│  │  │  • HTTP Server (localhost:dynamic-port)              │  │  │
-│  │  │  • PSI/IntelliJ API bridge                           │  │  │
-│  │  │  • Project-level service (per-project instance)      │  │  │
-│  │  │  • Started via PsiBridgeStartup on project open      │  │  │
-│  │  └───────────────────┬──────────────────────────────────┘  │  │
-│  │                      │ HTTP/JSON-RPC                        │  │
-│  │  ┌───────────────────▼──────────────────────────────────┐  │  │
-│  │  │           CopilotService (Application-level)         │  │  │
-│  │  │  • Launches Copilot CLI via ACP                      │  │  │
-│  │  │  • Manages agent sessions                            │  │  │
-│  │  │  • Configures MCP server parameters                  │  │  │
-│  │  └───────────────────┬──────────────────────────────────┘  │  │
-│  │                      │ ACP Protocol                         │  │
-│  └──────────────────────┼──────────────────────────────────────┘  │
-│                         │                                         │
-└─────────────────────────┼─────────────────────────────────────────┘
-                          │
-                          │ stdio (JSON-RPC)
-                          │
-┌─────────────────────────▼─────────────────────────────────────────┐
-│                   GitHub Copilot CLI                               │
-│  • Runs copilot-agent subprocess with MCP configuration            │
-│  • Agent receives mcpServers parameter in ACP session config       │
-│  • Launches MCP server as child process with stdio transport       │
-└─────────────────────────┬─────────────────────────────────────────┘
-                          │
-                          │ stdio (JSON-RPC 2.0)
-                          │
-┌─────────────────────────▼─────────────────────────────────────────┐
-│              MCP Server (Java 21 subprocess)                       │
-│                                                                    │
-│  ┌──────────────────────────────────────────────────────────────┐ │
-│  │              McpServer.java (Main Entry Point)               │ │
-│  │  • Reads JSON-RPC messages from stdin                        │ │
-│  │  • Writes JSON-RPC responses to stdout                       │ │
-│  │  • Stateless request/response handler                        │ │
-│  │  • Project root passed as CLI argument                       │ │
-│  └───────────────────────┬──────────────────────────────────────┘ │
-│                          │                                         │
-│  ┌───────────────────────▼──────────────────────────────────────┐ │
-│  │                   MCP Protocol Layer                         │ │
-│  │  Methods:                                                    │ │
-│  │    • initialize       - Server capabilities & protocol ver  │ │
-│  │    • initialized      - Handshake notification              │ │
-│  │    • tools/list       - List available tools (60 tools)     │ │
-│  │    • tools/call       - Execute a specific tool             │ │
-│  │    • ping             - Health check                        │ │
-│  └───────────────────────┬──────────────────────────────────────┘ │
-│                          │                                         │
-│  ┌───────────────────────▼──────────────────────────────────────┐ │
-│  │                  Tool Execution Layer                        │ │
-│  │  Makes HTTP calls back to PSI Bridge to invoke IntelliJ:    │ │
-│  │    • POST http://localhost:{port}/{tool-name}                │ │
-│  │    • Passes tool arguments as JSON body                      │ │
-│  │    • Receives tool results as JSON response                  │ │
-│  └──────────────────────────────────────────────────────────────┘ │
-│                                                                    │
-└────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph IDE["IntelliJ IDEA IDE"]
+        subgraph Plugin["Agentic Copilot Plugin (Java 21)"]
+            PSI["PSI Bridge Service<br/>HTTP Server (localhost:dynamic-port)<br/>PSI/IntelliJ API bridge<br/>Project-level service"]
+            CS["CopilotService (Application-level)<br/>Launches Copilot CLI via ACP<br/>Manages agent sessions<br/>Configures MCP server parameters"]
+        end
+    end
+
+    subgraph CLI["GitHub Copilot CLI"]
+        Agent["copilot-agent subprocess<br/>Receives mcpServers in ACP session config<br/>Launches MCP server as child process"]
+    end
+
+    subgraph McpStdio["MCP Server (Java 21 subprocess)"]
+        Entry["McpServer.java<br/>stdin → JSON-RPC → stdout"]
+        Proto["MCP Protocol Layer<br/>initialize · tools/list · tools/call · ping"]
+        Exec["Tool Execution Layer<br/>HTTP POST to PSI Bridge"]
+    end
+
+    subgraph McpHttp["Standalone MCP HTTP Server"]
+        Http["McpHttpServer<br/>127.0.0.1:port"]
+        Handler["McpProtocolHandler<br/>JSON-RPC handler"]
+        StreamableT["Streamable HTTP<br/>POST /mcp"]
+        SseT["SSE Transport<br/>GET /sse · POST /message"]
+    end
+
+    subgraph Clients["External MCP Clients"]
+        Claude["Claude Desktop"]
+        Cursor["Cursor"]
+        Custom["Custom agents"]
+    end
+
+    PSI -->|"HTTP/JSON-RPC"| CS
+    CS -->|"ACP Protocol"| CLI
+    Agent -->|"stdio (JSON-RPC 2.0)"| Entry
+    Entry --> Proto --> Exec
+    Exec -->|"HTTP POST /tool-name"| PSI
+
+    Http --> Handler
+    Handler --> StreamableT
+    Handler --> SseT
+    StreamableT -->|"tool calls"| PSI
+    SseT -->|"tool calls"| PSI
+
+    Clients -->|"HTTP"| Http
 ```
 
 ---
@@ -206,6 +184,86 @@ plugin when launching the Copilot CLI.
 }
 ```
 
+### 4. Standalone MCP HTTP Server
+
+**Location:** `standalone-mcp/src/main/java/com/github/catatafishen/idemcpserver/`
+
+**Purpose:** Exposes the same MCP tools over HTTP for external AI agents (Claude Desktop, Cursor,
+custom MCP clients) that cannot use the stdio-based subprocess model.
+
+**Key classes:**
+
+| Class                          | Role                                                             |
+|--------------------------------|------------------------------------------------------------------|
+| `McpHttpServer`                | Starts `com.sun.net.httpserver.HttpServer`, registers endpoints  |
+| `McpProtocolHandler`           | Stateless JSON-RPC handler (shared by all transports)            |
+| `McpSseTransport`              | SSE session management, `/sse` and `/message` endpoints          |
+| `SseSession`                   | Single SSE client connection (event stream, keep-alive)          |
+| `McpServerSettings`            | Persistent settings: port, auto-start, transport mode            |
+| `McpServerGeneralConfigurable` | Settings UI (port, transport mode, auto-start, follow agent)     |
+| `McpServerToggleAction`        | Toolbar toggle to start/stop the server                          |
+
+#### Transport Modes
+
+Configured in **Settings → Tools → IDE Agent for Copilot → MCP Server → General**.
+
+##### Streamable HTTP (default)
+
+Single request/response model — the simplest transport for MCP.
+
+| Endpoint      | Method  | Description                            |
+|---------------|---------|----------------------------------------|
+| `/mcp`        | POST    | JSON-RPC request → JSON-RPC response   |
+| `/health`     | GET     | Server status check                    |
+
+Client config:
+```json
+{
+  "mcpServers": {
+    "ide-mcp-server": {
+      "url": "http://127.0.0.1:8642/mcp"
+    }
+  }
+}
+```
+
+##### SSE (Server-Sent Events)
+
+Long-lived event stream — required by some MCP clients (e.g., older Claude Desktop versions).
+
+| Endpoint              | Method | Description                                    |
+|-----------------------|--------|------------------------------------------------|
+| `/sse`                | GET    | Opens SSE stream; sends `endpoint` event       |
+| `/message?sessionId=` | POST   | Receives JSON-RPC; response via SSE stream     |
+| `/health`             | GET    | Server status check                            |
+
+**SSE protocol flow:**
+
+1. Client opens `GET /sse` → server sends `event: endpoint\ndata: /message?sessionId=xxx\n\n`
+2. Client sends JSON-RPC to `POST /message?sessionId=xxx`
+3. Server responds with HTTP 202 (accepted) and pushes the JSON-RPC response through
+   the SSE stream as `event: message\ndata: {...}\n\n`
+4. A keep-alive comment (`: keepalive`) is sent every 30 seconds to prevent timeouts
+
+Client config:
+```json
+{
+  "mcpServers": {
+    "ide-mcp-server": {
+      "url": "http://127.0.0.1:8642/sse"
+    }
+  }
+}
+```
+
+#### Startup Flow (Standalone)
+
+1. `McpServerStartup` runs on project open
+2. `PsiBridgeService` is started (tool handlers)
+3. If auto-start is enabled, `McpHttpServer.start()` is called
+4. Based on `TransportMode` setting, registers either `/mcp` or `/sse` + `/message` endpoints
+5. Server listens on `127.0.0.1:<port>` (localhost only)
+
 ---
 
 ## Tool Categories
@@ -276,48 +334,81 @@ The MCP server exposes **60 tools** organized into 11 categories:
 
 ## Data Flow: Tool Invocation
 
+### Stdio Transport (Copilot CLI)
+
+```mermaid
+sequenceDiagram
+    participant Agent as Copilot Agent
+    participant MCP as MCP Server
+    participant PSI as PSI Bridge HTTP
+    participant IJ as IntelliJ API
+
+    Agent->>MCP: 1. tools/call {search_symbols}
+    MCP->>PSI: 2. HTTP POST /search_symbols<br/>{query: "MyClass"}
+    PSI->>IJ: 3. PsiJavaFacade.findClass()
+    IJ-->>PSI: 4. Results
+    PSI-->>MCP: 5. HTTP Response {results: [...]}
+    MCP-->>Agent: 6. JSON-RPC result {content: [...]}
 ```
-┌────────┐         ┌───────────┐         ┌────────────┐         ┌─────────┐
-│ Copilot│         │    MCP    │         │ PSI Bridge │         │IntelliJ │
-│  Agent │         │  Server   │         │   HTTP     │         │   API   │
-└───┬────┘         └─────┬─────┘         └──────┬─────┘         └────┬────┘
-    │                    │                      │                     │
-    │ 1. tools/call      │                      │                     │
-    │  {search_symbols}  │                      │                     │
-    ├───────────────────►│                      │                     │
-    │                    │                      │                     │
-    │                    │ 2. HTTP POST         │                     │
-    │                    │  /search_symbols     │                     │
-    │                    │  {query: "MyClass"}  │                     │
-    │                    ├─────────────────────►│                     │
-    │                    │                      │                     │
-    │                    │                      │ 3. PsiJavaFacade   │
-    │                    │                      │   .findClass()      │
-    │                    │                      ├────────────────────►│
-    │                    │                      │                     │
-    │                    │                      │ 4. Results          │
-    │                    │                      │◄────────────────────┤
-    │                    │                      │                     │
-    │                    │ 5. HTTP Response     │                     │
-    │                    │  {results: [...]}    │                     │
-    │                    │◄─────────────────────┤                     │
-    │                    │                      │                     │
-    │ 6. JSON-RPC result │                      │                     │
-    │   {content: [...]} │                      │                     │
-    │◄───────────────────┤                      │                     │
-    │                    │                      │                     │
+
+### Streamable HTTP Transport
+
+```mermaid
+sequenceDiagram
+    participant Client as MCP Client
+    participant Http as McpHttpServer
+    participant Handler as McpProtocolHandler
+    participant PSI as PSI Bridge
+
+    Client->>Http: POST /mcp (JSON-RPC request)
+    Http->>Handler: handleMessage(body)
+    Handler->>PSI: callTool(name, args)
+    PSI-->>Handler: result text
+    Handler-->>Http: JSON-RPC response
+    Http-->>Client: 200 OK (JSON body)
+```
+
+### SSE Transport
+
+```mermaid
+sequenceDiagram
+    participant Client as MCP Client
+    participant SSE as McpSseTransport
+    participant Handler as McpProtocolHandler
+    participant PSI as PSI Bridge
+
+    Client->>SSE: GET /sse
+    SSE-->>Client: event: endpoint<br/>data: /message?sessionId=abc
+
+    loop Keep-alive (every 30s)
+        SSE-->>Client: : keepalive
+    end
+
+    Client->>SSE: POST /message?sessionId=abc<br/>(JSON-RPC request)
+    SSE-->>Client: 202 Accepted
+    SSE->>Handler: handleMessage(body)
+    Handler->>PSI: callTool(name, args)
+    PSI-->>Handler: result text
+    Handler-->>SSE: JSON-RPC response
+    SSE-->>Client: event: message<br/>data: {JSON-RPC response}
 ```
 
 ### Execution Steps
 
-1. **Agent Request:** Copilot agent sends `tools/call` request via stdio
-2. **MCP Parsing:** McpServer parses JSON-RPC, extracts tool name and arguments
-3. **HTTP Invocation:** MCP server makes HTTP POST to PSI Bridge endpoint
-4. **IntelliJ API Call:** PSI Bridge invokes appropriate IntelliJ API (PSI, VFS, Git4Idea, etc.)
-5. **Result Serialization:** PSI Bridge serializes results to JSON
-6. **HTTP Response:** Returns JSON to MCP server
-7. **JSON-RPC Response:** MCP server wraps result in JSON-RPC format, writes to stdout
-8. **Agent Processing:** Copilot agent receives result and continues reasoning
+**Stdio path** (Copilot CLI → MCP subprocess):
+
+1. Copilot agent sends `tools/call` via stdio
+2. McpServer parses JSON-RPC, extracts tool name and arguments
+3. MCP server makes HTTP POST to PSI Bridge
+4. PSI Bridge invokes IntelliJ API (PSI, VFS, Git4Idea, etc.)
+5. Result serialized to JSON, returned via HTTP → JSON-RPC → stdout
+
+**HTTP path** (external clients → standalone server):
+
+1. Client sends JSON-RPC to `/mcp` (Streamable HTTP) or `/message` (SSE)
+2. McpProtocolHandler parses request, delegates to PsiBridgeService
+3. PsiBridgeService invokes IntelliJ API directly (in-process, no HTTP hop)
+4. Response returned as HTTP body (Streamable) or SSE event (SSE)
 
 ---
 
@@ -585,6 +676,7 @@ void testToolsListReturnsAllTools() {
 
 ### Protocol Improvements
 
+- **SSE Transport:** ✅ Implemented — configurable in MCP Server settings
 - **WebSocket Transport:** Replace stdio with WebSocket for bidirectional streaming
 - **Batch Tool Calls:** Execute multiple tools in single request
 - **Streaming Results:** Return large results incrementally

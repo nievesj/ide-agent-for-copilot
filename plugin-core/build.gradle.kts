@@ -129,6 +129,43 @@ tasks.named("prepareSandbox") {
     }
 }
 
+// Resolve nvm Node so Gradle's exec tasks use the right version.
+// Prefers the nvm default alias (~/.nvm/alias/default) so the same
+// Node version used in the terminal is used here. Falls back to the
+// highest installed version, then to system PATH.
+val nvmNodeBin: String? by lazy {
+    val home = System.getProperty("user.home")
+    val nvmVersionsDir = File(home, ".nvm/versions/node")
+    if (!nvmVersionsDir.isDirectory) return@lazy null
+
+    // Try the nvm default alias first
+    val defaultAlias = File(home, ".nvm/alias/default")
+    if (defaultAlias.isFile) {
+        val defaultVersion = defaultAlias.readText().trim()
+        val defaultBin = File(nvmVersionsDir, "$defaultVersion/bin")
+        if (File(defaultBin, "node").exists()) return@lazy defaultBin.absolutePath
+    }
+
+    // Fall back to highest installed version
+    nvmVersionsDir.listFiles()
+        ?.filter { it.isDirectory }
+        ?.sortedByDescending { it.name }
+        ?.map { File(it, "bin") }
+        ?.firstOrNull { File(it, "node").exists() }
+        ?.absolutePath
+}
+
+// Full path to npm from nvm, or bare "npm" if nvm is not available.
+// Using a full path ensures Gradle doesn't resolve the executable from the
+// system PATH before our environment override takes effect.
+val npmCmd: String by lazy { nvmNodeBin?.let { "$it/npm" } ?: "npm" }
+
+fun ExecSpec.withNvmNode() {
+    nvmNodeBin?.let { binDir ->
+        environment("PATH", "$binDir:${System.getenv("PATH")}")
+    }
+}
+
 // Build chat-ui TypeScript → bundled JS + copy static assets
 val buildChatUi by tasks.registering {
     inputs.dir("chat-ui/src")
@@ -137,7 +174,8 @@ val buildChatUi by tasks.registering {
     doLast {
         exec {
             workingDir = file("chat-ui")
-            commandLine("npm", "run", "build")
+            commandLine(npmCmd, "run", "build")
+            withNvmNode()
         }
         copy {
             from("chat-ui/src/chat.css")
@@ -156,7 +194,8 @@ val jsTest by tasks.registering {
     doLast {
         exec {
             workingDir = file("js-tests")
-            commandLine("npm", "test")
+            commandLine(npmCmd, "test")
+            withNvmNode()
         }
     }
 }
@@ -192,7 +231,6 @@ tasks.register("deployToMainIde") {
 
         logger.lifecycle("📦 ZIP: ${latestZip.name}")
 
-        // Step 1: Always deploy files to the plugin install directory
         val installDir = detectPluginInstallDir()
         logger.lifecycle("📂 Target: $installDir")
         if (installDir.exists()) installDir.deleteRecursively()
@@ -200,43 +238,8 @@ tasks.register("deployToMainIde") {
             from(project.zipTree(latestZip))
             into(installDir.parentFile)
         }
-        logger.lifecycle("✅ Files deployed to $installDir")
-
-        // Step 2: Try dynamic reload via PSI bridge (best-effort)
-        val bridgeFile = File(System.getProperty("user.home"), ".copilot/psi-bridge.json")
-        if (bridgeFile.exists()) {
-            try {
-                val registry = com.google.gson.JsonParser.parseString(bridgeFile.readText()).asJsonObject
-                val port = registry.entrySet().firstOrNull()?.let {
-                    it.value.asJsonObject.get("port")?.asInt
-                }
-                if (port != null) {
-                    logger.lifecycle("🔄 Requesting dynamic reload on port $port...")
-                    val result = providers.exec {
-                        commandLine(
-                            "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
-                            "-X", "POST", "http://127.0.0.1:$port/reload-plugin",
-                            "-H", "Content-Type: application/json",
-                            "-d", """{"zipPath":"${latestZip.absolutePath}"}""",
-                            "--connect-timeout", "3", "--max-time", "5"
-                        )
-                        isIgnoreExitValue = true
-                    }
-                    val httpCode = result.standardOutput.asText.get().trim()
-                    if (httpCode == "200") {
-                        logger.lifecycle("🔄 IDE restart triggered — reloading with new plugin version")
-                    } else {
-                        logger.lifecycle("ℹ️  Dynamic reload unavailable (HTTP $httpCode) — restart IDE to apply")
-                    }
-                } else {
-                    logger.lifecycle("ℹ️  No PSI bridge port found — restart IDE to apply")
-                }
-            } catch (e: Exception) {
-                logger.lifecycle("ℹ️  PSI bridge not reachable — restart IDE to apply")
-            }
-        } else {
-            logger.lifecycle("ℹ️  No running IDE detected — restart IDE to apply")
-        }
+        logger.lifecycle("✅ Plugin deployed to $installDir")
+        logger.lifecycle("⚠️  Restart IntelliJ to apply the new version.")
     }
 }
 

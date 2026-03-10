@@ -88,7 +88,7 @@ public final class ToolUtils {
         return ELEMENT_TYPE_CLASS;
     }
 
-    static VirtualFile resolveVirtualFile(Project project, String path) {
+    public static VirtualFile resolveVirtualFile(Project project, String path) {
         String normalized = path.replace('\\', '/');
         VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(normalized);
         if (vf != null) return vf;
@@ -113,14 +113,68 @@ public final class ToolUtils {
         return doc.getText().substring(start, end).trim();
     }
 
-    static boolean doesNotMatchGlob(String fileName, String pattern) {
-        String regex = pattern.replace(".", "\\.").replace("*", ".*").replace("?", ".");
-        return !fileName.matches(regex);
+    /**
+     * Returns true if the given path does NOT match the glob pattern.
+     * <p>
+     * Simple patterns (no {@code /} and no {@code **}) are matched against the
+     * <em>filename</em> only for backward compatibility (e.g. {@code *.java}, {@code *Test}).
+     * Path patterns (containing {@code /} or {@code **}) are matched against the full
+     * relative path using standard glob semantics:
+     * <ul>
+     *   <li>{@code **} — matches zero or more path segments (crosses {@code /})</li>
+     *   <li>{@code *}  — matches any characters within a single path segment (no {@code /})</li>
+     *   <li>{@code ?}  — matches exactly one non-separator character</li>
+     * </ul>
+     * Examples: {@code src/**}{@code /*.java} matches {@code src/main/Foo.java};
+     * {@code *.java} matches {@code Foo.java} (filename only).
+     */
+    static boolean doesNotMatchGlob(String path, String pattern) {
+        if (pattern.isEmpty()) return false;
+        String normalizedPath = path.replace('\\', '/');
+        boolean isPathPattern = pattern.contains("/") || pattern.contains("**");
+        String target = isPathPattern ? normalizedPath : lastSegment(normalizedPath);
+        return !globToRegex(pattern).matcher(target).matches();
+    }
+
+    private static String lastSegment(String path) {
+        int slash = path.lastIndexOf('/');
+        return slash >= 0 ? path.substring(slash + 1) : path;
+    }
+
+    private static java.util.regex.Pattern globToRegex(String glob) {
+        StringBuilder sb = new StringBuilder("^");
+        int len = glob.length();
+        int i = 0;
+        while (i < len) {
+            char c = glob.charAt(i);
+            if (c == '*' && i + 1 < len && glob.charAt(i + 1) == '*') {
+                sb.append(".*");
+                i += 2; // consume **
+                if (i < len && glob.charAt(i) == '/') {
+                    i++; // consume the slash after **
+                }
+            } else if (c == '*') {
+                sb.append("[^/]*");
+                i++;
+            } else if (c == '?') {
+                sb.append("[^/]");
+                i++;
+            } else if (".+^${}[]()|\\".indexOf(c) >= 0) {
+                sb.append('\\').append(c);
+                i++;
+            } else {
+                sb.append(c);
+                i++;
+            }
+        }
+        sb.append("$");
+        return java.util.regex.Pattern.compile(sb.toString());
     }
 
     static String fileType(String name) {
         String l = name.toLowerCase();
         if (l.endsWith(JAVA_EXTENSION)) return "Java";
+        if (l.endsWith(".gradle") || l.endsWith(".gradle.kts")) return "Gradle";
         if (l.endsWith(".kt") || l.endsWith(".kts")) return "Kotlin";
         if (l.endsWith(".py")) return "Python";
         if (l.endsWith(".js") || l.endsWith(".jsx")) return "JavaScript";
@@ -128,9 +182,34 @@ public final class ToolUtils {
         if (l.endsWith(".go")) return "Go";
         if (l.endsWith(".xml")) return "XML";
         if (l.endsWith(".json")) return "JSON";
-        if (l.endsWith(".gradle") || l.endsWith(".gradle.kts")) return "Gradle";
         if (l.endsWith(".yaml") || l.endsWith(".yml")) return "YAML";
         return "Other";
+    }
+
+    static String formatFileSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
+        return String.format("%.1f MB", bytes / (1024.0 * 1024));
+    }
+
+    static String formatFileTimestamp(long epochMs) {
+        if (epochMs == 0) return "unknown";
+        return new java.text.SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date(epochMs));
+    }
+
+    /**
+     * Parses a date string like "2026-01-15" into epoch milliseconds (start of day UTC).
+     * Returns -1 if blank or unparseable.
+     */
+    static long parseDateParam(String date) {
+        if (date == null || date.isBlank()) return -1;
+        try {
+            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
+            sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+            return sdf.parse(date).getTime();
+        } catch (java.text.ParseException e) {
+            return -1;
+        }
     }
 
     /**
@@ -220,11 +299,11 @@ public final class ToolUtils {
         // Also catches env-prefixed (VAR=val git ...), sudo/env/command wrappers
         if (cmd.startsWith("git ") || cmd.equals("git") ||
             cmd.contains("&& git ") || cmd.contains("; git ") || cmd.contains("| git ") ||
-            cmd.matches("(\\w+=\\S*\\s+)+git(\\s.*|$)") ||
+            cmd.matches("(\\w+=\\S*+\\s++)++git(\\s.*|$)") ||
             cmd.matches("(sudo|env|command|nohup)\\s+git(\\s.*|$)") ||
-            cmd.matches("(\\w+=\\S*\\s+)+(sudo|env|command)\\s+git(\\s.*|$)") ||
+            cmd.matches("(\\w+=\\S*+\\s++)++(?:sudo|env|command)\\s+git(\\s.*|$)") ||
             // env with VAR=val arguments before git (e.g. env GIT_DIR=/tmp git status)
-            cmd.matches("env\\s+(\\S+=\\S*\\s+)*git(\\s.*|$)")) {
+            cmd.matches("env\\s+(\\S+=\\S*+\\s++)*+git(\\s.*|$)")) {
             return "git";
         }
 
@@ -234,7 +313,7 @@ public final class ToolUtils {
             return "cat";
         }
 
-        // Block sed — should use intellij_write_file for proper undo/redo and live buffer access
+        // Block sed — should use edit_text for proper undo/redo and live buffer access
         if (cmd.startsWith("sed ") || cmd.contains("| sed") ||
             cmd.contains("&& sed") || cmd.contains("; sed")) {
             return "sed";
@@ -252,6 +331,9 @@ public final class ToolUtils {
             cmd.startsWith("find .") || cmd.startsWith("find /")) {
             return "find";
         }
+
+        // Block direct Gradle compile tasks — should use build_project (IntelliJ incremental compiler)
+        if (isGradleCompileCommand(cmd)) return "compile";
 
         // Block test commands — should use run_tests
         // Explicit test tasks
@@ -277,6 +359,12 @@ public final class ToolUtils {
         return null;
     }
 
+    private static boolean isGradleCompileCommand(String cmd) {
+        boolean isGradleCmd = cmd.contains("gradlew") || cmd.matches(".*\\bgradle\\s.*");
+        boolean hasCompileTask = cmd.matches(".*compile(test)?(kotlin|java).*");
+        return isGradleCmd && hasCompileTask;
+    }
+
     /**
      * Map abuse type to a human-readable error message for MCP tool responses.
      */
@@ -289,11 +377,13 @@ public final class ToolUtils {
             case "cat" -> "Error: cat/head/tail/less/more are not allowed via run_command (reads stale disk files). "
                 + "Use intellij_read_file to read live editor buffers instead.";
             case "sed" -> "Error: sed is not allowed via run_command (bypasses IntelliJ editor buffers). "
-                + "Use intellij_write_file with old_str/new_str for file editing instead.";
+                + "Use edit_text with old_str/new_str for file editing instead.";
             case "grep" -> "Error: grep/rg commands are not allowed via run_command (searches stale disk files). "
                 + "Use search_text or search_symbols to search live editor buffers instead.";
             case "find" -> "Error: find commands are not allowed via run_command. "
                 + "Use list_project_files to find files instead.";
+            case "compile" -> "Error: Gradle compile tasks are not allowed via run_command. "
+                + "Use build_project to compile via IntelliJ's incremental compiler instead.";
             case "test" -> "Error: test commands are not allowed via run_command (including build/check/verify " +
                 "which implicitly run tests). Use run_tests to run tests with proper IntelliJ integration instead.";
             default -> "Error: this command is not allowed via run_command. Use dedicated IntelliJ tools instead.";

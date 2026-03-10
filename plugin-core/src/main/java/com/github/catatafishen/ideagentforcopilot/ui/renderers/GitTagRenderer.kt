@@ -1,36 +1,42 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-/**
- * Renderer for git_tag output.
- * Input: one tag per line from `git tag -l`.
- */
+import com.intellij.ui.JBColor
+import com.intellij.util.ui.UIUtil
+import javax.swing.JComponent
+
 internal object GitTagRenderer : ToolResultRenderer {
 
-    override fun render(output: String): String? {
+    private val TAG_LINE = Regex("""^(\S+)\s*(.*)$""")
+    private val ANNOTATED = Regex("""^(.+?)\s+(.+)$""")
+
+    override fun render(output: String): JComponent? {
         val tags = output.lines().map { it.trim() }.filter { it.isNotEmpty() }
         if (tags.isEmpty()) return null
 
-        val e = ToolRenderers::esc
-        val sb = StringBuilder()
-        sb.append("<div class='outline-result'>")
+        val panel = ToolRenderers.listPanel()
+        panel.add(
+            ToolRenderers.headerPanel(
+                ToolIcons.FOLDER, tags.size,
+                if (tags.size == 1) "tag" else "tags"
+            )
+        )
 
-        // Header
-        sb.append("<div class='outline-header'>")
-        sb.append("<span class='search-icon'>🏷</span> ")
-        sb.append("<span class='search-count'>${tags.size}</span> ")
-        sb.append("<span class='search-label'>${if (tags.size == 1) "tag" else "tags"}</span>")
-        sb.append("</div>")
-
-        // Tags
-        sb.append("<div class='outline-section-items'>")
         for (tag in tags) {
-            sb.append("<div class='outline-item'>")
-            sb.append("<span class='git-file-badge badge-enum'>🏷</span> ")
-            sb.append("<code>${e(tag)}</code>")
-            sb.append("</div>")
+            val row = ToolRenderers.rowPanel()
+            val match = ANNOTATED.find(tag)
+            if (match != null) {
+                row.add(ToolRenderers.monoLabel(match.groupValues[1]).apply {
+                    foreground = JBColor.namedColor("Link.activeForeground", UIUtil.getLabelForeground())
+                })
+                row.add(ToolRenderers.mutedLabel(match.groupValues[2]))
+            } else {
+                row.add(ToolRenderers.monoLabel(tag).apply {
+                    foreground = JBColor.namedColor("Link.activeForeground", UIUtil.getLabelForeground())
+                })
+            }
+            panel.add(row)
         }
-        sb.append("</div>")
-        sb.append("</div>")
-        return sb.toString()
+
+        return panel
     }
 }

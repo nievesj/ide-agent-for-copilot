@@ -8,6 +8,7 @@ import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -25,6 +26,9 @@ import java.util.concurrent.TimeUnit;
 class EditorTools extends AbstractToolHandler {
 
     private static final Logger LOG = Logger.getInstance(EditorTools.class);
+
+    private static final String JSON_EXT = ".json";
+    private static final String CONVERSATION_PREFIX = "conversation-";
 
     private static final String PARAM_CONTENT = "content";
     private static final String FORMAT_CHARS_SUFFIX = " chars)";
@@ -52,7 +56,9 @@ class EditorTools extends AbstractToolHandler {
         }
         String pathStr = args.get("file").getAsString();
         int line = args.has("line") ? args.get("line").getAsInt() : -1;
-        boolean focus = !args.has("focus") || args.get("focus").getAsBoolean();
+        boolean requestedFocus = !args.has("focus") || args.get("focus").getAsBoolean();
+        // When follow mode is off, never steal focus from the user's current editor
+        boolean focus = requestedFocus && ToolLayerSettings.getInstance(project).getFollowAgentFiles();
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
 
@@ -184,7 +190,7 @@ class EditorTools extends AbstractToolHandler {
             String scratchPath = resultFile[0].getPath();
             int lineCount = content.isEmpty() ? 1 : (int) content.lines().count();
             FileTools.followFileIfEnabled(project, scratchPath, 1, lineCount,
-                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel() + " created scratch");
+                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel(project) + " created scratch");
 
             return "Created scratch file: " + scratchPath + " (" + content.length() + FORMAT_CHARS_SUFFIX;
         } catch (Exception e) {
@@ -225,8 +231,9 @@ class EditorTools extends AbstractToolHandler {
             );
 
             if (resultFile[0] != null) {
+                boolean focusScratch = ToolLayerSettings.getInstance(project).getFollowAgentFiles();
                 com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
-                    .openFile(resultFile[0], true);
+                    .openFile(resultFile[0], focusScratch);
             }
         } catch (Exception e) {
             LOG.warn("Failed in EDT execution", e);
@@ -340,7 +347,7 @@ class EditorTools extends AbstractToolHandler {
 
         java.io.File agentDir = new java.io.File(basePath, ".agent-work");
         java.io.File archiveDir = new java.io.File(agentDir, "conversations");
-        java.io.File currentFile = new java.io.File(agentDir, "conversation.json");
+        java.io.File currentFile = new java.io.File(agentDir, "conversation" + JSON_EXT);
 
         String query = args.has("query") ? args.get("query").getAsString() : null;
         String file = args.has("file") ? args.get("file").getAsString() : null;
@@ -367,11 +374,11 @@ class EditorTools extends AbstractToolHandler {
             sb.append("• current (").append(formatFileSize(currentFile.length())).append(")\n");
         }
         if (archiveDir.exists()) {
-            java.io.File[] archives = archiveDir.listFiles((d, n) -> n.endsWith(".json"));
+            java.io.File[] archives = archiveDir.listFiles((d, n) -> n.endsWith(JSON_EXT));
             if (archives != null && archives.length > 0) {
                 java.util.Arrays.sort(archives, java.util.Comparator.comparing(java.io.File::getName).reversed());
                 for (java.io.File f : archives) {
-                    String name = f.getName().replace("conversation-", "").replace(".json", "");
+                    String name = f.getName().replace(CONVERSATION_PREFIX, "").replace(JSON_EXT, "");
                     sb.append("• ").append(name).append(" (").append(formatFileSize(f.length())).append(")\n");
                 }
             }
@@ -396,34 +403,12 @@ class EditorTools extends AbstractToolHandler {
     private static String searchConversations(String query, String file, java.io.File currentFile,
                                               java.io.File archiveDir, int maxChars) {
         String lowerQuery = query.toLowerCase(java.util.Locale.ROOT);
-        StringBuilder sb = new StringBuilder();
-
-        // Collect files to search
-        java.util.List<java.io.File> files = new java.util.ArrayList<>();
-        if (file != null) {
-            java.io.File target = resolveConversationFile(file, currentFile, archiveDir);
-            if (target != null && target.exists()) files.add(target);
-        } else {
-            if (currentFile.exists() && currentFile.length() > 10) files.add(currentFile);
-            if (archiveDir.exists()) {
-                java.io.File[] archives = archiveDir.listFiles((d, n) -> n.endsWith(".json"));
-                if (archives != null) {
-                    java.util.Arrays.sort(archives, java.util.Comparator.comparing(java.io.File::getName).reversed());
-                    files.addAll(java.util.Arrays.asList(archives));
-                }
-            }
-        }
+        java.util.List<java.io.File> files = collectFilesToSearch(file, currentFile, archiveDir);
 
         int totalMatches = 0;
+        StringBuilder sb = new StringBuilder();
         for (java.io.File f : files) {
-            String label = f.equals(currentFile) ? "current" : f.getName().replace("conversation-", "").replace(".json", "");
-            String result = conversationJsonToText(f, lowerQuery, maxChars - sb.length());
-            if (!result.isEmpty()) {
-                long matchCount = result.lines().filter(l -> l.toLowerCase(java.util.Locale.ROOT).contains(lowerQuery)).count();
-                totalMatches += matchCount;
-                sb.append("── ").append(label).append(" (").append(matchCount).append(" matches) ──\n");
-                sb.append(result).append("\n");
-            }
+            totalMatches += appendFileSearchResult(f, currentFile, lowerQuery, maxChars - sb.length(), sb);
             if (sb.length() >= maxChars) break;
         }
 
@@ -431,13 +416,51 @@ class EditorTools extends AbstractToolHandler {
         return sb.toString().trim();
     }
 
+    private static java.util.List<java.io.File> collectFilesToSearch(String file,
+                                                                     java.io.File currentFile,
+                                                                     java.io.File archiveDir) {
+        java.util.List<java.io.File> files = new java.util.ArrayList<>();
+        if (file != null) {
+            java.io.File target = resolveConversationFile(file, currentFile, archiveDir);
+            if (target != null && target.exists()) files.add(target);
+        } else {
+            if (currentFile.exists() && currentFile.length() > 10) files.add(currentFile);
+            if (archiveDir.exists()) {
+                java.io.File[] archives = archiveDir.listFiles((d, n) -> n.endsWith(JSON_EXT));
+                if (archives != null) {
+                    java.util.Arrays.sort(archives,
+                        java.util.Comparator.comparing(java.io.File::getName).reversed());
+                    files.addAll(java.util.Arrays.asList(archives));
+                }
+            }
+        }
+        return files;
+    }
+
+    private static int appendFileSearchResult(java.io.File f, java.io.File currentFile,
+                                              String lowerQuery, int remainingChars,
+                                              StringBuilder sb) {
+        String label = f.equals(currentFile)
+            ? "current"
+            : f.getName().replace(CONVERSATION_PREFIX, "").replace(JSON_EXT, "");
+        String result = conversationJsonToText(f, lowerQuery, remainingChars);
+        if (result.isEmpty()) return 0;
+
+        long matchCount = result.lines()
+            .filter(l -> l.toLowerCase(java.util.Locale.ROOT).contains(lowerQuery))
+            .count();
+        sb.append("── ").append(label).append(" (").append(matchCount).append(" matches) ──\n");
+        sb.append(result).append("\n");
+        return (int) matchCount;
+    }
+
     private static java.io.File resolveConversationFile(String name, java.io.File currentFile, java.io.File archiveDir) {
         if ("current".equalsIgnoreCase(name)) return currentFile;
-        java.io.File direct = new java.io.File(archiveDir, "conversation-" + name + ".json");
+        java.io.File direct = new java.io.File(archiveDir, CONVERSATION_PREFIX + name + JSON_EXT);
         if (direct.exists()) return direct;
         // Fuzzy match: find archive containing the name
         if (archiveDir.exists()) {
-            java.io.File[] archives = archiveDir.listFiles((d, n) -> n.contains(name) && n.endsWith(".json"));
+            java.io.File[] archives = archiveDir.listFiles((d, n) -> n.contains(name) && n.endsWith(JSON_EXT));
             if (archives != null && archives.length > 0) return archives[0];
         }
         return null;
@@ -514,9 +537,7 @@ class EditorTools extends AbstractToolHandler {
     }
 
     private static String formatFileSize(long bytes) {
-        if (bytes < 1024) return bytes + " B";
-        if (bytes < 1024 * 1024) return (bytes / 1024) + " KB";
-        return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
+        return ToolUtils.formatFileSize(bytes);
     }
 
     /**
@@ -573,111 +594,7 @@ class EditorTools extends AbstractToolHandler {
 
         EdtUtil.invokeLater(() -> {
             try {
-                // 1. Find the scratch file
-                VirtualFile scratchFile = findScratchFile(name);
-                if (scratchFile == null) {
-                    resultFuture.complete("Error: Scratch file not found: '" + name
-                        + "'. Use list_scratch_files to see available files.");
-                    return;
-                }
-
-                // 1b. Open the scratch in the editor so the user can follow along
-                com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
-                    .openFile(scratchFile, false);
-
-                // 2. Find appropriate configuration type for this file extension
-                String extension = scratchFile.getExtension();
-                var configType = findScratchConfigType(extension);
-                if (configType == null) {
-                    resultFuture.complete("Error: No run configuration type found for ."
-                        + extension + " files. Available types: " + listAvailableConfigTypes());
-                    return;
-                }
-
-                // 3. Create temporary run configuration
-                var factories = configType.getConfigurationFactories();
-                if (factories.length == 0) {
-                    resultFuture.complete("Error: No configuration factory for " + configType.getDisplayName());
-                    return;
-                }
-
-                var runManager = com.intellij.execution.RunManager.getInstance(project);
-                var settings = runManager.createConfiguration(
-                    "Scratch: " + scratchFile.getName(), factories[0]);
-                var config = settings.getConfiguration();
-
-                // 4. Set script/file path via reflection
-                boolean pathSet;
-                boolean needsModule = false;
-                if (config instanceof com.intellij.execution.scratch.JavaScratchConfiguration scratchConfig) {
-                    scratchConfig.setScratchFileUrl(scratchFile.getUrl());
-                    // Main class name must match the public class in the scratch file
-                    String className = scratchFile.getNameWithoutExtension();
-                    scratchConfig.setMainClassName(className);
-                    pathSet = true;
-                    needsModule = true;
-                } else {
-                    pathSet = setScriptPath(config, scratchFile.getPath());
-                }
-
-                // 4b. For Python configs, set the SDK home from the global SDK table
-                if ("py".equalsIgnoreCase(extension)) {
-                    trySetPythonSdkHome(config);
-                }
-
-                // 4c. Set working directory (needed by Node.js and other script runners)
-                trySetWorkingDirectory(config, scratchFile.getParent().getPath());
-
-                // 5. Set classpath module (auto-detect for Java/Kotlin if not specified)
-                String moduleStatus = "";
-                if (!moduleName.isEmpty()) {
-                    var module = com.intellij.openapi.module.ModuleManager.getInstance(project)
-                        .findModuleByName(moduleName);
-                    if (module != null) {
-                        trySetModule(config, module);
-                        moduleStatus = "\nClasspath: " + moduleName;
-                    } else {
-                        moduleStatus = "\nWarning: Module '" + moduleName + "' not found";
-                    }
-                } else if (needsModule) {
-                    var modules = com.intellij.openapi.module.ModuleManager.getInstance(project).getModules();
-                    if (modules.length > 0) {
-                        trySetModule(config, modules[0]);
-                        moduleStatus = "\nClasspath: " + modules[0].getName() + " (auto-detected)";
-                    }
-                }
-
-                // 6. Set interactive mode (primarily for Kotlin scripts)
-                String interactiveStatus = "";
-                if (interactive) {
-                    boolean set = trySetInteractiveMode(config, true);
-                    interactiveStatus = set ? "\nInteractive mode: ON"
-                        : "\nWarning: Interactive mode not supported for this config type";
-                }
-
-                // 7. Execute
-                settings.setTemporary(true);
-                settings.setEditBeforeRun(false);
-                runManager.addConfiguration(settings);
-                runManager.setSelectedConfiguration(settings);
-
-                var executor = com.intellij.execution.executors.DefaultRunExecutor.getRunExecutorInstance();
-                var envBuilder = com.intellij.execution.runners.ExecutionEnvironmentBuilder
-                    .createOrNull(executor, settings);
-                if (envBuilder == null) {
-                    resultFuture.complete("Error: Cannot create execution environment for "
-                        + configType.getDisplayName());
-                    return;
-                }
-
-                com.intellij.execution.ExecutionManager.getInstance(project)
-                    .restartRunProfile(envBuilder.build());
-
-                resultFuture.complete("Started: " + scratchFile.getName()
-                    + " [" + configType.getDisplayName() + "]"
-                    + (pathSet ? "" : "\nWarning: Could not set script path on config")
-                    + moduleStatus + interactiveStatus
-                    + "\nOutput will appear in the Run panel. Use read_run_output to read it.");
+                executeScratchFile(name, moduleName, interactive, resultFuture);
             } catch (Exception e) {
                 LOG.warn("Failed to run scratch file", e);
                 resultFuture.complete("Error running scratch file: " + e.getMessage());
@@ -685,6 +602,122 @@ class EditorTools extends AbstractToolHandler {
         });
 
         return resultFuture.get(15, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Core scratch file execution logic, called on EDT.
+     */
+    private void executeScratchFile(String name, String moduleName, boolean interactive,
+                                    CompletableFuture<String> resultFuture) {
+        VirtualFile scratchFile = findScratchFile(name);
+        if (scratchFile == null) {
+            resultFuture.complete("Error: Scratch file not found: '" + name
+                + "'. Use list_scratch_files to see available files.");
+            return;
+        }
+
+        com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+            .openFile(scratchFile, false);
+
+        String extension = scratchFile.getExtension();
+        var configType = findScratchConfigType(extension);
+        if (configType == null) {
+            resultFuture.complete("Error: No run configuration type found for ."
+                + extension + " files. Available types: " + listAvailableConfigTypes());
+            return;
+        }
+
+        var factories = configType.getConfigurationFactories();
+        if (factories.length == 0) {
+            resultFuture.complete("Error: No configuration factory for " + configType.getDisplayName());
+            return;
+        }
+
+        var runManager = com.intellij.execution.RunManager.getInstance(project);
+        var settings = runManager.createConfiguration("Scratch: " + scratchFile.getName(), factories[0]);
+        var config = settings.getConfiguration();
+
+        boolean pathSet = configureScratchPath(config, scratchFile);
+        boolean needsModule = config instanceof com.intellij.execution.scratch.JavaScratchConfiguration;
+
+        if ("py".equalsIgnoreCase(extension)) {
+            trySetPythonSdkHome(config);
+        }
+        trySetWorkingDirectory(config, scratchFile.getParent().getPath());
+
+        String moduleStatus = configureScratchModule(config, moduleName, needsModule);
+        String interactiveStatus = configureScratchInteractive(config, interactive);
+
+        String launchResult = launchScratchConfig(settings, configType, runManager);
+        if (launchResult != null) {
+            resultFuture.complete(launchResult);
+            return;
+        }
+
+        resultFuture.complete("Started: " + scratchFile.getName()
+            + " [" + configType.getDisplayName() + "]"
+            + (pathSet ? "" : "\nWarning: Could not set script path on config")
+            + moduleStatus + interactiveStatus
+            + "\nOutput will appear in the Run panel. Use read_run_output to read it.");
+    }
+
+    private boolean configureScratchPath(com.intellij.execution.configurations.RunConfiguration config,
+                                         VirtualFile scratchFile) {
+        if (config instanceof com.intellij.execution.scratch.JavaScratchConfiguration scratchConfig) {
+            scratchConfig.setScratchFileUrl(scratchFile.getUrl());
+            scratchConfig.setMainClassName(scratchFile.getNameWithoutExtension());
+            return true;
+        }
+        return setScriptPath(config, scratchFile.getPath());
+    }
+
+    private String configureScratchModule(com.intellij.execution.configurations.RunConfiguration config,
+                                          String moduleName, boolean needsModule) {
+        if (!moduleName.isEmpty()) {
+            var module = com.intellij.openapi.module.ModuleManager.getInstance(project)
+                .findModuleByName(moduleName);
+            if (module != null) {
+                trySetModule(config, module);
+                return "\nClasspath: " + moduleName;
+            }
+            return "\nWarning: Module '" + moduleName + "' not found";
+        }
+        if (needsModule) {
+            var modules = com.intellij.openapi.module.ModuleManager.getInstance(project).getModules();
+            if (modules.length > 0) {
+                trySetModule(config, modules[0]);
+                return "\nClasspath: " + modules[0].getName() + " (auto-detected)";
+            }
+        }
+        return "";
+    }
+
+    private String configureScratchInteractive(com.intellij.execution.configurations.RunConfiguration config,
+                                               boolean interactive) {
+        if (!interactive) return "";
+        boolean set = trySetInteractiveMode(config, true);
+        return set ? "\nInteractive mode: ON"
+            : "\nWarning: Interactive mode not supported for this config type";
+    }
+
+    @Nullable
+    private String launchScratchConfig(com.intellij.execution.RunnerAndConfigurationSettings settings,
+                                       com.intellij.execution.configurations.ConfigurationType configType,
+                                       com.intellij.execution.RunManager runManager) {
+        settings.setTemporary(true);
+        settings.setEditBeforeRun(false);
+        runManager.addConfiguration(settings);
+        runManager.setSelectedConfiguration(settings);
+
+        var executor = com.intellij.execution.executors.DefaultRunExecutor.getRunExecutorInstance();
+        var envBuilder = com.intellij.execution.runners.ExecutionEnvironmentBuilder
+            .createOrNull(executor, settings);
+        if (envBuilder == null) {
+            return "Error: Cannot create execution environment for " + configType.getDisplayName();
+        }
+        com.intellij.execution.ExecutionManager.getInstance(project)
+            .restartRunProfile(envBuilder.build());
+        return null;
     }
 
     // ---- Scratch File Helpers ----
@@ -756,26 +789,12 @@ class EditorTools extends AbstractToolHandler {
                 .findConfigurationType(searchTerm.substring(3));
         }
 
-        // For display-name fuzzy matching, iterate all config types
-        var configTypes = com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensions();
-        for (var ct : configTypes) {
-            String displayName = ct.getDisplayName().toLowerCase();
-            String id = ct.getId().toLowerCase();
-            if (displayName.contains(searchTerm) || id.contains(searchTerm.replace(" ", ""))) {
-                return ct;
-            }
-        }
-        return null;
+        // For display-name fuzzy matching, use PlatformApiCompat wrapper
+        return PlatformApiCompat.findConfigurationTypeBySearch(searchTerm);
     }
 
     private String listAvailableConfigTypes() {
-        var configTypes = com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensions();
-        StringBuilder sb = new StringBuilder();
-        for (var ct : configTypes) {
-            if (!sb.isEmpty()) sb.append(", ");
-            sb.append(ct.getDisplayName());
-        }
-        return sb.toString();
+        return String.join(", ", PlatformApiCompat.listConfigurationTypeNames());
     }
 
     @SuppressWarnings("java:S3011") // reflection needed for cross-plugin config API
@@ -850,51 +869,47 @@ class EditorTools extends AbstractToolHandler {
 
     // ---- End Scratch File Helpers ----
 
-    /**
-     * Returns all currently open editor tabs with their file paths.
-     */
-    @SuppressWarnings("unused")
     private String getOpenEditors(JsonObject args) throws Exception {
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
-
         EdtUtil.invokeLater(() -> {
             try {
-                var editorManager = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project);
-                VirtualFile[] openFiles = editorManager.getOpenFiles();
-                if (openFiles.length == 0) {
-                    resultFuture.complete("No open editors");
-                    return;
-                }
-
-                // Find the currently selected file to mark it
-                var selectedEditor = editorManager.getSelectedTextEditor();
-                VirtualFile activeFile = null;
-                if (selectedEditor != null) {
-                    activeFile = com.intellij.openapi.fileEditor.FileDocumentManager
-                        .getInstance().getFile(selectedEditor.getDocument());
-                }
-
-                String basePath = project.getBasePath();
-                StringBuilder sb = new StringBuilder();
-                sb.append("Open editors (").append(openFiles.length).append("):\n");
-                for (VirtualFile file : openFiles) {
-                    String filePath = file.getPath();
-                    String displayPath = basePath != null ? relativize(basePath, filePath) : filePath;
-                    boolean isActive = activeFile != null && file.equals(activeFile);
-                    boolean isModified = com.intellij.openapi.fileEditor.FileDocumentManager
-                        .getInstance().isFileModified(file);
-                    sb.append(isActive ? "* " : "  ");
-                    sb.append(displayPath);
-                    if (isModified) sb.append(" [modified]");
-                    sb.append('\n');
-                }
-                resultFuture.complete(sb.toString().trim());
+                resultFuture.complete(buildEditorListOnEdt());
             } catch (Exception e) {
                 resultFuture.complete("Error: " + e.getMessage());
             }
         });
-
         return resultFuture.get(10, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Must be called on the EDT.
+     */
+    private String buildEditorListOnEdt() {
+        var editorManager = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project);
+        VirtualFile[] openFiles = editorManager.getOpenFiles();
+        if (openFiles.length == 0) return "No open editors";
+
+        var selectedEditor = editorManager.getSelectedTextEditor();
+        VirtualFile activeFile = selectedEditor != null
+            ? com.intellij.openapi.fileEditor.FileDocumentManager
+            .getInstance().getFile(selectedEditor.getDocument())
+            : null;
+
+        String basePath = project.getBasePath();
+        StringBuilder sb = new StringBuilder();
+        sb.append("Open editors (").append(openFiles.length).append("):\n");
+        for (VirtualFile file : openFiles) {
+            String filePath = file.getPath();
+            String displayPath = basePath != null ? relativize(basePath, filePath) : filePath;
+            boolean isActive = file.equals(activeFile);
+            boolean isModified = com.intellij.openapi.fileEditor.FileDocumentManager
+                .getInstance().isFileModified(file);
+            sb.append(isActive ? "* " : "  ");
+            sb.append(displayPath);
+            if (isModified) sb.append(" [modified]");
+            sb.append('\n');
+        }
+        return sb.toString().trim();
     }
 
     private String listThemes(JsonObject args) {

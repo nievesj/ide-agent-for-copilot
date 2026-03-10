@@ -19,7 +19,7 @@ import java.awt.*;
 public final class PluginSettingsConfigurable implements Configurable {
 
     public static final String ID = "com.github.catatafishen.ideagentforcopilot.settings";
-    public static final String DISPLAY_NAME = "IDE Agent for Copilot";
+    public static final String DISPLAY_NAME = "AgentBridge";
 
     private final Project project;
 
@@ -44,14 +44,20 @@ public final class PluginSettingsConfigurable implements Configurable {
         JPanel panel = new JPanel(new BorderLayout());
         JBLabel label = new JBLabel(
             "<html><b>" + DISPLAY_NAME + "</b><br><br>"
-                + "Configure the plugin using the sub-pages in the tree on the left:<br>"
-                + "• <b>Tool Permissions</b> — set permission levels (allow/ask/deny) per tool<br>"
-                + "• <b>Tool Registration</b> — enable/disable tools and configure MCP server<br>"
-                + "• <b>Macro Tools</b> — register recorded macros as MCP tools<br>"
-                + "• <b>Scratch File Types</b> — extra alias mappings for the \"Open in Scratch\" button<br>"
-                + "• <b>Project Files</b> — file shortcuts in the toolbar dropdown</html>");
+                + "Configure the plugin using the sections in the tree on the left:<br><br>"
+                + "<b>MCP</b> — MCP server, PSI Bridge, and tool registration<br>"
+                + "<b>ACP</b> — agent settings, profiles, and tool permissions<br>"
+                + "<b>Other</b> — scratch file types and project file shortcuts</html>");
         label.setBorder(JBUI.Borders.empty(12));
         panel.add(label, BorderLayout.NORTH);
+
+        String version = com.github.catatafishen.ideagentforcopilot.BuildInfo.getVersion();
+        String hash = com.github.catatafishen.ideagentforcopilot.BuildInfo.getGitHash();
+        JBLabel versionLabel = new JBLabel("Version " + version + "  ·  " + hash);
+        versionLabel.setForeground(JBUI.CurrentTheme.Label.disabledForeground());
+        versionLabel.setFont(JBUI.Fonts.smallFont());
+        versionLabel.setBorder(JBUI.Borders.empty(8, 12));
+        panel.add(versionLabel, BorderLayout.SOUTH);
         return panel;
     }
 

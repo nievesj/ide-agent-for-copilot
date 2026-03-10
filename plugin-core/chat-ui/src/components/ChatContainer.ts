@@ -2,11 +2,14 @@ export default class ChatContainer extends HTMLElement {
     private _init = false;
     private _autoScroll = true;
     private _messages!: HTMLDivElement;
+    private _workingIndicator!: HTMLElement;
     private _scrollRAF: number | null = null;
     private _observer!: MutationObserver;
     private _copyObs!: MutationObserver;
     private _prevScrollY = 0;
     private _programmaticScroll = false;
+    private _onScroll: (() => void) | null = null;
+    private _onResize: (() => void) | null = null;
 
     connectedCallback(): void {
         if (this._init) return;
@@ -16,7 +19,10 @@ export default class ChatContainer extends HTMLElement {
         this._messages.id = 'messages';
         this.appendChild(this._messages);
 
-        window.addEventListener('scroll', () => {
+        this._workingIndicator = document.createElement('working-indicator');
+        this.appendChild(this._workingIndicator);
+
+        this._onScroll = () => {
             // Ignore scroll events caused by our own scrollTo calls
             if (this._programmaticScroll) {
                 this._programmaticScroll = false;
@@ -36,15 +42,17 @@ export default class ChatContainer extends HTMLElement {
                 }
             }
             this._prevScrollY = window.scrollY;
-        });
+        };
+        window.addEventListener('scroll', this._onScroll);
 
         // When the panel resizes (tool calls expand/collapse), re-anchor to bottom if we were there
-        window.addEventListener('resize', () => {
+        this._onResize = () => {
             if (this._autoScroll) {
                 this._programmaticScroll = true;
                 window.scrollTo(0, document.body.scrollHeight);
             }
-        });
+        };
+        window.addEventListener('resize', this._onResize);
 
         // Auto-scroll when children change (debounced via rAF)
         this._observer = new MutationObserver(() => {
@@ -125,6 +133,10 @@ export default class ChatContainer extends HTMLElement {
         return this._messages;
     }
 
+    get workingIndicator(): HTMLElement {
+        return this._workingIndicator;
+    }
+
     scrollIfNeeded(): void {
         if (this._autoScroll) {
             this._programmaticScroll = true;
@@ -141,5 +153,11 @@ export default class ChatContainer extends HTMLElement {
     disconnectedCallback(): void {
         this._observer?.disconnect();
         this._copyObs?.disconnect();
+        if (this._onScroll) window.removeEventListener('scroll', this._onScroll);
+        if (this._onResize) window.removeEventListener('resize', this._onResize);
+        if (this._scrollRAF) {
+            cancelAnimationFrame(this._scrollRAF);
+            this._scrollRAF = null;
+        }
     }
 }

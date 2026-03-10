@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
 import com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.ArgumentAwareRenderer
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
@@ -10,6 +11,7 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
@@ -58,11 +60,13 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private var htmlQueryBridgeJs = ""
     private var permissionResponseBridgeJs = ""
     private var openScratchBridgeJs = ""
+    private var showToolPopupBridgeJs = ""
 
     @Volatile
     private var htmlPageFuture: java.util.concurrent.CompletableFuture<String>? = null
     private val deferredRestoreJson = mutableListOf<com.google.gson.JsonElement>()
-    private val pendingPermissionCallbacks = java.util.concurrent.ConcurrentHashMap<String, (Boolean) -> Unit>()
+    private val pendingPermissionCallbacks =
+        java.util.concurrent.ConcurrentHashMap<String, (com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse) -> Unit>()
 
     // Periodic JCEF repaint during streaming to avoid partial-update artifacts
     private val repaintTimer = javax.swing.Timer(150) {
@@ -81,8 +85,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
         fun getInstance(project: Project): ChatConsolePanel? = instances[project]
 
-        private fun getThemeColor(key: String, lightFallback: Color, darkFallback: Color): Color =
-            UIManager.getColor(key) ?: JBColor(lightFallback, darkFallback)
+        private const val FAILED_SPAN = "<span style='color:var(--error)'>✖ Failed</span>"
+        private const val DEFAULT_AGENT_TYPE = "general-purpose"
 
         private val LINK_COLOR_KEY = "Link.activeForeground"
         private val USER_COLOR = JBColor(Color(0x28, 0x6B, 0xC0), Color(86, 156, 214))
@@ -163,12 +167,16 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
             val permissionResponseQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
             permissionResponseQuery.addHandler { data ->
-                // data format: "reqId:true" or "reqId:false"
+                // data format: "reqId:deny", "reqId:once", or "reqId:session"
                 val colonIdx = data.lastIndexOf(':')
                 if (colonIdx > 0) {
                     val reqId = data.substring(0, colonIdx)
-                    val allowed = data.substring(colonIdx + 1) == "true"
-                    pendingPermissionCallbacks.remove(reqId)?.invoke(allowed)
+                    val response = when (data.substring(colonIdx + 1)) {
+                        "once" -> com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse.ALLOW_ONCE
+                        "session" -> com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse.ALLOW_SESSION
+                        else -> com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse.DENY
+                    }
+                    pendingPermissionCallbacks.remove(reqId)?.invoke(response)
                 }
                 null
             }
@@ -179,6 +187,11 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             openScratchQuery.addHandler { data -> handleOpenScratch(data); null }
             Disposer.register(this, openScratchQuery)
             openScratchBridgeJs = openScratchQuery.inject("lang + '\\n' + content")
+
+            val showToolPopupQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
+            showToolPopupQuery.addHandler { toolDomId -> handleShowToolPopup(toolDomId); null }
+            Disposer.register(this, showToolPopupQuery)
+            showToolPopupBridgeJs = showToolPopupQuery.inject("id")
 
             add(browser.component, BorderLayout.CENTER)
 
@@ -212,24 +225,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     // ── Public API ─────────────────────────────────────────────────
 
-    override fun addPromptEntry(text: String, contextFiles: List<Triple<String, String, Int>>?) {
+    override fun addPromptEntry(text: String, contextFiles: List<Triple<String, String, Int>>?, bubbleHtml: String?) {
         toolJustCompleted = false
         finalizeCurrentText()
         collapseThinking()
         currentTurnId = "t${turnCounter++}"
         val ts = timestamp()
-        entries.add(EntryData.Prompt(text, ts))
-        val ctxHtml = if (!contextFiles.isNullOrEmpty()) {
-            contextFiles.joinToString("") { (name, path, line) ->
-                val href = if (line > 0) "openfile://$path:$line" else "openfile://$path"
-                "<a class=\\'prompt-ctx-chip\\' href=\\'$href\\' title=\\'${escJs(path)}${if (line > 0) ":$line" else ""}\\'>📄 ${
-                    escJs(
-                        name
-                    )
-                }</a>"
-            }
-        } else ""
-        executeJs("ChatController.addUserMessage('${escJs(text)}','$ts','$ctxHtml')")
+        entries.add(EntryData.Prompt(text, ts, contextFiles))
+        val encodedBubble = if (bubbleHtml != null) b64(bubbleHtml) else ""
+        executeJs("ChatController.addUserMessage('${escJs(text)}','$ts','$encodedBubble');ChatController.showWorkingIndicator()")
     }
 
     override fun startStreaming() {
@@ -243,6 +247,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun setCurrentModel(modelId: String) {
         executeJs("ChatController.setCurrentModel('${escJs(modelId)}')")
+    }
+
+    override fun setCurrentProfile(profileId: String) {
+        executeJs("ChatController.setCurrentProfile('${escJs(profileId)}')")
     }
 
     override fun addContextFilesEntry(files: List<Pair<String, String>>) {
@@ -294,7 +302,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val entry = EntryData.ToolCall(title, arguments, resolvedKind)
         entries.add(entry)
         val did = domId(id)
-        val baseName = title.substringAfterLast("-")
+        val baseName = stripMcpPrefix(title)
         toolCallNames[did] = baseName
         toolCallEntries[did] = entry
         val info = TOOL_DISPLAY_INFO[baseName]
@@ -309,11 +317,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun updateToolCall(id: String, status: String, details: String?) {
         val did = domId(id)
-        val baseName = toolCallNames[did]
         toolCallEntries[did]?.let { it.result = details; it.status = status }
-        val resultHtml = renderToolResult(baseName, status, details)
         val failed = if (status == "failed") "failed" else "completed"
-        executeJs("(function(){ChatController.updateToolCall('$did','$failed',$resultHtml);})()")
+        executeJs("ChatController.updateToolCall('$did','$failed','$failed')")
         toolJustCompleted = true
     }
 
@@ -321,7 +327,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun addSubAgentToolCall(subAgentId: String, toolId: String, title: String, arguments: String?) {
         val saDid = domId(subAgentId)
         val toolDid = domId(toolId)
-        val baseName = title.substringAfterLast("-")
+        val baseName = stripMcpPrefix(title)
         val info = TOOL_DISPLAY_INFO[baseName]
         val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
         val short = formatToolSubtitle(baseName, arguments)
@@ -334,15 +340,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     /** Update a sub-agent internal tool call (no segment break). */
     override fun updateSubAgentToolCall(toolId: String, status: String, details: String?) {
         val did = domId(toolId)
-        val resultHtml = if (!details.isNullOrBlank()) {
-            val encoded =
-                b64("<div class='tool-result-label'>Output:</div><pre class='tool-output'><code>${esc(details)}</code></pre>")
-            "b64('$encoded')"
-        } else {
-            if (status == "completed") "'Completed'" else "'<span style=\"color:var(--error)\">✖ Failed</span>'"
-        }
         val failed = if (status == "failed") "failed" else "completed"
-        executeJs("(function(){ChatController.updateToolCall('$did','$failed',$resultHtml);})()")
+        executeJs("ChatController.updateToolCall('$did','$failed','$failed')")
     }
 
     override fun addSubAgentEntry(
@@ -371,7 +370,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         )
         if (!initialResult.isNullOrBlank() || initialStatus == "completed" || initialStatus == "failed") {
             val resultHtml =
-                if (!initialResult.isNullOrBlank()) markdownToHtml(initialResult) else if (initialStatus == "completed") "Completed" else "<span style='color:var(--error)'>✖ Failed</span>"
+                if (!initialResult.isNullOrBlank()) markdownToHtml(initialResult) else if (initialStatus == "completed") "Completed" else FAILED_SPAN
             val encoded = b64(resultHtml)
             executeJs("ChatController.updateSubAgent('$did','${initialStatus ?: "completed"}',b64('$encoded'))")
         }
@@ -383,7 +382,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         entry?.let { it.result = result; it.status = status }
         val did = domId(id)
         val resultHtml =
-            if (!result.isNullOrBlank()) markdownToHtml(result) else if (status == "completed") "Completed" else "<span style='color:var(--error)'>✖ Failed</span>"
+            if (!result.isNullOrBlank()) markdownToHtml(result) else if (status == "completed") "Completed" else FAILED_SPAN
         val encoded = b64(resultHtml)
         executeJs("ChatController.updateSubAgent('$did','$status',b64('$encoded'))")
         toolJustCompleted = true
@@ -403,10 +402,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun hasContent(): Boolean = entries.isNotEmpty()
 
-    override fun addSessionSeparator(timestamp: String) {
+    override fun addSessionSeparator(timestamp: String, agent: String) {
         finalizeCurrentText()
-        entries.add(EntryData.SessionSeparator(timestamp))
-        executeJs("ChatController.addSessionSeparator('${escJs(timestamp)}')")
+        entries.add(EntryData.SessionSeparator(timestamp, agent))
+        executeJs("ChatController.addSessionSeparator('${escJs(timestamp)}', '${escJs(agent)}')")
     }
 
     override fun showPlaceholder(text: String) {
@@ -468,6 +467,17 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 is EntryData.Prompt -> {
                     obj.addProperty("type", "prompt"); obj.addProperty("text", e.text)
                     if (e.timestamp.isNotEmpty()) obj.addProperty("ts", e.timestamp)
+                    if (!e.contextFiles.isNullOrEmpty()) {
+                        val fa = com.google.gson.JsonArray()
+                        e.contextFiles.forEach { (name, path, line) ->
+                            val fo = com.google.gson.JsonObject()
+                            fo.addProperty("name", name)
+                            fo.addProperty("path", path)
+                            fo.addProperty("line", line)
+                            fa.add(fo)
+                        }
+                        obj.add("ctxFiles", fa)
+                    }
                 }
 
                 is EntryData.Text -> {
@@ -515,7 +525,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 }
 
                 is EntryData.SessionSeparator -> {
-                    obj.addProperty("type", "separator"); obj.addProperty("timestamp", e.timestamp)
+                    obj.addProperty("type", "separator"); obj.addProperty(
+                        "timestamp",
+                        e.timestamp
+                    ); obj.addProperty("agent", e.agent)
                 }
             }
             arr.add(obj)
@@ -559,7 +572,14 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     private fun addEntryFromJson(obj: com.google.gson.JsonObject) {
         when (obj["type"]?.asString) {
-            "prompt" -> entries.add(EntryData.Prompt(obj["text"]?.asString ?: "", obj["ts"]?.asString ?: ""))
+            "prompt" -> {
+                val ctxFiles = obj["ctxFiles"]?.asJsonArray?.map { f ->
+                    val fo = f.asJsonObject
+                    Triple(fo["name"]?.asString ?: "", fo["path"]?.asString ?: "", fo["line"]?.asInt ?: 0)
+                }
+                entries.add(EntryData.Prompt(obj["text"]?.asString ?: "", obj["ts"]?.asString ?: "", ctxFiles))
+            }
+
             "text" -> entries.add(EntryData.Text(StringBuilder(obj["raw"]?.asString ?: "")))
             "thinking" -> entries.add(EntryData.Thinking(StringBuilder(obj["raw"]?.asString ?: "")))
             "tool" -> entries.add(
@@ -576,7 +596,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 val ci = obj["colorIndex"]?.asInt ?: (nextSubAgentColor++ % SA_COLOR_COUNT)
                 entries.add(
                     EntryData.SubAgent(
-                        obj["agentType"]?.asString ?: "general-purpose",
+                        obj["agentType"]?.asString ?: DEFAULT_AGENT_TYPE,
                         obj["description"]?.asString ?: "",
                         obj["prompt"]?.asString?.ifEmpty { null },
                         obj["result"]?.asString?.ifEmpty { null },
@@ -601,7 +621,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 )
             )
 
-            "separator" -> entries.add(EntryData.SessionSeparator(obj["timestamp"]?.asString ?: ""))
+            "separator" -> entries.add(
+                EntryData.SessionSeparator(
+                    obj["timestamp"]?.asString ?: "",
+                    obj["agent"]?.asString ?: ""
+                )
+            )
         }
     }
 
@@ -611,7 +636,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 currentTurnId = "t${turnCounter++}"
                 val text = obj["text"]?.asString ?: ""
                 val ts = obj["ts"]?.asString ?: ""
-                executeJs("ChatController.addUserMessage('${escJs(text)}','$ts','')")
+                val ctxFiles = obj["ctxFiles"]?.asJsonArray?.map { f ->
+                    val fo = f.asJsonObject
+                    Triple(fo["name"]?.asString ?: "", fo["path"]?.asString ?: "", fo["line"]?.asInt ?: 0)
+                }
+                val encodedBubble = if (!ctxFiles.isNullOrEmpty()) b64(buildRestoredBubbleHtml(text, ctxFiles)) else ""
+                executeJs("ChatController.addUserMessage('${escJs(text)}','$ts','$encodedBubble')")
             }
 
             "text" -> {
@@ -640,7 +670,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 if (currentTurnId.isEmpty()) currentTurnId = "t${turnCounter++}"
                 val title = obj["title"]?.asString ?: ""
                 val args = obj["args"]?.asString
-                val baseName = title.substringAfterLast("-")
+                val baseName = stripMcpPrefix(title)
                 val info = TOOL_DISPLAY_INFO[baseName]
                 val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
                 val short = formatToolSubtitle(baseName, args)
@@ -649,19 +679,20 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 val kind = obj["kind"]?.asString ?: "other"
                 val result = obj["result"]?.asString
                 val status = obj["status"]?.asString ?: "completed"
+                toolCallNames[did] = baseName
+                toolCallEntries[did] = EntryData.ToolCall(title, args, kind, result, status)
                 val hasCustomRenderer = ToolRenderers.hasRenderer(baseName)
                 val paramsJson = if (!args.isNullOrBlank() && !hasCustomRenderer) escJs(args) else ""
-                val resultHtml = renderToolResult(baseName, status, result)
                 executeJs(
                     "ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','${
                         escJs(kind)
-                    }');ChatController.updateToolCall('$did','$status',$resultHtml)"
+                    }');ChatController.updateToolCall('$did','$status','$status')"
                 )
             }
 
             "subagent" -> {
                 if (currentTurnId.isEmpty()) currentTurnId = "t${turnCounter++}"
-                val agentType = obj["agentType"]?.asString ?: "general-purpose"
+                val agentType = obj["agentType"]?.asString ?: DEFAULT_AGENT_TYPE
                 val saInfo = SUB_AGENT_INFO[agentType]
                 val displayName = saInfo?.displayName ?: agentType.replaceFirstChar { it.uppercaseChar() }
                 val prompt = obj["prompt"]?.asString?.ifEmpty { null }
@@ -678,7 +709,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                     }')"
                 )
                 val resultHtml =
-                    if (!result.isNullOrBlank()) markdownToHtml(result) else if (status == "completed") "Completed" else "<span style='color:var(--error)'>✖ Failed</span>"
+                    if (!result.isNullOrBlank()) markdownToHtml(result) else if (status == "completed") "Completed" else FAILED_SPAN
                 val encoded = b64(resultHtml)
                 executeJs("ChatController.updateSubAgent('$did','$status',b64('$encoded'))")
                 // Start a new segment so subsequent entries are appended after the
@@ -694,9 +725,21 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             "separator" -> {
                 currentTurnId = ""
                 val ts = obj["timestamp"]?.asString ?: ""
-                executeJs("ChatController.addSessionSeparator('${escJs(ts)}')")
+                val ag = obj["agent"]?.asString ?: ""
+                executeJs("ChatController.addSessionSeparator('${escJs(ts)}', '${escJs(ag)}')")
             }
         }
+    }
+
+    private fun buildRestoredBubbleHtml(text: String, ctxFiles: List<Triple<String, String, Int>>): String {
+        var result = esc(text)
+        for ((name, path, line) in ctxFiles) {
+            val href = if (line > 0) "openfile://$path:$line" else "openfile://$path"
+            val title = esc(if (line > 0) "$path:$line" else path)
+            val chip = "<a class='prompt-ctx-chip' href='$href' title='$title'>${esc(name)}</a>"
+            result = result.replaceFirst("`${esc(name)}`", chip)
+        }
+        return result
     }
 
     private fun loadMoreEntries() {
@@ -737,15 +780,26 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 "prompt" -> {
                     val text = obj["text"]?.asString ?: ""
                     val ts = obj["ts"]?.asString ?: ""
+                    val ctxArr = obj["ctxFiles"]?.asJsonArray
+                    val ctxFiles = ctxArr?.map { f ->
+                        val fo = f.asJsonObject
+                        Triple(fo["name"]?.asString ?: "", fo["path"]?.asString ?: "", fo["line"]?.asInt ?: 0)
+                    }
                     sb.append("<chat-message type='user'>")
                     sb.append("<message-meta><span class='ts'>${esc(ts)}</span></message-meta>")
-                    sb.append("<message-bubble type='user'>${esc(text)}</message-bubble>")
+                    sb.append("<message-bubble type='user'>")
+                    if (!ctxFiles.isNullOrEmpty()) {
+                        sb.append(buildRestoredBubbleHtml(text, ctxFiles))
+                    } else {
+                        sb.append(esc(text))
+                    }
+                    sb.append("</message-bubble>")
                     sb.append("</chat-message>")
                     i++
                 }
 
                 "separator" -> {
-                    sb.append("<session-divider timestamp='${esc(obj["timestamp"]?.asString ?: "")}'></session-divider>")
+                    sb.append("<session-divider timestamp='${esc(obj["timestamp"]?.asString ?: "")}' agent='${esc(obj["agent"]?.asString ?: "")}'></session-divider>")
                     i++
                 }
 
@@ -788,7 +842,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                                 val title = e["title"]?.asString ?: ""
                                 val args = e["args"]?.asString
                                 val kind = e["kind"]?.asString ?: "other"
-                                val baseName = title.substringAfterLast("-")
+                                val baseName = stripMcpPrefix(title)
                                 val info = TOOL_DISPLAY_INFO[baseName]
                                 val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
                                 val short = formatToolSubtitle(baseName, args)
@@ -796,13 +850,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                                 val id = "batch-tool-${batchIdCounter++}"
                                 val result = e["result"]?.asString
                                 val status = e["status"]?.asString ?: "completed"
-                                val resultHtml = renderToolResultHtml(baseName, status, result)
-                                metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(kind)}' data-chip-for='$id'></tool-chip>")
-                                detailsContent.append("<tool-section id='$id' title='${esc(label)}'")
-                                if (args != null && !ToolRenderers.hasRenderer(baseName)) detailsContent.append(
-                                    " params='${esc(args)}'"
-                                )
-                                detailsContent.append("><div class='tool-params'></div><div class='tool-result'>$resultHtml</div></tool-section>")
+                                toolCallNames[id] = baseName
+                                toolCallEntries[id] = EntryData.ToolCall(title, args, kind, result, status)
+                                val paramsAttr = if (args != null) " data-params='${esc(args)}'" else ""
+                                metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(kind)}' data-chip-for='$id'$paramsAttr></tool-chip>")
                             }
 
                             "text" -> {
@@ -815,7 +866,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                             }
 
                             "subagent" -> {
-                                val agentType = e["agentType"]?.asString ?: "general-purpose"
+                                val agentType = e["agentType"]?.asString ?: DEFAULT_AGENT_TYPE
                                 val saInfo = SUB_AGENT_INFO[agentType]
                                 val dn = saInfo?.displayName ?: agentType.replaceFirstChar { it.uppercaseChar() }
                                 val result = e["result"]?.asString?.ifEmpty { null }
@@ -826,7 +877,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                                 afterDetails.append("<div id='$id' class='subagent-indent subagent-c$ci turn-hidden'><message-bubble>$resultHtml</message-bubble></div>")
                             }
 
-                            else -> {}
+                            else -> { /* exhaustive: no action for unknown entry types */
+                            }
                         }
                         i++
                     }
@@ -950,7 +1002,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val log = com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
         ApplicationManager.getApplication().invokeLater {
             try {
-                val repos = git4idea.repo.GitRepositoryManager.getInstance(project).repositories
+                val repos = git4idea.repo.GitRepositoryManager.getInstance(project).repositories.toList()
                 val root = repos.firstOrNull()?.root
                 if (root == null) {
                     log.warn("No VCS root found for git commit link $hash")
@@ -999,7 +1051,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val basePath = project.basePath ?: return null
         return try {
             val process = ProcessBuilder("git", "rev-parse", shortHash)
-                .directory(java.io.File(basePath))
+                .directory(File(basePath))
                 .redirectErrorStream(true)
                 .start()
             val exited = process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
@@ -1018,7 +1070,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val basePath = project.basePath ?: return false
         return try {
             val process = ProcessBuilder("git", "cat-file", "-t", sha)
-                .directory(java.io.File(basePath))
+                .directory(File(basePath))
                 .redirectErrorStream(true)
                 .start()
             val exited = process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
@@ -1051,7 +1103,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private fun findProjectFileByName(name: String): String? = try {
         var result: String? = null
         ApplicationManager.getApplication().runReadAction {
-            val files = FilenameIndex.getVirtualFilesByName(name, GlobalSearchScope.projectScope(project))
+            val files = FilenameIndex.getVirtualFilesByName(name, GlobalSearchScope.projectScope(project)).toList()
             if (files.size == 1) result = files.first().path
         }
         result
@@ -1059,35 +1111,40 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         null
     }
 
-    // ── Custom tool result renderers ─────────────────────────────
+    // ── Tool result panel rendering ─────────────────────────────
 
     /**
-     * Dispatch to a custom renderer or fall back to the default pre/code block.
-     * Returns a JS expression that evaluates to an HTML string.
+     * Creates a Swing component for the tool result, dispatching to a custom renderer
+     * or falling back to a monospace code panel.
      */
-    private fun renderToolResult(baseName: String?, status: String, details: String?): String {
-        val html = renderToolResultHtml(baseName, status, details)
-        return if (details.isNullOrBlank()) "'$html'" else "b64('${b64(html)}')"
-    }
-
-    /** Returns raw HTML for a tool result, applying custom renderers when available. */
-    private fun renderToolResultHtml(baseName: String?, status: String?, details: String?): String {
+    private fun renderToolResultPanel(
+        baseName: String?,
+        status: String?,
+        details: String?,
+        arguments: String? = null
+    ): JComponent {
         if (details.isNullOrBlank()) {
-            return if (status != "failed") "Completed"
-            else "<span style=\"color:var(--error)\">✖ Failed</span>"
+            return JBLabel(if (status != "failed") "Completed" else "✖ Failed")
         }
         if (status != "failed" && baseName != null) {
             val renderer = ToolRenderers.get(baseName)
-            val custom = renderer?.render(details)
-            if (custom != null) return custom
+            val panel = when (renderer) {
+                is ArgumentAwareRenderer -> renderer.render(details, arguments)
+                else -> renderer?.render(details)
+            }
+            if (panel != null) return panel
         }
-        return "<pre class='tool-output'><code>${esc(details)}</code></pre>"
+        return ToolRenderers.codePanel(details)
     }
 
     // ── Helpers ────────────────────────────────────────────────────
 
-    private fun escJs(s: String) = s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
-    private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;")
+    private fun escJs(s: String) =
+        s.replace("\\", "\\\\").replace("'", "\\'").replace("`", "\\`").replace("\n", "\\n").replace("\r", "")
+
+    private fun esc(s: String) =
+        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;").replace("`", "&#96;")
+
     private fun b64(s: String): String = Base64.getEncoder().encodeToString(s.toByteArray(Charsets.UTF_8))
     private fun timestamp(): String {
         val c = Calendar.getInstance(); return "%02d:%02d".format(c[Calendar.HOUR_OF_DAY], c[Calendar.MINUTE])
@@ -1229,7 +1286,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     // ── Permission requests ────────────────────────────────────────
 
     override fun showPermissionRequest(
-        reqId: String, toolDisplayName: String, description: String, onRespond: (Boolean) -> Unit
+        reqId: String,
+        toolDisplayName: String,
+        description: String,
+        onRespond: (com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse) -> Unit
     ) {
         pendingPermissionCallbacks[reqId] = onRespond
         val safeId = escJs(reqId)
@@ -1290,6 +1350,38 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private fun langToExtension(lang: String): String =
         ScratchTypeSettings.getInstance().resolve(lang)
 
+    private fun handleShowToolPopup(toolDomId: String) {
+        val entry = toolCallEntries[toolDomId]
+        val baseName = toolCallNames[toolDomId]
+        val chipTitle = toolChipTitle(baseName, entry?.arguments)
+        val kind = entry?.kind ?: "other"
+        val resultPanel = renderToolResultPanel(baseName, entry?.status, entry?.result, entry?.arguments)
+        val paramsPanel = if (!entry?.arguments.isNullOrBlank()) {
+            ToolRenderers.jsonEditor(prettyJson(entry.arguments), project)
+        } else null
+        SwingUtilities.invokeLater {
+            ToolCallPopup.show(project, chipTitle, kind, paramsPanel, resultPanel)
+        }
+    }
+
+    /** Produces a chip-style title matching the JS toolDisplayName() logic. */
+    private fun toolChipTitle(baseName: String?, arguments: String?): String {
+        if (baseName == null) return "Tool Call"
+        val subtitle = formatToolSubtitle(baseName, arguments)
+        val info = TOOL_DISPLAY_INFO[baseName]
+        val display = info?.displayName ?: baseName
+        return if (subtitle != null) "$display — $subtitle" else display
+    }
+
+    private fun prettyJson(json: String): String {
+        return try {
+            val el = com.google.gson.JsonParser.parseString(json)
+            com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(el)
+        } catch (_: Exception) {
+            json
+        }
+    }
+
     private fun buildInitialPage(): String {
         val cssVars = buildCssVars()
         val fileHandler = openFileQuery!!.inject("href")
@@ -1301,7 +1393,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 loadMore: function() { $loadMoreBridgeJs },
                 quickReply: function(text) { $quickReplyBridgeJs },
                 permissionResponse: function(data) { $permissionResponseBridgeJs },
-                openScratch: function(lang, content) { $openScratchBridgeJs }
+                openScratch: function(lang, content) { $openScratchBridgeJs },
+                showToolPopup: function(id) { $showToolPopupBridgeJs }
             };
         """.trimIndent()
         val css = loadResource("/chat/chat.css")

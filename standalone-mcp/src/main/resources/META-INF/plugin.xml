@@ -14,7 +14,7 @@
 
     <h3>How It Works</h3>
     <p>The plugin starts an MCP-compatible HTTP server on a configurable port. Point any
-    MCP client (Claude Desktop, Cursor, your own agent) at it and get access to 70+ IDE tools.</p>
+    MCP client (Claude Code, Claude Desktop, Cursor, your own agent) at it and get access to 92 IDE tools.</p>
 
     <h3>Capabilities</h3>
     <ul>
@@ -67,6 +67,11 @@
   <depends optional="true" config-file="sonarlint-features.xml">org.sonarlint.idea</depends>
 
   <extensions defaultExtensionNs="com.intellij">
+    <!-- Tool layer settings: standalone MCP defaults (no agent-specific bindings) -->
+    <projectService
+      serviceInterface="com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings"
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.psi.DefaultToolLayerSettings"/>
+
     <!-- PSI Bridge: reused from plugin-core for tool execution -->
     <projectService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService"/>
@@ -94,16 +99,13 @@
 
     <!-- Project service: MCP HTTP server -->
     <projectService
-      serviceImplementation="com.github.catatafishen.idemcpserver.McpHttpServer"/>
+      serviceInterface="com.github.catatafishen.ideagentforcopilot.services.McpServerControl"
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.McpHttpServer"/>
 
     <!-- Persistent settings state (shared from plugin-core) -->
     <projectService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings"/>
 
-
-    <!-- Start PSI Bridge + MCP server on project open -->
-    <postStartupActivity
-      implementation="com.github.catatafishen.idemcpserver.McpServerStartup"/>
 
     <!-- Notification Group -->
     <notificationGroup id="MCP Server Notifications" displayType="STICKY_BALLOON"/>

@@ -19,9 +19,83 @@
 .\gradlew.bat :plugin-core:clean :plugin-core:buildPlugin
 ```
 
-Output: `plugin-core/build/distributions/plugin-core-0.2.0-<hash>.zip`
+Output: `plugin-core/build/distributions/ide-agent-for-copilot-<version>.zip`
 
 > **Note**: If `clean` fails due to locked sandbox files (Windows), omit `:plugin-core:clean`.
+
+### Build Artifacts
+
+The project produces three independent plugin ZIPs, each installable via **Settings → Plugins → ⚙ → Install from Disk**.
+
+```bash
+# Build all three
+./gradlew buildPlugin
+
+# Build individually
+./gradlew :plugin-core:buildPlugin
+./gradlew :standalone-mcp:buildPlugin
+./gradlew :plugin-experimental:buildPlugin
+```
+
+#### 1. IDE Agent for Copilot (Main Plugin)
+
+| | |
+|---|---|
+| **Module** | `plugin-core` |
+| **Plugin ID** | `com.github.catatafishen.ideagentforcopilot` |
+| **Output** | `plugin-core/build/distributions/ide-agent-for-copilot-<version>.zip` |
+
+The primary plugin. Provides the Copilot chat interface, ACP protocol integration, MCP tool bridge,
+PSI bridge, settings UI, and all IDE tools. Bundles `mcp-server.jar` (stdio MCP server) in its `lib/`
+directory. This is the plugin published to the JetBrains Marketplace.
+
+**Contents:** plugin-core classes + `mcp-server.jar` + chat-ui assets + icons
+
+#### 2. IDE MCP Server (Standalone)
+
+| | |
+|---|---|
+| **Module** | `standalone-mcp` |
+| **Plugin ID** | `com.github.catatafishen.idemcpserver` |
+| **Output** | `standalone-mcp/build/distributions/ide-mcp-server-<version>.zip` |
+
+A standalone plugin that exposes the IDE as an MCP HTTP server — no agent chat integration.
+Any MCP client (Claude Code, Claude Desktop, Cursor, custom agents) can connect via HTTP and use
+92 IDE tools. Includes its own settings UI, toolbar toggle, and server lifecycle management.
+Supports both Streamable HTTP and SSE transport modes.
+
+**Contents:** standalone-mcp classes + repackaged `plugin-core.jar` (without plugin-core's `plugin.xml`) + `mcp-server.jar`
+
+> **Note:** `plugin-core.jar` is repackaged with its `META-INF/plugin.xml` excluded to avoid
+> duplicate descriptor conflicts. The standalone plugin has its own `plugin.xml`.
+
+#### 3. IDE Agent for Copilot (Experimental)
+
+| | |
+|---|---|
+| **Module** | `plugin-experimental` |
+| **Plugin ID** | `com.github.catatafishen.ideagentforcopilot` |
+| **Output** | `plugin-experimental/build/distributions/ide-agent-for-copilot-experimental-<version>.zip` |
+
+A superset of the main plugin with experimental features (currently: macro tool integration).
+Shares the same plugin ID as the main plugin — **install one or the other, not both**.
+Its `plugin.xml` is generated at build time by merging plugin-core's descriptor with
+`macro-extensions.xml`, and appending "(Experimental)" to the display name.
+
+**Contents:** plugin-experimental classes + repackaged `plugin-core.jar` + `mcp-server.jar` + macro extensions
+
+> **Note:** The experimental variant allows `INTERNAL_API_USAGES` in plugin verification
+> (macro tools use internal JetBrains APIs). It is not published to the Marketplace.
+
+#### Version Format
+
+ZIP filenames include the version, which varies by build context:
+
+| Context | Version | Example |
+|---|---|---|
+| Local dev | `<base>-<git-hash>` | `ide-agent-for-copilot-1.5.0-a3b2c1d.zip` |
+| Release (`-Prelease`) | `<base>` | `ide-agent-for-copilot-1.5.0.zip` |
+| CI (`PLUGIN_VERSION` env) | `<ci-version>` | `ide-agent-for-copilot-1.5.0-rc1.zip` |
 
 ### Deploy to IntelliJ
 
@@ -39,7 +113,7 @@ PLUGIN_DIR=~/.local/share/JetBrains/IntelliJIdea2025.3
 
 # Stop IntelliJ if running, then install
 rm -rf "$PLUGIN_DIR/plugin-core"
-unzip -q plugin-core/build/distributions/plugin-core-*.zip -d "$PLUGIN_DIR"
+unzip -q plugin-core/build/distributions/ide-agent-for-copilot-*.zip -d "$PLUGIN_DIR"
 
 # Launch IntelliJ
 idea &  # or full path to idea.sh
@@ -149,6 +223,23 @@ sequenceDiagram
 
     P->>C: session/cancel
 ```
+
+### Known ACP Limitations
+
+#### ResourceReference Content Not Inlined (Copilot-specific)
+
+The ACP `session/prompt` request supports a `prompt` array containing both `type: "resource"` blocks
+(with URI, MIME type, and text content) and `type: "text"` blocks. However, GitHub Copilot surfaces
+the resource references only as tagged-file metadata — the agent sees the file path and line count but
+**not** the actual content.
+
+**Current workaround:** `buildEffectivePromptWithContent()` appends the referenced file content as
+plain text after the user's message. The `ResourceReference` objects are still sent in parallel so that
+agents which honour structured references get typed metadata.
+
+**Multi-agent impact:** When implementing new `AgentConfig` backends, test whether the agent surfaces
+resource-reference content natively. If it does, skip the text duplication to avoid wasting context
+window tokens. This check should be part of each agent's `AgentConfig` implementation.
 
 ### Permission Deny + Retry Flow
 

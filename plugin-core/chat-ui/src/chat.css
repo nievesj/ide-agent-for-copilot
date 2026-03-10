@@ -182,25 +182,15 @@ body {
 }
 
 .prompt-ctx-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--sp-1);
-    background: var(--user-a12);
-    border: 1px solid var(--user-a16);
-    border-radius: var(--r-sm);
-    padding: 1px var(--sp-4);
-    font-size: 0.82em;
-    font-weight: 500;
-    color: var(--user);
+    color: var(--link);
     text-decoration: none;
-    white-space: nowrap;
+    cursor: pointer;
 }
 
 .prompt-ctx-chip:hover {
-    text-decoration: none;
-    background: var(--user-a18);
-    border-color: var(--user-a25);
+    text-decoration: underline;
 }
+
 
 /* ── Agent response ──────────────────────────────────── */
 .agent-row {
@@ -231,9 +221,8 @@ body {
     font-family: inherit;
 }
 
-/* "Working" indicator: last agent message with no text bubble yet */
-chat-message.agent-row:last-child:not(:has(message-bubble))::after {
-    content: 'Working…';
+/* ── Working indicator ───────────────────────────────── */
+working-indicator {
     display: block;
     padding: var(--sp-4) var(--sp-8) var(--sp-4) 36px;
     max-width: 90%;
@@ -241,6 +230,15 @@ chat-message.agent-row:last-child:not(:has(message-bubble))::after {
     background: var(--agent-a06) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Ccircle cx='7' cy='7' r='5' fill='none' stroke='%23888' stroke-width='2' stroke-dasharray='20 12' stroke-linecap='round'%3E%3CanimateTransform attributeName='transform' type='rotate' from='0 7 7' to='360 7 7' dur='.8s' repeatCount='indefinite'/%3E%3C/circle%3E%3C/svg%3E") no-repeat var(--sp-8) center / 14px 14px;
     color: color-mix(in srgb, var(--fg) 55%, transparent);
     font-size: 0.88em;
+    margin: var(--sp-2) 0;
+}
+
+working-indicator[hidden] {
+    display: none;
+}
+
+working-indicator .working-text {
+    user-select: none;
 }
 
 /* ── Thinking section ─────────────────────────────────── */
@@ -259,144 +257,6 @@ chat-message.agent-row:last-child:not(:has(message-bubble))::after {
 .thinking-content {
     white-space: pre-wrap;
     color: var(--think);
-}
-
-/* tool-section is now a hidden data element — never displayed */
-.tool-section {
-    display: none !important;
-}
-
-/* ── Tool popup (floating detail overlay) ────────────── */
-.tool-popup {
-    position: fixed;
-    z-index: 9999;
-    width: min(420px, calc(100vw - 16px));
-    max-height: min(340px, 50vh);
-    min-width: 220px;
-    min-height: 120px;
-    overflow: hidden;
-    background: var(--bg);
-    border: 1px solid var(--think-a25);
-    border-radius: var(--r-md, 8px);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.12);
-    font-size: 0.88em;
-    animation: popupIn 0.15s ease;
-}
-
-.tool-popup-hidden {
-    display: none !important;
-}
-
-.tool-popup-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--sp-4) var(--sp-5);
-    border-bottom: 1px solid var(--think-a16);
-    font-weight: 600;
-    font-size: 0.92em;
-    color: var(--tool);
-    user-select: none;
-    cursor: grab;
-}
-
-.tool-popup.kind-read .tool-popup-header { color: var(--kind-read); }
-.tool-popup.kind-edit .tool-popup-header { color: var(--kind-edit); }
-.tool-popup.kind-execute .tool-popup-header { color: var(--kind-execute); }
-.tool-popup.kind-search .tool-popup-header { color: var(--kind-search); }
-.tool-popup.kind-think .tool-popup-header { color: var(--kind-think); }
-.tool-popup.kind-other .tool-popup-header { color: var(--kind-other); }
-.tool-popup.failed .tool-popup-header { color: var(--error); }
-
-.tool-popup-close {
-    cursor: pointer;
-    font-size: 1.2em;
-    line-height: 1;
-    color: var(--think);
-    padding: 0 var(--sp-1);
-    border-radius: var(--r-sm);
-}
-
-.tool-popup-close:hover {
-    color: var(--fg);
-    background: var(--think-a08);
-}
-
-.tool-popup-body {
-    padding: var(--sp-4) var(--sp-5);
-    overflow-y: auto;
-    max-height: calc(100% - 38px);
-}
-
-.tool-popup-params,
-.tool-popup-result {
-    margin-bottom: var(--sp-3);
-}
-
-.tool-popup-params:empty,
-.tool-popup-result:empty {
-    display: none;
-}
-
-.tool-popup-resize {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    width: 16px;
-    height: 16px;
-    cursor: nwse-resize;
-    z-index: 1;
-}
-
-/* JetBrains-style diagonal grip lines */
-.tool-popup-resize::before {
-    content: '';
-    position: absolute;
-    right: 3px;
-    bottom: 3px;
-    width: 10px;
-    height: 10px;
-    background:
-        linear-gradient(
-            135deg,
-            transparent 30%,
-            var(--think-a25) 30%, var(--think-a25) 35%,
-            transparent 35%,
-            transparent 50%,
-            var(--think-a25) 50%, var(--think-a25) 55%,
-            transparent 55%,
-            transparent 70%,
-            var(--think-a25) 70%, var(--think-a25) 75%,
-            transparent 75%
-        );
-}
-
-.tool-popup-resize:hover::before,
-.tool-popup-resize:active::before {
-    background:
-        linear-gradient(
-            135deg,
-            transparent 30%,
-            var(--fg) 30%, var(--fg) 35%,
-            transparent 35%,
-            transparent 50%,
-            var(--fg) 50%, var(--fg) 55%,
-            transparent 55%,
-            transparent 70%,
-            var(--fg) 70%, var(--fg) 75%,
-            transparent 75%
-        );
-}
-
-@keyframes popupIn {
-    from {
-        opacity: 0;
-        transform: translateY(4px) scale(0.97);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
 }
 
 /* ── Turn chips (meta pills) ─────────────────────────── */
@@ -418,6 +278,11 @@ chat-message.agent-row:last-child:not(:has(message-bubble))::after {
     font-size: 0.92em;
     white-space: nowrap;
     flex-shrink: 0;
+}
+
+/* User message timestamp: push to the right edge of the meta strip */
+.prompt-row .meta .ts {
+    order: 10;
 }
 
 .chip-strip {
@@ -623,13 +488,21 @@ thinking-chip.thinking-active .thought-bubble {
 
 /* ── Sub-agent colors ────────────────────────────────── */
 
-/* ── Model colors (main agent bubbles cycle per model) ── */
+/* ── Model colors (main agent bubbles cycle per profile) ── */
+.model-c0 {
+    --mc: rgba(150, 200, 150, 1);
+}
+
 .model-c0 .agent-bubble {
     background: rgba(150, 200, 150, 0.06);
 }
 
 .model-c0 .agent-bubble:hover {
     background: rgba(150, 200, 150, 0.10);
+}
+
+.model-c1 {
+    --mc: rgba(130, 170, 220, 1);
 }
 
 .model-c1 .agent-bubble {
@@ -640,12 +513,20 @@ thinking-chip.thinking-active .thought-bubble {
     background: rgba(130, 170, 220, 0.10);
 }
 
+.model-c2 {
+    --mc: rgba(190, 150, 210, 1);
+}
+
 .model-c2 .agent-bubble {
     background: rgba(190, 150, 210, 0.06);
 }
 
 .model-c2 .agent-bubble:hover {
     background: rgba(190, 150, 210, 0.10);
+}
+
+.model-c3 {
+    --mc: rgba(220, 170, 100, 1);
 }
 
 .model-c3 .agent-bubble {
@@ -656,6 +537,10 @@ thinking-chip.thinking-active .thought-bubble {
     background: rgba(220, 170, 100, 0.10);
 }
 
+.model-c4 {
+    --mc: rgba(200, 130, 150, 1);
+}
+
 .model-c4 .agent-bubble {
     background: rgba(200, 130, 150, 0.06);
 }
@@ -664,12 +549,27 @@ thinking-chip.thinking-active .thought-bubble {
     background: rgba(200, 130, 150, 0.10);
 }
 
+.model-c5 {
+    --mc: rgba(100, 190, 190, 1);
+}
+
 .model-c5 .agent-bubble {
     background: rgba(100, 190, 190, 0.06);
 }
 
 .model-c5 .agent-bubble:hover {
     background: rgba(100, 190, 190, 0.10);
+}
+
+.agent-name {
+    color: var(--mc, var(--think));
+    font-weight: 500;
+    font-size: 0.88em;
+    opacity: 0.85;
+}
+
+.subagent-indent .agent-name {
+    color: var(--sa-color, var(--think));
 }
 
 .subagent-c0 {
@@ -773,29 +673,6 @@ thinking-chip.thinking-active .thought-bubble {
 
 .turn-chip.subagent .chip-spinner {
     border-top-color: var(--sa-color);
-}
-
-/* ── Tool section detail ─────────────────────────────── */
-.tool-params-code {
-    font-size: 0.85em;
-}
-
-.tool-result-label {
-    font-size: 0.82em;
-    color: var(--think);
-    margin-top: var(--sp-2);
-}
-
-.tool-output {
-    font-size: 0.85em;
-    max-height: 300px;
-    overflow-y: auto;
-}
-
-.tool-running-hint {
-    color: var(--think);
-    font-style: italic;
-    font-size: 0.88em;
 }
 
 /* ── Session separator ───────────────────────────────── */
@@ -1220,6 +1097,17 @@ permission-request {
 .perm-allow:hover {
     background: rgba(80, 180, 80, 0.22) !important;
     border-color: #5cb85c !important;
+}
+
+.perm-allow-session {
+    background: rgba(80, 140, 220, 0.12) !important;
+    color: #5b9bd5 !important;
+    border-color: rgba(80, 140, 220, 0.3) !important;
+}
+
+.perm-allow-session:hover {
+    background: rgba(80, 140, 220, 0.22) !important;
+    border-color: #5b9bd5 !important;
 }
 
 .perm-deny {

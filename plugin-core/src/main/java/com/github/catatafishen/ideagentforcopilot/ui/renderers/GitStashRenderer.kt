@@ -1,5 +1,9 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
+import com.intellij.ui.JBColor
+import com.intellij.util.ui.UIUtil
+import javax.swing.JComponent
+
 /**
  * Renderer for git_stash output.
  * Input (list): "stash@{0}: WIP on main: 1234567 Commit message" per line.
@@ -9,47 +13,37 @@ internal object GitStashRenderer : ToolResultRenderer {
 
     private val STASH_LINE = Regex("""^stash@\{(\d+)}:\s*(.*?)(?::\s+([0-9a-f]+)\s+(.*))?$""")
 
-    override fun render(output: String): String? {
+    override fun render(output: String): JComponent? {
         val lines = output.lines().map { it.trim() }.filter { it.isNotEmpty() }
         val stashes = lines.mapNotNull { STASH_LINE.find(it) }
-
-        // For non-list outputs (push/pop/apply/drop), fall back to default
         if (stashes.isEmpty()) return null
 
-        val e = ToolRenderers::esc
-        val sb = StringBuilder()
-        sb.append("<div class='outline-result'>")
+        val panel = ToolRenderers.listPanel()
+        val header = ToolRenderers.headerPanel(ToolIcons.STASH, stashes.size, if (stashes.size == 1) "stash" else "stashes")
+        panel.add(header)
 
-        // Header
-        sb.append("<div class='outline-header'>")
-        sb.append("<span class='search-icon'>📦</span> ")
-        sb.append("<span class='search-count'>${stashes.size}</span> ")
-        sb.append("<span class='search-label'>${if (stashes.size == 1) "stash" else "stashes"}</span>")
-        sb.append("</div>")
-
-        // Stashes
-        sb.append("<div class='outline-section-items'>")
         for (m in stashes) {
             val index = m.groupValues[1]
             val description = m.groupValues[2]
             val hash = m.groupValues[3]
             val message = m.groupValues[4]
 
-            sb.append("<div class='outline-item'>")
-            sb.append("<span class='git-file-badge badge-field'>$index</span> ")
+            val row = ToolRenderers.rowPanel()
+            row.add(ToolRenderers.badgeLabel(index, JBColor.namedColor("Link.activeForeground", UIUtil.getLabelForeground())))
             if (message.isNotEmpty()) {
-                sb.append("<span>${e(message)}</span>")
-                sb.append(" <span class='inspection-file-count'>${e(description)}</span>")
+                row.add(javax.swing.JLabel(message))
+                row.add(ToolRenderers.mutedLabel(description))
             } else {
-                sb.append("<span>${e(description)}</span>")
+                row.add(javax.swing.JLabel(description))
             }
             if (hash.isNotEmpty()) {
-                sb.append(" <code class='git-commit-hash'>${e(hash.take(7))}</code>")
+                row.add(ToolRenderers.monoLabel(hash.take(7)).apply {
+                    foreground = JBColor.namedColor("Link.activeForeground", UIUtil.getLabelForeground())
+                })
             }
-            sb.append("</div>")
+            panel.add(row)
         }
-        sb.append("</div>")
-        sb.append("</div>")
-        return sb.toString()
+
+        return panel
     }
 }

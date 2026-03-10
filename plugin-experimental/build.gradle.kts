@@ -21,6 +21,7 @@ dependencies {
         } else {
             intellijIdeaUltimate("2025.3")
         }
+        testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
         bundledPlugin("com.intellij.java")
         bundledPlugin("Git4Idea")
         bundledPlugin("org.jetbrains.plugins.terminal")
@@ -28,6 +29,7 @@ dependencies {
 
     // Compile against plugin-core to reuse PsiBridgeService, ToolRegistry, etc.
     compileOnly(project(":plugin-core"))
+    testRuntimeOnly(project(":plugin-core"))
 
     // Runtime dependencies that plugin-core needs (not pulled transitively from compileOnly)
     implementation("com.google.code.gson:gson:${providers.gradleProperty("gsonVersion").get()}")
@@ -35,6 +37,11 @@ dependencies {
 
     // Force annotations version to match the platform
     implementation("org.jetbrains:annotations:26.0.2")
+
+    testImplementation("org.junit.jupiter:junit-jupiter:${providers.gradleProperty("junitVersion").get()}")
+    testImplementation("junit:junit:${providers.gradleProperty("junit4Version").get()}")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testRuntimeOnly("org.junit.vintage:junit-vintage-engine:${providers.gradleProperty("junitVersion").get()}")
 }
 
 configurations.all {
@@ -92,6 +99,10 @@ tasks.named<ProcessResources>("processResources") {
     dependsOn(generatePluginXml)
     // Exclude the template file — only the generated plugin.xml should be in the JAR
     exclude("META-INF/macro-extensions.xml")
+}
+
+tasks.named("patchPluginXml") {
+    dependsOn(generatePluginXml)
 }
 
 // Include plugin-core classes in the sandbox
@@ -162,5 +173,9 @@ tasks {
 
     withType<JavaCompile> {
         options.compilerArgs.add("-Xlint:deprecation")
+    }
+
+    test {
+        useJUnitPlatform()
     }
 }

@@ -1,6 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.github.catatafishen.ideagentforcopilot.services.CopilotService
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -50,7 +50,7 @@ internal class AuthLoginService(private val project: Project) {
         pendingAuthError?.let { return it }
 
         return try {
-            val client = CopilotService.getInstance(project).getClient()
+            val client = ActiveAgentManager.getInstance(project).client
             client.listModels()
             null
         } catch (e: Exception) {
@@ -92,7 +92,7 @@ internal class AuthLoginService(private val project: Project) {
     private fun resolveAuthCommand(): List<String> {
         var command = "copilot auth login"
         try {
-            val authMethod = CopilotService.getInstance(project).getClient().authMethod
+            val authMethod = ActiveAgentManager.getInstance(project).client.authMethod
             if (authMethod?.command != null) {
                 val args = authMethod.args?.joinToString(" ") ?: ""
                 command = "${authMethod.command} $args".trim()
@@ -190,10 +190,6 @@ internal class AuthLoginService(private val project: Project) {
         return ParseResult(code, url)
     }
 
-    /**
-     * Opens a "Copilot Sign In" terminal tab and runs the auth command.
-     * Used as a fallback when inline auth cannot parse the device code.
-     */
     fun startCopilotLogin() {
         val resolvedCommand = resolveAuthCommand().joinToString(" ")
         runAuthInEmbeddedTerminal(project, resolvedCommand, "Copilot Sign In") {

@@ -33,6 +33,9 @@ import java.util.function.Function;
 public final class PlatformApiCompat {
 
     private static final Logger LOG = Logger.getInstance(PlatformApiCompat.class);
+    private static final String LANG_SHELL_SCRIPT = "Shell Script";
+    private static final String LANG_JAVASCRIPT = "JavaScript";
+    private static final String LANG_PYTHON = "Python";
 
     private PlatformApiCompat() {
     }
@@ -64,6 +67,20 @@ public final class PlatformApiCompat {
         @NotNull com.intellij.openapi.command.undo.UndoManager undoManager,
         @Nullable com.intellij.openapi.fileEditor.FileEditor fileEditor) {
         return undoManager.getUndoActionNameAndDescription(fileEditor).first;
+    }
+
+    /**
+     * Retrieves the name of the next redo action for a given file editor.
+     *
+     * <p><b>Why extracted:</b> Same generic-type annotation issue as
+     * {@link #getUndoActionName} — the {@code Pair} return type of
+     * {@code getRedoActionNameAndDescription()} triggers false-positive
+     * daemon errors between SDK versions.</p>
+     */
+    static @Nullable String getRedoActionName(
+        @NotNull com.intellij.openapi.command.undo.UndoManager undoManager,
+        @Nullable com.intellij.openapi.fileEditor.FileEditor fileEditor) {
+        return undoManager.getRedoActionNameAndDescription(fileEditor).first;
     }
 
     /**
@@ -187,7 +204,7 @@ public final class PlatformApiCompat {
      * at compile time and must be loaded by name.</p>
      */
     @SuppressWarnings("unchecked")
-    static @Nullable Object getServiceByRawClass(@NotNull Project project, @NotNull Class<?> serviceClass) {
+    public static @Nullable Object getServiceByRawClass(@NotNull Project project, @NotNull Class<?> serviceClass) {
         // Cast to Class<Object> satisfies the generic bound; safe because we only use the result as Object.
         return project.getService((Class<Object>) serviceClass);
     }
@@ -563,10 +580,25 @@ public final class PlatformApiCompat {
      * mismatch as {@link #getPluginVersionInfo}. Additionally, {@code descriptor.getPluginClassLoader()}
      * cannot be resolved because the return type of {@code getPlugin} is unresolved.</p>
      */
-    static @Nullable ClassLoader getPluginClassLoader(@NotNull String pluginId) {
+    public static @Nullable ClassLoader getPluginClassLoader(@NotNull String pluginId) {
         var descriptor = com.intellij.ide.plugins.PluginManagerCore.getPlugin(
             com.intellij.openapi.extensions.PluginId.getId(pluginId));
         return descriptor != null ? descriptor.getPluginClassLoader() : null;
+    }
+
+    /**
+     * Returns the filesystem path to a plugin's installation directory, or null if unavailable.
+     *
+     * <p><b>Why extracted:</b> {@code PluginManagerCore.getPlugin(PluginId)} has a different
+     * {@code @NotNull} annotation between IDE versions, causing the daemon to report
+     * "cannot be applied to (PluginId)". Cascading: {@code descriptor.getPluginPath()} also
+     * fails because the return type of {@code getPlugin} is unresolved. The Gradle build
+     * compiles without errors.</p>
+     */
+    public static @Nullable java.nio.file.Path getPluginPath(@NotNull String pluginId) {
+        var descriptor = com.intellij.ide.plugins.PluginManagerCore.getPlugin(
+            com.intellij.openapi.extensions.PluginId.getId(pluginId));
+        return descriptor != null ? descriptor.getPluginPath() : null;
     }
 
     /**
@@ -589,6 +621,142 @@ public final class PlatformApiCompat {
                 || ct.getDisplayName().toLowerCase().contains(lowerSearch)) {
                 return ct;
             }
+        }
+        return null;
+    }
+
+    /**
+     * Detects a programming language from text content using IntelliJ's
+     * {@link com.intellij.openapi.fileTypes.FileTypeRegistry.FileTypeDetector} extensions
+     * and common content heuristics (shebang lines, language-specific patterns).
+     *
+     * <p><b>Why extracted:</b> {@code FileTypeDetector.EP_NAME} and
+     * {@code LanguageUtil.getFileTypeLanguage()} have subtle signature changes across IDE
+     * versions. Centralising here keeps the caller insulated.</p>
+     *
+     * @param text the pasted / imported text to analyse
+     * @return the detected {@link com.intellij.lang.Language}, or {@code null} if unknown
+     */
+    @Nullable
+    public static com.intellij.lang.Language detectLanguageFromContent(@NotNull String text) {
+        // 1. Try IntelliJ's registered file-type detectors (handles shebang, BOM, etc.)
+        com.intellij.lang.Language detected = detectViaFileTypeDetectors(text);
+        if (detected != null) return detected;
+
+        // 2. Heuristic shebang mapping
+        detected = detectViaShebang(text);
+        if (detected != null) return detected;
+
+        // 3. Content-pattern heuristics
+        return detectViaPatterns(text);
+    }
+
+    @Nullable
+    private static com.intellij.lang.Language detectViaFileTypeDetectors(@NotNull String text) {
+        try {
+            byte[] bytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            var byteSeq = com.intellij.openapi.util.io.ByteArraySequence.create(bytes);
+            int prefixLen = Math.min(bytes.length, 4096);
+            var prefixSeq = new com.intellij.openapi.util.io.ByteArraySequence(bytes, 0, prefixLen);
+
+            for (var detector : com.intellij.openapi.fileTypes.FileTypeRegistry.FileTypeDetector.EP_NAME.getExtensionList()) {
+                try {
+                    int desired = detector.getDesiredContentPrefixLength();
+                    var seq = desired > 0 && desired < bytes.length ? prefixSeq : byteSeq;
+                    var ft = detector.detect(null, seq, text);
+                    if (ft instanceof com.intellij.openapi.fileTypes.LanguageFileType lft) {
+                        // Skip PlainText — it's a catch-all fallback, not a real detection.
+                        // Returning it would suppress pattern-based detection (e.g. JSON).
+                        if (lft.getLanguage() == com.intellij.openapi.fileTypes.PlainTextLanguage.INSTANCE) continue;
+                        return lft.getLanguage();
+                    }
+                } catch (Exception ignored) {
+                    // Some detectors may throw on null VirtualFile — skip
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("FileTypeDetector scan failed", e);
+        }
+        return null;
+    }
+
+    private static final java.util.Map<String, String> SHEBANG_LANG_MAP = java.util.Map.ofEntries(
+        java.util.Map.entry("python", LANG_PYTHON),
+        java.util.Map.entry("python3", LANG_PYTHON),
+        java.util.Map.entry("node", LANG_JAVASCRIPT),
+        java.util.Map.entry("deno", LANG_JAVASCRIPT),
+        java.util.Map.entry("bun", LANG_JAVASCRIPT),
+        java.util.Map.entry("bash", LANG_SHELL_SCRIPT),
+        java.util.Map.entry("sh", LANG_SHELL_SCRIPT),
+        java.util.Map.entry("zsh", LANG_SHELL_SCRIPT),
+        java.util.Map.entry("ruby", "Ruby"),
+        java.util.Map.entry("perl", "Perl"),
+        java.util.Map.entry("php", "PHP"),
+        java.util.Map.entry("groovy", "Groovy"),
+        java.util.Map.entry("lua", "Lua"),
+        java.util.Map.entry("Rscript", "R")
+    );
+
+    @Nullable
+    private static com.intellij.lang.Language detectViaShebang(@NotNull String text) {
+        if (!text.startsWith("#!")) return null;
+        String firstLine = text.lines().findFirst().orElse("");
+        // Extract the interpreter name: #!/usr/bin/env python3 → python3
+        String interpreter = firstLine.contains("/env ")
+            ? firstLine.substring(firstLine.indexOf("/env ") + 5).trim().split("\\s")[0]
+            : firstLine.substring(firstLine.lastIndexOf('/') + 1).trim().split("\\s")[0];
+        String langId = SHEBANG_LANG_MAP.get(interpreter);
+        return langId != null ? com.intellij.lang.LanguageUtil.findRegisteredLanguage(langId) : null;
+    }
+
+    @Nullable
+    private static com.intellij.lang.Language detectViaPatterns(@NotNull String text) {
+        String trimmed = text.stripLeading();
+        String first512 = trimmed.substring(0, Math.min(trimmed.length(), 512));
+
+        // JSON: starts with { or [ and contains " — high confidence
+        if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && first512.contains("\"")) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("JSON");
+        }
+        // XML/HTML: starts with < (tag or declaration)
+        if (trimmed.startsWith("<?xml") || trimmed.startsWith("<!DOCTYPE")) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("XML");
+        }
+        if (trimmed.startsWith("<html") || trimmed.startsWith("<!doctype html")) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("HTML");
+        }
+        // YAML: starts with --- or has key: value patterns on first lines
+        if (trimmed.startsWith("---")) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("yaml");
+        }
+        // SQL keywords (case-insensitive)
+        String upper = first512.toUpperCase(java.util.Locale.ROOT);
+        if (upper.startsWith("SELECT ") || upper.startsWith("INSERT ") || upper.startsWith("CREATE TABLE")
+            || upper.startsWith("ALTER TABLE") || upper.startsWith("DROP ")) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("SQL");
+        }
+        // Java: package declaration or typical Java imports
+        if (first512.startsWith("package ") && first512.contains(";")) {
+            return first512.contains("fun ") || first512.contains("val ")
+                ? com.intellij.lang.LanguageUtil.findRegisteredLanguage("kotlin")
+                : com.intellij.lang.LanguageUtil.findRegisteredLanguage("JAVA");
+        }
+        // Python: def/class with colon, or import without braces
+        if ((first512.contains("def ") && first512.contains(":"))
+            || first512.startsWith("import ") && !first512.contains("{") && !first512.contains("from '")) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage(LANG_PYTHON);
+        }
+        // Kotlin top-level fun
+        if (first512.contains("fun ") && first512.contains("{") && !first512.contains(";")) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("kotlin");
+        }
+        // Go: package main / func
+        if (first512.startsWith("package main") || (first512.contains("func ") && first512.contains("{"))) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("go");
+        }
+        // Rust: fn main, let mut, pub fn
+        if (first512.contains("fn ") && (first512.contains("let ") || first512.contains("pub "))) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("Rust");
         }
         return null;
     }
