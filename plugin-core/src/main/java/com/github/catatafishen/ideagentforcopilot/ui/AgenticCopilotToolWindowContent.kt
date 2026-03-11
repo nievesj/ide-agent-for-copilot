@@ -2385,6 +2385,8 @@ class AgenticCopilotToolWindowContent(
 
     /** Tree node for the Plans tab — display name is shown in the tree. */
     private class FileTreeNode(
-        fileName: String
+        val fileName: String,
+        val filePath: String,
+        val content: String
     ) : javax.swing.tree.DefaultMutableTreeNode("\uD83D\uDCC4 $fileName")
 }
