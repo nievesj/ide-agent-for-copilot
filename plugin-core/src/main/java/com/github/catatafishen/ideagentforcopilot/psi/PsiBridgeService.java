@@ -373,13 +373,17 @@ public final class PsiBridgeService implements Disposable {
     /**
      * Returns the document's current modification stamp for the given file,
      * or -1 if the document is not loaded or the file is null.
-     * Safe to call from any thread.
+     * Must be called inside a read action (or from EDT); wraps itself if needed.
      */
     private static long getDocumentStamp(@Nullable com.intellij.openapi.vfs.VirtualFile vf) {
         if (vf == null) return -1L;
-        com.intellij.openapi.editor.Document doc =
-            com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf);
-        return doc != null ? doc.getModificationStamp() : -1L;
+        // FileDocumentManager.getDocument requires a read action.
+        return com.intellij.openapi.application.ApplicationManager.getApplication()
+            .runReadAction((com.intellij.openapi.util.Computable<Long>) () -> {
+                com.intellij.openapi.editor.Document doc =
+                    com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf);
+                return doc != null ? doc.getModificationStamp() : -1L;
+            });
     }
 
     private String appendAutoHighlights(String writeResult, String path, DaemonWaiter preWriteWaiter) {
