@@ -1866,7 +1866,7 @@ class AgenticCopilotToolWindowContent(
                 turnToolCallCount++
                 if (::processingTimerPanel.isInitialized) processingTimerPanel.incrementToolCalls()
                 toolCallTitles[toolCallId] = "subagent_internal"
-                consolePanel.addSubAgentToolCall(activeSubAgentId!!, toolCallId, title, arguments)
+                consolePanel.addSubAgentToolCall(activeSubAgentId!!, toolCallId, title, arguments, kind)
             } else {
                 turnToolCallCount++
                 if (::processingTimerPanel.isInitialized) processingTimerPanel.incrementToolCalls()

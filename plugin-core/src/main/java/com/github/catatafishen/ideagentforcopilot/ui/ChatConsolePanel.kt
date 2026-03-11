@@ -324,22 +324,34 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     /** Add a tool call chip+section to a sub-agent's result message. */
-    override fun addSubAgentToolCall(subAgentId: String, toolId: String, title: String, arguments: String?) {
+    override fun addSubAgentToolCall(
+        subAgentId: String,
+        toolId: String,
+        title: String,
+        arguments: String?,
+        kind: String?
+    ) {
         val saDid = domId(subAgentId)
         val toolDid = domId(toolId)
         val baseName = stripMcpPrefix(title)
+        val resolvedKind = kind ?: "other"
+        val entry = EntryData.ToolCall(title, arguments, resolvedKind)
+        toolCallNames[toolDid] = baseName
+        toolCallEntries[toolDid] = entry
         val info = TOOL_DISPLAY_INFO[baseName]
         val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
         val short = formatToolSubtitle(baseName, arguments)
         val label = if (short != null) "$displayName — $short" else displayName
         val hasCustomRenderer = ToolRenderers.hasRenderer(baseName)
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
-        executeJs("ChatController.addSubAgentToolCall('$saDid','$toolDid','${escJs(label)}','$paramsJson')")
+        val safeKind = escJs(resolvedKind)
+        executeJs("ChatController.addSubAgentToolCall('$saDid','$toolDid','${escJs(label)}','$paramsJson','$safeKind')")
     }
 
     /** Update a sub-agent internal tool call (no segment break). */
     override fun updateSubAgentToolCall(toolId: String, status: String, details: String?) {
         val did = domId(toolId)
+        toolCallEntries[did]?.let { it.result = details; it.status = status }
         val failed = if (status == "failed") "failed" else "completed"
         executeJs("ChatController.updateToolCall('$did','$failed','$failed')")
     }
