@@ -780,7 +780,7 @@ class AgenticCopilotToolWindowContent(
      */
     private inner class ProcessingTimerPanel : JBPanel<ProcessingTimerPanel>() {
         private val spinner = AsyncProcessIcon("CopilotProcessing")
-        private val doneIcon = JBLabel("\u2705")
+        private val doneIcon = JBLabel(com.intellij.icons.AllIcons.Actions.Checked)
         private val timerLabel = JBLabel("")
         private val toolsLabel = JBLabel("")
         private val requestsLabel = JBLabel("")
@@ -891,7 +891,7 @@ class AgenticCopilotToolWindowContent(
             toolsLabel.text = if (toolCallCount > 0) "\u2022 $toolCallCount tools" else ""
             toolsLabel.isVisible = toolCallCount > 0
             requestsLabel.isVisible = false
-            if (!isRunning) doneIcon.text = "\u2705"
+            if (!isRunning) { doneIcon.icon = com.intellij.icons.AllIcons.Actions.Checked; doneIcon.text = null }
         }
 
         private fun refreshSessionMode() {
@@ -907,7 +907,7 @@ class AgenticCopilotToolWindowContent(
             requestsLabel.text = if (sessionReqs > 0) "\u2022 $sessionReqs req" else "\u2022 0 req"
             requestsLabel.isVisible = true
             toolTipText = "Session totals · Click for turn"
-            doneIcon.text = "\u2211"
+            doneIcon.icon = null; doneIcon.text = "\u2211"
         }
 
         private fun updateLabel() {
