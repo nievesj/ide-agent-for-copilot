@@ -19,6 +19,9 @@ public final class ToolRegistry {
         GIT("Git"),
         REFACTOR("Refactoring"),
         IDE("IDE & Project"),
+        TESTING("Testing"),
+        PROJECT("Project"),
+        INFRASTRUCTURE("Infrastructure"),
         SHELL("Shell (built-in)"),
         OTHER("Other"),
         MACRO("Recorded Macros");
@@ -287,11 +290,19 @@ public final class ToolRegistry {
     public static String resolvePermissionQuestion(
         @org.jetbrains.annotations.NotNull String toolId,
         @org.jetbrains.annotations.Nullable com.google.gson.JsonObject args) {
-        String template = PERMISSION_QUESTIONS.get(toolId);
+        // Check new-style ToolDefinition first, then legacy map
+        String template = null;
+        ToolDefinition def = DEFINITIONS.get(toolId);
+        if (def != null && def.permissionTemplate() != null) {
+            template = def.permissionTemplate();
+        }
+        if (template == null) {
+            template = PERMISSION_QUESTIONS.get(toolId);
+        }
         if (template == null) return null;
         if (args == null) {
             // No args: strip all placeholders and return if meaningful text remains
-            String q = template.replaceAll("\\{[^}]+\\}", "").replaceAll("\\(\\s*\\)", "")
+            String q = template.replaceAll("\\{[^}]+}", "").replaceAll("\\(\\s*\\)", "")
                 .replaceAll("\\s+", " ").trim();
             return q.isEmpty() ? null : q;
         }
@@ -307,7 +318,7 @@ public final class ToolRegistry {
             } else if (e.getValue().isJsonArray()) {
                 StringBuilder sb = new StringBuilder();
                 for (com.google.gson.JsonElement el : e.getValue().getAsJsonArray()) {
-                    if (sb.length() > 0) sb.append(", ");
+                    if (!sb.isEmpty()) sb.append(", ");
                     sb.append(el.isJsonPrimitive() ? el.getAsString() : el.toString());
                 }
                 val = sb.toString();
@@ -317,20 +328,79 @@ public final class ToolRegistry {
             q = q.replace("{" + e.getKey() + "}", val);
         }
         // Remove any unresolved placeholders (optional args not provided)
-        q = q.replaceAll("\\{[^}]+\\}", "").replaceAll("\\(\\s*\\)", "")
+        q = q.replaceAll("\\{[^}]+}", "").replaceAll("\\(\\s*\\)", "")
             .replaceAll("\\s+", " ").trim();
         return q.isEmpty() ? null : q;
     }
+
+    // ── ToolDefinition-based registry (Phase 1 of OO migration) ────────────
+
+    /**
+     * Registry of tools defined via the new {@link ToolDefinition} interface.
+     * During migration, tools registered here take precedence over the legacy
+     * {@link #ALL_TOOLS} list. Once migration is complete, ALL_TOOLS will be removed.
+     */
+    private static final java.util.Map<String, ToolDefinition> DEFINITIONS =
+        new java.util.LinkedHashMap<>();
+
+    /**
+     * Register a single tool definition. Overwrites any prior definition with the same ID.
+     */
+    public static void register(@org.jetbrains.annotations.NotNull ToolDefinition def) {
+        DEFINITIONS.put(def.id(), def);
+    }
+
+    /**
+     * Register multiple tool definitions.
+     */
+    public static void registerAll(@org.jetbrains.annotations.NotNull java.util.Collection<? extends ToolDefinition> defs) {
+        for (ToolDefinition def : defs) {
+            DEFINITIONS.put(def.id(), def);
+        }
+    }
+
+    /**
+     * Look up a {@link ToolDefinition} by tool ID. Returns null if not found.
+     */
+    @org.jetbrains.annotations.Nullable
+    public static ToolDefinition findDefinition(@org.jetbrains.annotations.NotNull String id) {
+        return DEFINITIONS.get(id);
+    }
+
+    /**
+     * Returns all registered tool definitions (new-style only).
+     */
+    @org.jetbrains.annotations.NotNull
+    public static java.util.Collection<ToolDefinition> getAllDefinitions() {
+        return java.util.Collections.unmodifiableCollection(DEFINITIONS.values());
+    }
+
+    /**
+     * Clears all registered definitions. Used by tests and during re-initialization.
+     */
+    public static void clearDefinitions() {
+        DEFINITIONS.clear();
+    }
+
+    // ── Unified lookups (check ToolDefinition first, then legacy ToolEntry) ──
 
     public static List<ToolEntry> getAllTools() {
         return ALL_TOOLS;
     }
 
     /**
-     * Look up a tool by id (exact match). Returns null if not found.
+     * Look up a tool by id (exact match). Checks {@link ToolDefinition} registry first,
+     * falls back to legacy {@link ToolEntry} list, returns null if not found.
      */
     public static ToolEntry findById(String id) {
         if (id == null) return null;
+        // Check new-style definitions first and adapt to ToolEntry
+        ToolDefinition def = DEFINITIONS.get(id);
+        if (def != null) {
+            return new ToolEntry(def.id(), def.displayName(), def.description(),
+                def.category(), def.isBuiltIn(), def.hasDenyControl(),
+                def.supportsPathSubPermissions());
+        }
         for (ToolEntry e : ALL_TOOLS) {
             if (e.id.equals(id)) return e;
         }
@@ -353,19 +423,26 @@ public final class ToolRegistry {
 
     /**
      * Returns MCP tool annotations for a given tool ID.
-     * Annotations follow the MCP 2025-03-26 spec: readOnlyHint, destructiveHint,
-     * idempotentHint, openWorldHint. Agents use these hints to decide permission
-     * behavior (e.g., auto-allow read-only tools, prompt for destructive ones).
+     * Checks {@link ToolDefinition} flags first, falls back to legacy sets.
      */
     public static com.google.gson.JsonObject getMcpAnnotations(@org.jetbrains.annotations.NotNull String toolId) {
-        ToolEntry entry = findById(toolId);
+        ToolDefinition def = DEFINITIONS.get(toolId);
         com.google.gson.JsonObject ann = new com.google.gson.JsonObject();
-        if (entry != null) {
-            ann.addProperty("title", entry.displayName);
+
+        if (def != null) {
+            ann.addProperty("title", def.displayName());
+            ann.addProperty("readOnlyHint", def.isReadOnly());
+            ann.addProperty("destructiveHint", def.isDestructive());
+            ann.addProperty("openWorldHint", def.isOpenWorld());
+        } else {
+            ToolEntry entry = findById(toolId);
+            if (entry != null) {
+                ann.addProperty("title", entry.displayName);
+            }
+            ann.addProperty("readOnlyHint", READ_ONLY_TOOLS.contains(toolId));
+            ann.addProperty("destructiveHint", DESTRUCTIVE_TOOLS.contains(toolId));
+            ann.addProperty("openWorldHint", OPEN_WORLD_TOOLS.contains(toolId));
         }
-        ann.addProperty("readOnlyHint", READ_ONLY_TOOLS.contains(toolId));
-        ann.addProperty("destructiveHint", DESTRUCTIVE_TOOLS.contains(toolId));
-        ann.addProperty("openWorldHint", OPEN_WORLD_TOOLS.contains(toolId));
         return ann;
     }
 }

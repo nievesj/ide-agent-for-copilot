@@ -1,5 +1,9 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
+import com.github.catatafishen.ideagentforcopilot.services.ToolBuilder;
+import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
+import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.Category;
+import com.github.catatafishen.ideagentforcopilot.services.ToolSchemas;
 import com.google.gson.JsonObject;
 import com.intellij.execution.RunManager;
 import com.intellij.openapi.application.ApplicationInfo;
@@ -41,19 +45,33 @@ class ProjectTools extends AbstractToolHandler {
     private static final String OS_NAME_PROPERTY = "os.name";
     private static final String GET_INSTANCE_METHOD = "getInstance";
 
+    private final List<ToolDefinition> definitions;
     private final AtomicBoolean buildInProgress = new AtomicBoolean(false);
 
     ProjectTools(Project project) {
         super(project);
-        register("get_project_info", this::getProjectInfo);
+
+        var defs = new ArrayList<ToolDefinition>();
+        defs.add(proj("get_project_info", "Get Project Info", "Get project name, SDK, modules, and overall structure", this::getProjectInfo)
+            .readOnly().build());
         if (isPluginInstalled("com.intellij.modules.java")) {
-            register("build_project", this::buildProject);
+            defs.add(proj("build_project", "Build Project", "Trigger incremental compilation of the project or a specific module", this::buildProject)
+                .permissionTemplate("Build project").build());
         }
-        register("get_indexing_status", this::getIndexingStatus);
-        register("download_sources", this::downloadSources);
-        register("mark_directory", this::markDirectory);
+        defs.add(proj("get_indexing_status", "Get Indexing Status", "Check whether IntelliJ indexing is in progress; optionally wait until it finishes", this::getIndexingStatus)
+            .readOnly().build());
+        defs.add(proj("download_sources", "Download Sources", "Download library sources to enable source navigation and debugging", this::downloadSources)
+            .readOnly().build());
+        defs.add(proj("mark_directory", "Mark Directory", "Mark a directory as source root, test root, resources, excluded, etc.", this::markDirectory)
+            .permissionTemplate("Mark {path} as {type}").build());
         if (isPluginInstalled("com.intellij.modules.java")) {
-            register("edit_project_structure", this::editProjectStructure);
+            defs.add(proj("edit_project_structure", "Edit Project Structure", "View and modify module dependencies, libraries, SDKs, and project structure", this::editProjectStructure)
+                .build());
+        }
+        definitions = List.copyOf(defs);
+
+        for (ToolDefinition def : definitions) {
+            register(def.id(), def::execute);
         }
     }
 
@@ -1048,5 +1066,17 @@ class ProjectTools extends AbstractToolHandler {
             case "PROVIDED" -> com.intellij.openapi.roots.DependencyScope.PROVIDED;
             default -> null;
         };
+    }
+
+    @Override
+    List<ToolDefinition> getDefinitions() {
+        return definitions;
+    }
+
+    private static ToolBuilder proj(String id, String displayName, String description,
+                                    ToolHandler handler) {
+        return ToolBuilder.create(id, displayName, description, Category.PROJECT)
+            .schema(ToolSchemas.getInputSchema(id))
+            .handler(handler);
     }
 }

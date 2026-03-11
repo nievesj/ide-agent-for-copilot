@@ -1,5 +1,9 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
+import com.github.catatafishen.ideagentforcopilot.services.ToolBuilder;
+import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
+import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.Category;
+import com.github.catatafishen.ideagentforcopilot.services.ToolSchemas;
 import com.google.gson.JsonObject;
 import com.intellij.execution.ExecutionManager;
 import com.intellij.execution.RunManager;
@@ -59,14 +63,25 @@ class TestTools extends AbstractToolHandler {
     private static final String STARTED_TESTS_MSG = "Started tests via IntelliJ JUnit runner: ";
     private static final String RESULTS_IN_RUNNER_PANEL = "\nResults are visible in the IntelliJ test runner panel.";
 
+    private final List<ToolDefinition> definitions;
     private final RefactoringTools refactoringTools;
 
     TestTools(Project project, RefactoringTools refactoringTools) {
         super(project);
         this.refactoringTools = refactoringTools;
-        register("list_tests", this::listTests);
-        register("run_tests", this::runTests);
-        register("get_coverage", this::getCoverage);
+
+        definitions = List.of(
+            test("list_tests", "List Tests", "List test classes and methods in the project", this::listTests)
+                .readOnly().build(),
+            test("run_tests", "Run Tests", "Run tests by class, method, or wildcard pattern via Gradle", this::runTests)
+                .permissionTemplate("Run tests: {target}").build(),
+            test("get_coverage", "Get Coverage", "Retrieve code coverage data, optionally filtered by file or class", this::getCoverage)
+                .readOnly().build()
+        );
+
+        for (ToolDefinition def : definitions) {
+            register(def.id(), def::execute);
+        }
     }
 
     // ---- Run Configuration Helper (local copy for test configs) ----
@@ -1007,5 +1022,17 @@ class TestTools extends AbstractToolHandler {
     private static double doubleAttr(org.w3c.dom.Node node, String attr) {
         var item = node.getAttributes().getNamedItem(attr);
         return item != null ? Double.parseDouble(item.getNodeValue()) : 0.0;
+    }
+
+    @Override
+    List<ToolDefinition> getDefinitions() {
+        return definitions;
+    }
+
+    private static ToolBuilder test(String id, String displayName, String description,
+                                    ToolHandler handler) {
+        return ToolBuilder.create(id, displayName, description, Category.TESTING)
+            .schema(ToolSchemas.getInputSchema(id))
+            .handler(handler);
     }
 }
