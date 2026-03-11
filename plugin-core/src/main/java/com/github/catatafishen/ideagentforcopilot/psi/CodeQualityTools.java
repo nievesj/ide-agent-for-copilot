@@ -353,7 +353,7 @@ class CodeQualityTools extends AbstractToolHandler {
     private void collectCompilationErrors(String pathStr, CompletableFuture<String> resultFuture) {
         ApplicationManager.getApplication().runReadAction(() -> {
             ProjectFileIndex fileIndex = ProjectRootManager.getInstance(project).getFileIndex();
-            Collection<VirtualFile> files = collectFilesForHighlightAnalysis(pathStr, fileIndex, resultFuture);
+            Collection<VirtualFile> files = collectFilesForHighlightAnalysis(pathStr, false, fileIndex, resultFuture);
             if (resultFuture.isDone()) return;
 
             String basePath = project.getBasePath();
