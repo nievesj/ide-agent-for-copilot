@@ -309,7 +309,7 @@ working-indicator .working-text {
     border-radius: var(--r-sm);
     color: var(--think);
     cursor: pointer;
-    padding: 0 3px;
+    padding: 0 var(--sp-2);
     font-size: 0.95em;
     line-height: 1.4;
     opacity: 0.7;
@@ -353,6 +353,11 @@ working-indicator .working-text {
     flex-shrink: 0;
     animation: chipIn 0.25s ease;
     user-select: none;
+    transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.chip-dimmed {
+    opacity: 0.5;
 }
 
 .turn-chip:hover {
@@ -741,7 +746,7 @@ code {
     background: var(--code-bg);
     padding: var(--sp-1) var(--sp-3);
     border-radius: var(--r-sm);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--code-font);
     font-size: var(--code-font-size);
 }
 
@@ -1179,7 +1184,7 @@ permission-request {
 }
 
 .git-commit-hash {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.92em;
     font-weight: 600;
 }
@@ -1271,7 +1276,7 @@ permission-request {
 }
 
 .git-file-path {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.92em;
     word-break: break-all;
 }
@@ -1388,14 +1393,14 @@ permission-request {
 }
 
 .git-diff-hunks {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.92em;
     overflow-x: auto;
 }
 
 .git-diff-hunk-header {
     color: var(--think);
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.9em;
     padding: 2px var(--sp-3);
     background: var(--fg-a05);
@@ -1416,7 +1421,7 @@ permission-request {
     padding: 0 var(--sp-3);
     white-space: pre-wrap;
     word-break: break-all;
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 .git-diff-add {
@@ -1454,7 +1459,7 @@ permission-request {
 }
 
 .git-diff-stat-count {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.9em;
     color: var(--think);
     min-width: 2ch;
@@ -1462,7 +1467,7 @@ permission-request {
 }
 
 .git-diff-stat-bar {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.9em;
 }
 
@@ -1481,7 +1486,7 @@ permission-request {
 }
 
 .git-log-hash {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.92em;
     font-weight: 600;
     color: var(--link);
@@ -1570,7 +1575,7 @@ permission-request {
 }
 
 .build-msg {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.88em;
     padding: 1px 0;
     white-space: pre-wrap;
@@ -1665,7 +1670,7 @@ permission-request {
     font-size: 0.8em;
     color: var(--fg-muted);
     background: var(--fg-a05);
-    border-radius: 8px;
+    border-radius: var(--r-md);
     padding: 1px var(--sp-3);
     min-width: 18px;
     text-align: center;
@@ -1678,7 +1683,7 @@ permission-request {
 .inspection-finding {
     padding: var(--sp-1) 0;
     font-size: 0.88em;
-    font-family: monospace;
+    font-family: var(--code-font);
     white-space: pre-wrap;
     word-break: break-all;
 }
@@ -1687,7 +1692,7 @@ permission-request {
     display: inline-block;
     width: 16px;
     text-align: center;
-    border-radius: 3px;
+    border-radius: var(--r-sm);
     font-size: 0.82em;
     font-weight: 700;
 }
@@ -1740,7 +1745,7 @@ permission-request {
 .search-match {
     padding: var(--sp-1) 0;
     font-size: 0.88em;
-    font-family: monospace;
+    font-family: var(--code-font);
     white-space: pre-wrap;
     word-break: break-all;
 }
@@ -1773,7 +1778,7 @@ permission-request {
     font-size: 0.82em;
     font-weight: 600;
     padding: var(--sp-1) var(--sp-4);
-    border-radius: 10px;
+    border-radius: var(--r-lg);
 }
 
 .test-passed {
@@ -1818,7 +1823,7 @@ permission-request {
 }
 
 .outline-name {
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 .outline-badge-class {
@@ -1857,7 +1862,7 @@ permission-request {
 }
 
 .blame-lines {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.85em;
     overflow-x: auto;
 }
@@ -1924,7 +1929,7 @@ permission-request {
 }
 
 .branch-name {
-    font-family: monospace;
+    font-family: var(--code-font);
     min-width: 120px;
 }
 
@@ -1957,7 +1962,7 @@ permission-request {
 }
 
 .project-info-value {
-    font-family: monospace;
+    font-family: var(--code-font);
     word-break: break-all;
 }
 
@@ -1968,7 +1973,7 @@ permission-request {
 .project-info-item {
     padding: var(--sp-1) var(--sp-6) var(--sp-1) calc(var(--sp-6) * 2);
     font-size: 0.88em;
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 /* ── Coverage result ─────────────────────────────────── */
@@ -1989,7 +1994,7 @@ permission-request {
 }
 
 .coverage-name {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.9em;
 }
 
@@ -2001,14 +2006,14 @@ permission-request {
 .coverage-bar {
     height: 6px;
     background: var(--fg-a08);
-    border-radius: 3px;
+    border-radius: var(--r-sm);
     overflow: hidden;
     margin-bottom: 2px;
 }
 
 .coverage-bar-fill {
     height: 100%;
-    border-radius: 3px;
+    border-radius: var(--r-sm);
     transition: width 0.3s ease;
 }
 
@@ -2068,7 +2073,7 @@ permission-request {
     gap: var(--sp-4);
     padding: 1px 0;
     font-size: 0.85em;
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 .http-header-key {
@@ -2160,7 +2165,7 @@ permission-request {
     font-size: 0.85em;
     font-weight: 600;
     color: var(--fg-muted);
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 .file-list-entry {
@@ -2246,7 +2251,7 @@ permission-request {
 
 .decl-symbol {
     font-weight: 700;
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 .decl-location {
@@ -2259,7 +2264,7 @@ permission-request {
 
 .decl-context {
     border-top: 1px solid var(--fg-a05);
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.88em;
     line-height: 1.6;
     padding: var(--sp-2) 0;
@@ -2268,7 +2273,7 @@ permission-request {
 
 .decl-line {
     display: flex;
-    padding: 0 12px;
+    padding: 0 var(--sp-6);
     gap: var(--sp-4);
 }
 
@@ -2313,7 +2318,7 @@ permission-request {
 }
 
 .refactor-symbol {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-weight: 600;
     font-size: 0.92em;
 }
@@ -2323,7 +2328,7 @@ permission-request {
     align-items: center;
     gap: var(--sp-3);
     margin-top: var(--sp-2);
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.92em;
 }
 
@@ -2408,7 +2413,7 @@ permission-request {
     justify-content: center;
     width: 18px;
     height: 18px;
-    border-radius: 3px;
+    border-radius: var(--r-sm);
     font-size: 0.75em;
     font-weight: 700;
     flex-shrink: 0;
@@ -2435,11 +2440,11 @@ permission-request {
 }
 
 .hierarchy-name {
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 .hierarchy-type-name {
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 .hierarchy-location {
@@ -2474,7 +2479,7 @@ permission-request {
     max-height: 300px;
     overflow-y: auto;
     background: var(--code-bg);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     padding: var(--sp-2) 0;
 }
 
@@ -2551,7 +2556,7 @@ permission-request {
 .file-write-warning {
     margin-top: var(--sp-2);
     padding: var(--sp-2) var(--sp-3);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     background: rgba(var(--warning-rgb, 190, 132, 46), 0.12);
     color: var(--warning);
     font-size: 0.85em;
@@ -2563,7 +2568,7 @@ permission-request {
     max-height: 200px;
     overflow-y: auto;
     background: var(--code-bg);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     padding: var(--sp-2) 0;
     margin-top: var(--sp-2);
 }

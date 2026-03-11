@@ -6,12 +6,16 @@ import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Color
 import java.awt.Dimension
-import javax.swing.*
+import javax.swing.Box
+import javax.swing.BoxLayout
+import javax.swing.JComponent
+import javax.swing.JSeparator
 
 internal object ToolCallPopup {
 
@@ -82,8 +86,8 @@ internal object ToolCallPopup {
         }
     }
 
-    private fun buildContentPanel(bg: Color, resultPanel: JComponent, paramsPanel: JComponent?): JPanel {
-        val panel = JPanel().apply {
+    private fun buildContentPanel(bg: Color, resultPanel: JComponent, paramsPanel: JComponent?): JBPanel<JBPanel<*>> {
+        val panel = JBPanel<JBPanel<*>>().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             background = bg
             border = JBUI.Borders.empty(8, 12)
