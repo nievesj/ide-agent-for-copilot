@@ -124,8 +124,14 @@ public final class PsiBridgeService implements Disposable {
 
         // Subscribe to daemon events BEFORE the write to avoid the race where
         // the daemon finishes before we subscribe and we miss the event entirely.
+        // For existing files, we can resolve the VirtualFile now and make the waiter file-specific.
+        // For new files (create_file), vfForHighlights is null; the fresh waiter in appendAutoHighlights
+        // will be created after the file exists and will be file-specific.
         String filePathForHighlights = isWriteToolName(toolName) ? extractFilePath(arguments) : null;
-        DaemonWaiter daemonWaiter = filePathForHighlights != null ? new DaemonWaiter(project) : null;
+        com.intellij.openapi.vfs.VirtualFile vfForHighlights = filePathForHighlights != null
+            ? ToolUtils.resolveVirtualFile(project, filePathForHighlights) : null;
+        DaemonWaiter daemonWaiter = filePathForHighlights != null
+            ? new DaemonWaiter(project, vfForHighlights) : null;
 
         try {
             String denied = checkPluginToolPermission(toolName, arguments);
@@ -395,9 +401,9 @@ public final class PsiBridgeService implements Disposable {
 
             if (!alreadyOpen) {
                 // Pre-write waiter may have fired on other open files, not on this one.
-                // Subscribe fresh BEFORE opening so we can't miss the new daemon pass.
+                // Subscribe a file-specific waiter BEFORE opening so we can't miss the new daemon pass.
                 preWriteWaiter.close();
-                activeWaiter = new DaemonWaiter(project);
+                activeWaiter = new DaemonWaiter(project, vf);
                 openFileSilently(vf, path);
             }
             activeWaiter.await();
@@ -452,21 +458,40 @@ public final class PsiBridgeService implements Disposable {
     /**
      * Subscribes to {@link com.intellij.codeInsight.daemon.DaemonCodeAnalyzer#DAEMON_EVENT_TOPIC}
      * immediately on construction so no daemon pass can be missed.
+     * <p>
+     * When {@code targetFile} is non-null, the latch counts down only when that specific file
+     * is included in the finished daemon pass — preventing unrelated passes from triggering early.
+     * When {@code targetFile} is null, any daemon pass counts down the latch.
+     * </p>
      * Call {@link #await()} to block until the daemon finishes, then {@link #close()} to disconnect.
      */
-    private final class DaemonWaiter implements AutoCloseable {
+    private static final class DaemonWaiter implements AutoCloseable {
         private final java.util.concurrent.CountDownLatch latch =
             new java.util.concurrent.CountDownLatch(1);
         private final com.intellij.util.messages.MessageBusConnection connection;
+        @Nullable
+        private final com.intellij.openapi.vfs.VirtualFile targetFile;
 
-        DaemonWaiter(Project proj) {
+        DaemonWaiter(Project proj, @Nullable com.intellij.openapi.vfs.VirtualFile targetFile) {
+            this.targetFile = targetFile;
             connection = proj.getMessageBus().connect();
             connection.subscribe(
                 com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.DAEMON_EVENT_TOPIC,
                 new com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.DaemonListener() {
                     @Override
+                    public void daemonFinished(java.util.Collection<? extends com.intellij.openapi.fileEditor.FileEditor> fileEditors) {
+                        if (targetFile == null
+                            || fileEditors.stream().anyMatch(fe -> targetFile.equals(fe.getFile()))) {
+                            latch.countDown();
+                        }
+                    }
+
+                    @Override
                     public void daemonFinished() {
-                        latch.countDown();
+                        // Only trigger in any-file mode; file-specific mode is handled above.
+                        if (targetFile == null) {
+                            latch.countDown();
+                        }
                     }
                 }
             );
