@@ -120,35 +120,38 @@ public final class PsiBridgeService implements Disposable {
         }
         long startMs = System.currentTimeMillis();
         boolean success = true;
+
+        // Subscribe to daemon events BEFORE the write to avoid the race where
+        // the daemon finishes before we subscribe and we miss the event entirely.
+        String filePathForHighlights = isWriteToolName(toolName) ? extractFilePath(arguments) : null;
+        DaemonWaiter daemonWaiter = filePathForHighlights != null ? new DaemonWaiter(project) : null;
+
         try {
             String denied = checkPluginToolPermission(toolName, arguments);
             if (denied != null) {
                 fireToolCallEvent(toolName, startMs, false);
+                if (daemonWaiter != null) daemonWaiter.close();
                 return denied;
             }
 
             String result = handler.handle(arguments);
 
             // Piggyback highlights after successful write operations
-            if (isSuccessfulWrite(toolName, result)) {
-                String filePath = null;
-                if (arguments.has("path")) {
-                    filePath = arguments.get("path").getAsString();
-                } else if (arguments.has("file")) {
-                    filePath = arguments.get("file").getAsString();
-                }
-                if (filePath != null) {
-                    LOG.info("Auto-highlights: piggybacking on write to " + filePath);
-                    result = appendAutoHighlights(result, filePath);
-                }
+            if (isSuccessfulWrite(toolName, result) && daemonWaiter != null) {
+                LOG.info("Auto-highlights: piggybacking on write to " + filePathForHighlights);
+                result = appendAutoHighlights(result, filePathForHighlights, daemonWaiter);
+            } else if (daemonWaiter != null) {
+                daemonWaiter.close();
             }
             return result;
         } catch (com.intellij.openapi.application.ex.ApplicationUtil.CannotRunReadActionException e) {
             success = false;
+            if (daemonWaiter != null) daemonWaiter.close();
             return "Error: IDE is busy, please retry. " + e.getMessage();
         } catch (Exception e) {
             LOG.warn("Tool call error: " + toolName, e);
             success = false;
+            if (daemonWaiter != null) daemonWaiter.close();
             return "Error: " + e.getMessage();
         } finally {
             fireToolCallEvent(toolName, startMs, success);
@@ -337,6 +340,16 @@ public final class PsiBridgeService implements Disposable {
         return sb.toString();
     }
 
+    /** Returns true if the tool name is a write operation that should get auto-highlights. */
+    private static boolean isWriteToolName(String toolName) {
+        return switch (toolName) {
+            case "write_file", "intellij_write_file", "edit_text",
+                 "create_file", "replace_symbol_body",
+                 "insert_before_symbol", "insert_after_symbol" -> true;
+            default -> false;
+        };
+    }
+
     private static boolean isSuccessfulWrite(String toolName, String result) {
         return switch (toolName) {
             case "write_file", "intellij_write_file", "edit_text" ->
@@ -349,20 +362,29 @@ public final class PsiBridgeService implements Disposable {
         };
     }
 
+    @Nullable
+    private static String extractFilePath(JsonObject arguments) {
+        if (arguments.has("path")) return arguments.get("path").getAsString();
+        if (arguments.has("file")) return arguments.get("file").getAsString();
+        return null;
+    }
+
     /**
      * Auto-run get_highlights on the edited file and append results to the write response.
-     * Waits for the DaemonCodeAnalyzer to complete a pass after the edit, then collects highlights.
+     * The {@link DaemonWaiter} was subscribed BEFORE the write to avoid the race condition
+     * where a fast daemon could finish and fire {@code daemonFinished()} between the write
+     * returning and us subscribing.
      */
-    private String appendAutoHighlights(String writeResult, String path) {
+    private String appendAutoHighlights(String writeResult, String path, DaemonWaiter waiter) {
         try {
+            waiter.await();
+
             ToolHandler highlightHandler = toolRegistry.get("get_highlights");
             if (highlightHandler == null) return writeResult;
 
-            // Wait for daemon to finish re-analyzing after the edit
-            waitForDaemonPass();
-
             JsonObject highlightArgs = new JsonObject();
             highlightArgs.addProperty("path", path);
+            highlightArgs.addProperty("include_unindexed", true);
             String highlights = highlightHandler.handle(highlightArgs);
             LOG.info("Auto-highlights: appended " + highlights.split("\n").length + " lines for " + path);
 
@@ -373,18 +395,23 @@ public final class PsiBridgeService implements Disposable {
         } catch (Exception e) {
             LOG.info("Auto-highlights after write failed: " + e.getMessage());
             return writeResult;
+        } finally {
+            waiter.close();
         }
     }
 
     /**
-     * Wait for the DaemonCodeAnalyzer to finish its current pass using the public
-     * {@link com.intellij.codeInsight.daemon.DaemonCodeAnalyzer#DAEMON_EVENT_TOPIC}.
-     * Returns as soon as any daemon pass completes, or after 5 s timeout.
+     * Subscribes to {@link com.intellij.codeInsight.daemon.DaemonCodeAnalyzer#DAEMON_EVENT_TOPIC}
+     * immediately on construction so no daemon pass can be missed.
+     * Call {@link #await()} to block until the daemon finishes, then {@link #close()} to disconnect.
      */
-    private void waitForDaemonPass() throws InterruptedException {
-        var latch = new java.util.concurrent.CountDownLatch(1);
-        var connection = project.getMessageBus().connect();
-        try {
+    private final class DaemonWaiter implements AutoCloseable {
+        private final java.util.concurrent.CountDownLatch latch =
+                new java.util.concurrent.CountDownLatch(1);
+        private final com.intellij.util.messages.MessageBusConnection connection;
+
+        DaemonWaiter(Project proj) {
+            connection = proj.getMessageBus().connect();
             connection.subscribe(
                     com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.DAEMON_EVENT_TOPIC,
                     new com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.DaemonListener() {
@@ -394,12 +421,18 @@ public final class PsiBridgeService implements Disposable {
                         }
                     }
             );
+        }
+
+        void await() throws InterruptedException {
             if (latch.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
-                LOG.info("Auto-highlights: daemon pass completed (event-driven), collecting highlights");
+                LOG.info("Auto-highlights: daemon pass completed (event-driven)");
             } else {
-                LOG.info("Auto-highlights: daemon wait timed out (5s), collecting available highlights");
+                LOG.info("Auto-highlights: daemon wait timed out (5s)");
             }
-        } finally {
+        }
+
+        @Override
+        public void close() {
             connection.disconnect();
         }
     }

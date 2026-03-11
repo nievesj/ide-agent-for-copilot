@@ -157,6 +157,9 @@ class CodeQualityTools extends AbstractToolHandler {
     private String getHighlights(JsonObject args) throws Exception {
         String pathStr = args.has("path") ? args.get("path").getAsString() : null;
         int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
+        // When called from appendAutoHighlights, newly created files may not yet be indexed;
+        // include_unindexed bypasses the isInSourceContent guard for the specific file.
+        boolean includeUnindexed = args.has("include_unindexed") && args.get("include_unindexed").getAsBoolean();
 
         if (!project.isInitialized()) {
             return ERROR_IDE_INITIALIZING;
@@ -165,7 +168,7 @@ class CodeQualityTools extends AbstractToolHandler {
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
-                getHighlightsCached(pathStr, limit, resultFuture);
+                getHighlightsCached(pathStr, limit, includeUnindexed, resultFuture);
             } catch (Exception e) {
                 LOG.error("Error getting highlights", e);
                 resultFuture.complete("Error getting highlights: " + e.getMessage());
@@ -174,12 +177,14 @@ class CodeQualityTools extends AbstractToolHandler {
         return resultFuture.get(30, TimeUnit.SECONDS);
     }
 
-    private void getHighlightsCached(String pathStr, int limit, CompletableFuture<String> resultFuture) {
+    private void getHighlightsCached(String pathStr, int limit, boolean includeUnindexed,
+                                     CompletableFuture<String> resultFuture) {
         // Step 1: Collect daemon highlights (needs read action)
         StringBuilder result = new StringBuilder();
         ApplicationManager.getApplication().runReadAction(() -> {
             ProjectFileIndex fileIndex = ProjectRootManager.getInstance(project).getFileIndex();
-            Collection<VirtualFile> allFiles = collectFilesForHighlightAnalysis(pathStr, fileIndex, resultFuture);
+            Collection<VirtualFile> allFiles =
+                    collectFilesForHighlightAnalysis(pathStr, includeUnindexed, fileIndex, resultFuture);
             if (resultFuture.isDone()) return;
 
             LOG.info("Analyzing " + allFiles.size() + " files for highlights (cached mode)");
@@ -234,7 +239,8 @@ class CodeQualityTools extends AbstractToolHandler {
     }
 
     private Collection<VirtualFile> collectFilesForHighlightAnalysis(
-        String pathStr, ProjectFileIndex fileIndex, CompletableFuture<String> resultFuture) {
+        String pathStr, boolean includeUnindexed, ProjectFileIndex fileIndex,
+        CompletableFuture<String> resultFuture) {
         Collection<VirtualFile> files = new ArrayList<>();
         if (pathStr != null && !pathStr.isEmpty()) {
             VirtualFile vf = resolveVirtualFile(pathStr);
@@ -242,10 +248,12 @@ class CodeQualityTools extends AbstractToolHandler {
                 resultFuture.complete("Error: File not found: " + pathStr);
                 return Collections.emptyList();
             }
-            if (fileIndex.isInSourceContent(vf)) {
+            // includeUnindexed: skip the source-content check for freshly created/written files
+            // that may not yet be indexed but whose highlights are already in the daemon cache.
+            if (includeUnindexed || fileIndex.isInSourceContent(vf)) {
                 files.add(vf);
             }
-            // Non-source files: return empty list — notifications may still apply
+            // Non-source, non-unindexed files: return empty — notifications may still apply
         } else {
             fileIndex.iterateContent(file -> {
                 if (!file.isDirectory() && fileIndex.isInSourceContent(file)) {
