@@ -223,6 +223,105 @@ public final class ToolRegistry {
     private ToolRegistry() {
     }
 
+    /**
+     * Per-tool question templates for permission request bubbles.
+     * Placeholders like {@code {param}} are replaced with the actual argument value at runtime.
+     * Tools not in this map show the generic "Can I use {displayName}?" question.
+     */
+    private static final java.util.Map<String, String> PERMISSION_QUESTIONS =
+        java.util.Map.ofEntries(
+            // Built-in agent tools (hasDenyControl=true)
+            java.util.Map.entry("bash", "Run: {cmd}"),
+            java.util.Map.entry("edit", "Edit {path}"),
+            java.util.Map.entry("write", "Write {path}"),
+            java.util.Map.entry("create", "Create {path}"),
+            java.util.Map.entry("execute", "Execute: {command}"),
+            java.util.Map.entry("runInTerminal", "Run in terminal: {command}"),
+            // File operations
+            java.util.Map.entry("intellij_write_file", "Write {path}"),
+            java.util.Map.entry("edit_text", "Edit {path}"),
+            java.util.Map.entry("create_file", "Create {path}"),
+            java.util.Map.entry("delete_file", "Delete {path}"),
+            java.util.Map.entry("rename_file", "Rename {path} → {new_name}"),
+            java.util.Map.entry("move_file", "Move {path} → {destination}"),
+            java.util.Map.entry("replace_symbol_body", "Replace {symbol} in {file}"),
+            java.util.Map.entry("insert_before_symbol", "Insert before {symbol} in {file}"),
+            java.util.Map.entry("insert_after_symbol", "Insert after {symbol} in {file}"),
+            // Git
+            java.util.Map.entry("git_commit", "Commit: \"{message}\""),
+            java.util.Map.entry("git_stage", "Stage {path}"),
+            java.util.Map.entry("git_unstage", "Unstage {path}"),
+            java.util.Map.entry("git_reset", "{mode} reset to {commit}"),
+            java.util.Map.entry("git_merge", "Merge {branch}"),
+            java.util.Map.entry("git_rebase", "Rebase onto {branch}"),
+            java.util.Map.entry("git_cherry_pick", "Cherry-pick {commits}"),
+            java.util.Map.entry("git_tag", "{action} tag {name}"),
+            java.util.Map.entry("git_stash", "{action} stash"),
+            java.util.Map.entry("git_branch", "{action} branch {name}"),
+            java.util.Map.entry(TOOL_GIT_PUSH, "Push to {remote} ({branch})"),
+            java.util.Map.entry("git_pull", "Pull {remote}/{branch}"),
+            java.util.Map.entry("git_fetch", "Fetch {remote}"),
+            // Terminal & commands
+            java.util.Map.entry("run_command", "Run: {command}"),
+            java.util.Map.entry("run_in_terminal", "Run in terminal: {command}"),
+            java.util.Map.entry("run_tests", "Run tests: {target}"),
+            java.util.Map.entry("build_project", "Build project"),
+            java.util.Map.entry("run_configuration", "Run: {name}"),
+            java.util.Map.entry("delete_run_configuration", "Delete run config: {name}"),
+            // IDE & other
+            java.util.Map.entry("http_request", "{method} {url}"),
+            java.util.Map.entry("mark_directory", "Mark {path} as {type}"),
+            java.util.Map.entry("refactor", "{operation} {symbol}"),
+            java.util.Map.entry("set_theme", "Set theme: {theme}")
+        );
+
+    /**
+     * Resolves a human-readable permission question for the given tool and arguments.
+     * Substitutes {@code {paramName}} placeholders with the corresponding argument values.
+     * Returns {@code null} if no custom template is registered for this tool.
+     *
+     * @param toolId the tool identifier (e.g. {@code "git_push"})
+     * @param args   the tool call arguments as a JSON object (may be null)
+     */
+    @org.jetbrains.annotations.Nullable
+    public static String resolvePermissionQuestion(
+        @org.jetbrains.annotations.NotNull String toolId,
+        @org.jetbrains.annotations.Nullable com.google.gson.JsonObject args) {
+        String template = PERMISSION_QUESTIONS.get(toolId);
+        if (template == null) return null;
+        if (args == null) {
+            // No args: strip all placeholders and return if meaningful text remains
+            String q = template.replaceAll("\\{[^}]+\\}", "").replaceAll("\\(\\s*\\)", "")
+                .replaceAll("\\s+", " ").trim();
+            return q.isEmpty() ? null : q;
+        }
+        String q = template;
+        for (java.util.Map.Entry<String, com.google.gson.JsonElement> e : args.entrySet()) {
+            String val;
+            if (e.getValue().isJsonNull()) {
+                val = "";
+            } else if (e.getValue().isJsonPrimitive()) {
+                val = e.getValue().getAsString();
+                // Truncate very long values (e.g. commit messages)
+                if (val.length() > 60) val = val.substring(0, 57) + "…";
+            } else if (e.getValue().isJsonArray()) {
+                StringBuilder sb = new StringBuilder();
+                for (com.google.gson.JsonElement el : e.getValue().getAsJsonArray()) {
+                    if (sb.length() > 0) sb.append(", ");
+                    sb.append(el.isJsonPrimitive() ? el.getAsString() : el.toString());
+                }
+                val = sb.toString();
+            } else {
+                val = e.getValue().toString();
+            }
+            q = q.replace("{" + e.getKey() + "}", val);
+        }
+        // Remove any unresolved placeholders (optional args not provided)
+        q = q.replaceAll("\\{[^}]+\\}", "").replaceAll("\\(\\s*\\)", "")
+            .replaceAll("\\s+", " ").trim();
+        return q.isEmpty() ? null : q;
+    }
+
     public static List<ToolEntry> getAllTools() {
         return ALL_TOOLS;
     }

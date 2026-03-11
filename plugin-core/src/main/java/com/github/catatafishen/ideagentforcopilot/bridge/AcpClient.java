@@ -1123,7 +1123,29 @@ public class AcpClient implements Closeable {
         CompletableFuture<PermissionResponse> future = new CompletableFuture<>();
         ToolRegistry.ToolEntry toolEntry = ToolRegistry.findById(toolId);
         String displayName = toolEntry != null ? toolEntry.displayName : permKind;
-        listener.accept(new PermissionRequest(reqId, toolId, displayName, formattedPermission, future::complete));
+
+        // Extract structured tool arguments from the ACP toolCall JSON
+        JsonObject toolCallJson = reqParams != null && reqParams.has("toolCall")
+            ? reqParams.getAsJsonObject("toolCall") : null;
+        JsonObject toolArgs = null;
+        if (toolCallJson != null) {
+            for (String wrapper : new String[]{"arguments", "input", "params"}) {
+                if (toolCallJson.has(wrapper) && toolCallJson.get(wrapper).isJsonObject()) {
+                    toolArgs = toolCallJson.getAsJsonObject(wrapper);
+                    break;
+                }
+            }
+        }
+
+        // Build structured context JSON for the permission bubble
+        String resolvedQuestion = ToolRegistry.resolvePermissionQuestion(toolId, toolArgs);
+        JsonObject context = new JsonObject();
+        context.addProperty("question", resolvedQuestion != null ? resolvedQuestion
+            : "Can I use " + displayName + "?");
+        if (toolArgs != null) context.add("args", toolArgs);
+        String contextJson = context.toString();
+
+        listener.accept(new PermissionRequest(reqId, toolId, displayName, contextJson, future::complete));
         PermissionResponse response;
         try {
             response = future.get(120, TimeUnit.SECONDS);

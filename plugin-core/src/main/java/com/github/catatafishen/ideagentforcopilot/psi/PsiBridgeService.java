@@ -218,8 +218,15 @@ public final class PsiBridgeService implements Disposable {
     private String askUserPermission(String toolName, JsonObject arguments) {
         ToolRegistry.ToolEntry entry = ToolRegistry.findById(toolName);
         String displayName = entry != null ? entry.displayName : toolName;
-        String argsJson = arguments.toString();
         String reqId = java.util.UUID.randomUUID().toString();
+
+        // Build a structured context JSON for the permission bubble: {question, args}
+        String resolvedQuestion = ToolRegistry.resolvePermissionQuestion(toolName, arguments);
+        com.google.gson.JsonObject context = new com.google.gson.JsonObject();
+        context.addProperty("question", resolvedQuestion != null ? resolvedQuestion
+            : "Can I use " + displayName + "?");
+        if (arguments != null) context.add("args", arguments);
+        String argsJson = context.toString();
 
         com.github.catatafishen.ideagentforcopilot.ui.ChatConsolePanel chatPanel =
             com.github.catatafishen.ideagentforcopilot.ui.ChatConsolePanel.Companion.getInstance(project);
