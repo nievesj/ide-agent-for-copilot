@@ -24,7 +24,6 @@ import java.awt.Color
 import java.io.File
 import java.util.*
 import javax.swing.JComponent
-import javax.swing.SwingUtilities
 import javax.swing.UIManager
 
 /**
@@ -133,7 +132,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
             val cursorQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
             cursorQuery.addHandler { type ->
-                SwingUtilities.invokeLater {
+                ApplicationManager.getApplication().invokeLater {
                     browser.component.cursor = when (type) {
                         "pointer" -> java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
                         "text" -> java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.TEXT_CURSOR)
@@ -197,7 +196,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
             browser.jbCefClient.addLoadHandler(
                 com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat.createMainFrameLoadEndHandler {
-                    SwingUtilities.invokeLater {
+                    ApplicationManager.getApplication().invokeLater {
                         browserReady = true
                         pendingJs.forEach { browser.cefBrowser.executeJavaScript(it, "", 0) }
                         pendingJs.clear()
@@ -293,7 +292,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         }
         currentTextData!!.raw.append(text)
         executeJs("ChatController.appendAgentText('$currentTurnId','main','${escJs(text)}')")
-        fallbackArea?.let { SwingUtilities.invokeLater { it.append(text) } }
+        fallbackArea?.let { ApplicationManager.getApplication().invokeLater { it.append(text) } }
     }
 
     override fun addToolCallEntry(id: String, title: String, arguments: String?, kind: String?) {
@@ -425,7 +424,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         currentTextData = null; currentThinkingData = null; nextSubAgentColor = 0
         turnCounter = 0; currentTurnId = ""; toolJustCompleted = false
         executeJs("ChatController.showPlaceholder('${escJs(text)}')")
-        fallbackArea?.let { SwingUtilities.invokeLater { it.text = text } }
+        fallbackArea?.let { ApplicationManager.getApplication().invokeLater { it.text = text } }
     }
 
     override fun clear() {
@@ -433,7 +432,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         currentTextData = null; currentThinkingData = null; nextSubAgentColor = 0
         turnCounter = 0; currentTurnId = ""; toolJustCompleted = false
         executeJs("ChatController.clear()")
-        fallbackArea?.let { SwingUtilities.invokeLater { it.text = "" } }
+        fallbackArea?.let { ApplicationManager.getApplication().invokeLater { it.text = "" } }
     }
 
     override fun finishResponse(toolCallCount: Int, modelId: String, multiplier: String) {
@@ -443,7 +442,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         collapseThinking()
         val statsJson = """{"tools":$toolCallCount,"model":"${escJs(modelId)}","mult":"${escJs(multiplier)}"}"""
         executeJs("ChatController.finalizeTurn('$currentTurnId',$statsJson)")
-        SwingUtilities.invokeLater { browser?.component?.repaint() }
+        ApplicationManager.getApplication().invokeLater { browser?.component?.repaint() }
     }
 
     override fun showQuickReplies(options: List<String>) {
@@ -916,10 +915,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 "", 0
             )
         }
-        if (SwingUtilities.isEventDispatchThread()) {
+        if (ApplicationManager.getApplication().isDispatchThread) {
             trigger.run()
         } else {
-            SwingUtilities.invokeLater(trigger)
+            ApplicationManager.getApplication().invokeLater(trigger)
         }
         return try {
             future.get(5, java.util.concurrent.TimeUnit.SECONDS)
@@ -994,7 +993,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val (filePath, line) = parsePathAndLine(pathAndLine)
         val normalizedPath = filePath.replace('\\', '/')
         val vf = LocalFileSystem.getInstance().findFileByPath(normalizedPath) ?: return
-        SwingUtilities.invokeLater {
+        ApplicationManager.getApplication().invokeLater {
             OpenFileDescriptor(project, vf, maxOf(0, line - 1), 0).navigate(true)
         }
     }
@@ -1371,7 +1370,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val paramsPanel = if (!entry?.arguments.isNullOrBlank()) {
             ToolRenderers.jsonEditor(prettyJson(entry.arguments), project)
         } else null
-        SwingUtilities.invokeLater {
+        ApplicationManager.getApplication().invokeLater {
             ToolCallPopup.show(project, chipTitle, kind, paramsPanel, resultPanel)
         }
     }

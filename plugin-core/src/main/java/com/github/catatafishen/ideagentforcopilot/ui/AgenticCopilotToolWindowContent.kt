@@ -203,7 +203,7 @@ class AgenticCopilotToolWindowContent(
     }
 
     private fun updateSessionInfo() {
-        SwingUtilities.invokeLater {
+        ApplicationManager.getApplication().invokeLater {
             if (!::sessionInfoLabel.isInitialized) return@invokeLater
             val sid = currentSessionId
             if (sid != null) {
@@ -271,7 +271,7 @@ class AgenticCopilotToolWindowContent(
                 val file = java.io.File(filePath)
                 if (file.exists() && file.length() < 100_000) {
                     val content = file.readText()
-                    SwingUtilities.invokeLater {
+                    ApplicationManager.getApplication().invokeLater {
                         if (!::planRoot.isInitialized) return@invokeLater
                         val fileNode = FileTreeNode(file.name)
                         planRoot.add(fileNode)
@@ -287,7 +287,7 @@ class AgenticCopilotToolWindowContent(
 
     private fun handlePlanUpdate(update: com.google.gson.JsonObject) {
         val entries = update.getAsJsonArray("entries") ?: return
-        SwingUtilities.invokeLater {
+        ApplicationManager.getApplication().invokeLater {
             // Remove existing plan group, but keep Files group
             val toRemove = mutableListOf<javax.swing.tree.DefaultMutableTreeNode>()
             for (i in 0 until planRoot.childCount) {
@@ -395,98 +395,8 @@ class AgenticCopilotToolWindowContent(
         return banner
     }
 
-    /** Creates a warning banner shown when the PSI bridge HTTP server is not reachable. Hidden by default. */
-    private fun createPsiBridgeBanner(): com.intellij.ui.InlineBanner {
-        val banner = com.intellij.ui.InlineBanner(
-            "IntelliJ code tools unavailable \u2014 PSI bridge is not running. " +
-                "Make sure a project is open and the AgentBridge plugin is active, then restart IntelliJ.",
-            com.intellij.ui.EditorNotificationPanel.Status.Warning
-        )
-        banner.isVisible = false
-
-        // Scheduler used for adaptive polling: 5 s while bridge is down, 30 s while healthy.
-        // scheduledFuture tracks the next pending check so Recheck can cancel it (avoids duplicate chains).
-        val scheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
-            Thread(r, "psi-bridge-poll").also { it.isDaemon = true }
-        }
-        var scheduledFuture: java.util.concurrent.ScheduledFuture<*>? = null
-
-        fun scheduleNext(bridgeWasDown: Boolean) {
-            val delay = if (bridgeWasDown) 5L else 30L
-            scheduledFuture = scheduler.schedule(
-                {
-                    val diag = psiBridgeDiagnostics()
-                    SwingUtilities.invokeLater {
-                        banner.isVisible = diag != null
-                    }
-                    scheduleNext(diag != null)
-                },
-                delay, java.util.concurrent.TimeUnit.SECONDS
-            )
-        }
-
-        fun runCheck() {
-            scheduledFuture?.cancel(false)
-            ApplicationManager.getApplication().executeOnPooledThread {
-                val diag = psiBridgeDiagnostics()
-                SwingUtilities.invokeLater {
-                    banner.isVisible = diag != null
-                }
-                scheduleNext(diag != null)
-            }
-        }
-
-        banner.addAction("Details\u2026") {
-            ApplicationManager.getApplication().executeOnPooledThread {
-                val diag = psiBridgeDiagnostics()
-                SwingUtilities.invokeLater {
-                    banner.isVisible = diag != null
-                    Messages.showMessageDialog(
-                        project,
-                        diag ?: "PSI bridge is healthy.",
-                        "PSI Bridge Diagnostics",
-                        if (diag != null) Messages.getWarningIcon()
-                        else Messages.getInformationIcon()
-                    )
-                }
-            }
-        }
-        banner.addAction("Recheck") { runCheck() }
-
-        // First check after 5 s so the bridge has time to start.
-        scheduler.schedule(
-            {
-                val diag = psiBridgeDiagnostics()
-                SwingUtilities.invokeLater {
-                    banner.isVisible = diag != null
-                }
-                scheduleNext(diag != null)
-            },
-            5, java.util.concurrent.TimeUnit.SECONDS
-        )
-
-        banner.addAncestorListener(object : javax.swing.event.AncestorListener {
-            override fun ancestorAdded(e: javax.swing.event.AncestorEvent?) = Unit
-            override fun ancestorMoved(e: javax.swing.event.AncestorEvent?) = Unit
-            override fun ancestorRemoved(e: javax.swing.event.AncestorEvent?) {
-                scheduler.shutdownNow()
-            }
-        })
-
-        return banner
-    }
-
-    /**
-     * PSI bridge is now called directly in-process — no HTTP server to check.
-     * Always returns null (healthy).
-     */
-    private fun psiBridgeDiagnostics(): String? = null
-
     private fun createPromptTab(): JComponent {
         val panel = JBPanel<JBPanel<*>>(BorderLayout())
-
-        // PSI bridge status banner (shown when bridge is not reachable)
-        val psiBridgeBanner = createPsiBridgeBanner()
 
         // Response/chat history area (top of splitter)
         val responsePanel = createResponsePanel()
@@ -495,7 +405,6 @@ class AgenticCopilotToolWindowContent(
         val topPanel = JBPanel<JBPanel<*>>(BorderLayout())
         val northStack = JBPanel<JBPanel<*>>()
         northStack.layout = BoxLayout(northStack, BoxLayout.Y_AXIS)
-        northStack.add(psiBridgeBanner)
 
         // Load models
         fun loadModels() {
@@ -519,7 +428,7 @@ class AgenticCopilotToolWindowContent(
         northStack.add(sb)
 
         // Toggle a top border on responsePanelContainer: grey when no banners, none when a banner is showing
-        val allBanners = listOf(psiBridgeBanner, cb, ghBanner, gitBanner, sb)
+        val allBanners = listOf(cb, ghBanner, gitBanner, sb)
         val greyBorder = JBUI.Borders.customLine(JBColor.border(), 1, 0, 0, 0)
         val updateContainerBorder = java.beans.PropertyChangeListener {
             responsePanelContainer.border = if (allBanners.none { b -> b.isVisible }) greyBorder else null
@@ -612,7 +521,7 @@ class AgenticCopilotToolWindowContent(
             // by the outer JViewport (promptTextArea is its direct view child).
             editor.caretModel.addCaretListener(object : com.intellij.openapi.editor.event.CaretListener {
                 override fun caretPositionChanged(event: com.intellij.openapi.editor.event.CaretEvent) {
-                    SwingUtilities.invokeLater {
+                    ApplicationManager.getApplication().invokeLater {
                         val caretOffset = editor.caretModel.offset
                         val caretPoint = editor.offsetToXY(caretOffset)
                         val lineHeight = editor.lineHeight
@@ -630,7 +539,7 @@ class AgenticCopilotToolWindowContent(
         // Auto-revalidate on document changes
         promptTextArea.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
             override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
-                SwingUtilities.invokeLater { promptTextArea.revalidate() }
+                ApplicationManager.getApplication().invokeLater { promptTextArea.revalidate() }
             }
         })
 
@@ -713,7 +622,7 @@ class AgenticCopilotToolWindowContent(
 
     private fun setSendingState(sending: Boolean) {
         isSending = sending
-        SwingUtilities.invokeLater {
+        ApplicationManager.getApplication().invokeLater {
             controlsToolbar.updateActionsAsync()
             if (::processingTimerPanel.isInitialized) {
                 if (sending) processingTimerPanel.start() else processingTimerPanel.stop()
@@ -877,7 +786,7 @@ class AgenticCopilotToolWindowContent(
         }
 
         private fun refreshDisplay() {
-            SwingUtilities.invokeLater {
+            ApplicationManager.getApplication().invokeLater {
                 when (displayMode) {
                     modeTurn -> refreshTurnMode()
                     modeSession -> refreshSessionMode()
@@ -1237,7 +1146,7 @@ class AgenticCopilotToolWindowContent(
                         selectedModelIndex = index
                         agentManager.settings.setSelectedModel(model.id)
                         LOG.info("Model selected: ${model.id} (index=$index)")
-                        SwingUtilities.invokeLater {
+                        ApplicationManager.getApplication().invokeLater {
                             consolePanel.setCurrentModel(model.id)
                             consolePanel.setPromptStats(model.id, getModelMultiplier(model.id))
                         }
@@ -1322,7 +1231,7 @@ class AgenticCopilotToolWindowContent(
 
     private fun createResponsePanel(): JComponent {
         consolePanel = ChatConsolePanel(project)
-        consolePanel.onQuickReply = { text -> SwingUtilities.invokeLater { sendQuickReply(text) } }
+        consolePanel.onQuickReply = { text -> ApplicationManager.getApplication().invokeLater { sendQuickReply(text) } }
         // Register for proper JCEF browser disposal
         com.intellij.openapi.util.Disposer.register(project, consolePanel)
         // Placeholder only shown if no conversation is restored (set after restore check)
@@ -1430,7 +1339,7 @@ class AgenticCopilotToolWindowContent(
                 val isAfterSpace = offset > 0 && text[offset - 1] == ' '
                 if (!isAtStart && !isAfterSpace) return
 
-                SwingUtilities.invokeLater {
+                ApplicationManager.getApplication().invokeLater {
                     com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
                         editor.document.deleteString(offset, offset + trigger.length)
                     }
@@ -1621,11 +1530,11 @@ class AgenticCopilotToolWindowContent(
         val lastResponse = consolePanel.getLastResponseText()
         val quickReplies = detectQuickReplies(lastResponse)
         if (quickReplies.isNotEmpty()) {
-            SwingUtilities.invokeLater { consolePanel.showQuickReplies(quickReplies) }
+            ApplicationManager.getApplication().invokeLater { consolePanel.showQuickReplies(quickReplies) }
         }
 
         // Force Swing repaint so the JCEF panel reflects final state
-        SwingUtilities.invokeLater {
+        ApplicationManager.getApplication().invokeLater {
             consolePanel.component.revalidate()
             consolePanel.component.repaint()
             if (ActiveAgentManager.getFollowAgentFiles(project)) {
@@ -1680,7 +1589,7 @@ class AgenticCopilotToolWindowContent(
 
     private fun isBlockedByAuth(): Boolean {
         if (authService.pendingAuthError == null) return false
-        SwingUtilities.invokeLater {
+        ApplicationManager.getApplication().invokeLater {
             consolePanel.addErrorEntry("Not signed in to Copilot. Use the Sign In button in the banner above.")
             copilotBanner?.triggerCheck()
         }
@@ -1705,7 +1614,7 @@ class AgenticCopilotToolWindowContent(
         turnToolCallCount = 0
         activeSubAgentId = null
         turnModelId = modelId
-        SwingUtilities.invokeLater {
+        ApplicationManager.getApplication().invokeLater {
             consolePanel.setCurrentProfile(agentManager.activeProfileId)
             consolePanel.setCurrentModel(modelId)
             consolePanel.setPromptStats(modelId, getModelMultiplier(modelId))
@@ -2067,16 +1976,16 @@ class AgenticCopilotToolWindowContent(
                             ?.maxByOrNull { it.name }
                     }
                 if (file == null) {
-                    SwingUtilities.invokeLater { onComplete() }
+                    ApplicationManager.getApplication().invokeLater { onComplete() }
                     return@executeOnPooledThread
                 }
                 val json = file.readText()
-                SwingUtilities.invokeLater {
+                ApplicationManager.getApplication().invokeLater {
                     consolePanel.restoreEntries(json)
                     onComplete()
                 }
             } catch (_: Exception) {
-                SwingUtilities.invokeLater { onComplete() }
+                ApplicationManager.getApplication().invokeLater { onComplete() }
             }
         }
     }
@@ -2133,39 +2042,19 @@ class AgenticCopilotToolWindowContent(
             )
         )
 
-        // Track whether we consumed a KEY_PRESSED paste so we also swallow the follow-up
-        // KEY_TYPED and KEY_RELEASED events from the same keystroke.
         var swallowFollowUp = false
-
-        // True once we intercept a paste stroke. Prevents onClosed from disposing the
-        // preprocessor before it finishes swallowing follow-up events (see Javadoc above).
         var pasteIntercepted = false
 
         val disposable = com.intellij.openapi.util.Disposer.newDisposable("pasteToSkip")
         com.intellij.ide.IdeEventQueue.getInstance().addPreprocessor(
             com.intellij.ide.IdeEventQueue.EventDispatcher { event ->
                 if (event !is java.awt.event.KeyEvent) return@EventDispatcher false
-
-                // Must check swallowFollowUp BEFORE popup.isVisible: popup.cancel() makes
-                // isVisible false immediately, so KEY_TYPED/KEY_RELEASED would slip through
-                // and trigger a second paste in the editor.
-                if (swallowFollowUp && event.id != java.awt.event.KeyEvent.KEY_PRESSED) {
-                    if (event.id == java.awt.event.KeyEvent.KEY_RELEASED) {
-                        swallowFollowUp = false
-                        // Self-dispose now that all follow-up events are consumed. Use
-                        // invokeLater to avoid modifying the preprocessor list mid-dispatch.
-                        ApplicationManager.getApplication().invokeLater {
-                            com.intellij.openapi.util.Disposer.dispose(disposable)
-                        }
-                    }
-                    return@EventDispatcher true
+                if (swallowFollowUp) {
+                    return@EventDispatcher handleFollowUpEvent(event, disposable) { swallowFollowUp = false }
                 }
-
                 if (!popup.isVisible) return@EventDispatcher false
                 if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return@EventDispatcher false
-                val stroke = KeyStroke.getKeyStrokeForEvent(event)
-                if (stroke !in pasteStrokes) return@EventDispatcher false
-
+                if (KeyStroke.getKeyStrokeForEvent(event) !in pasteStrokes) return@EventDispatcher false
                 swallowFollowUp = true
                 pasteIntercepted = true
                 executePasteFromPopup(popup, text)
@@ -2176,13 +2065,29 @@ class AgenticCopilotToolWindowContent(
 
         popup.addListener(object : com.intellij.openapi.ui.popup.JBPopupListener {
             override fun onClosed(event: com.intellij.openapi.ui.popup.LightweightWindowEvent) {
-                // Skip disposal if a paste was intercepted — the preprocessor will self-dispose
-                // after it finishes swallowing the follow-up KEY_TYPED / KEY_RELEASED events.
                 if (!pasteIntercepted) {
                     com.intellij.openapi.util.Disposer.dispose(disposable)
                 }
             }
         })
+    }
+
+    /**
+     * Handles KEY_TYPED and KEY_RELEASED follow-up events after a paste stroke was consumed.
+     * Returns true to swallow the event. Self-disposes on KEY_RELEASED via [clearSwallow].
+     */
+    private fun handleFollowUpEvent(
+        event: java.awt.event.KeyEvent,
+        disposable: com.intellij.openapi.Disposable,
+        clearSwallow: () -> Unit
+    ): Boolean {
+        if (event.id == java.awt.event.KeyEvent.KEY_RELEASED) {
+            clearSwallow()
+            ApplicationManager.getApplication().invokeLater {
+                com.intellij.openapi.util.Disposer.dispose(disposable)
+            }
+        }
+        return true
     }
 
     private fun executePasteFromPopup(popup: com.intellij.openapi.ui.popup.JBPopup, text: String) {
@@ -2290,7 +2195,7 @@ class AgenticCopilotToolWindowContent(
         consolePanel.showPlaceholder("New conversation started.")
         updateSessionInfo()
         archiveConversation()
-        SwingUtilities.invokeLater {
+        ApplicationManager.getApplication().invokeLater {
             if (::planRoot.isInitialized) {
                 planRoot.removeAllChildren()
                 planTreeModel.reload()
@@ -2325,18 +2230,18 @@ class AgenticCopilotToolWindowContent(
     }
 
     private fun loadModelsAsync(onSuccess: (List<Model>) -> Unit) {
-        SwingUtilities.invokeLater {
+        ApplicationManager.getApplication().invokeLater {
             modelsStatusText = MSG_LOADING
             selectedModelIndex = -1
         }
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 val models = fetchModelsWithRetry()
-                SwingUtilities.invokeLater { onModelsLoaded(models, onSuccess) }
+                ApplicationManager.getApplication().invokeLater { onModelsLoaded(models, onSuccess) }
             } catch (e: Exception) {
                 val errorMsg = e.message ?: MSG_UNKNOWN_ERROR
                 LOG.warn("Failed to load models: $errorMsg")
-                SwingUtilities.invokeLater { onModelsLoadFailed(e) }
+                ApplicationManager.getApplication().invokeLater { onModelsLoadFailed(e) }
             }
         }
     }
