@@ -131,7 +131,7 @@ class AgenticCopilotToolWindowContent(
 
     private fun buildAndShowChatPanel() {
         val addSeparatorNow = {
-            val ts = java.text.SimpleDateFormat("MMM d, yyyy h:mm a").format(java.util.Date())
+            val ts = java.time.Instant.now().toString()
             consolePanel.addSessionSeparator(ts, agentManager.activeProfile.displayName)
         }
         if (chatPanel == null) {
@@ -1354,7 +1354,7 @@ class AgenticCopilotToolWindowContent(
                 override fun actionPerformed(e: AnActionEvent) {
                     currentSessionId = null
                     consolePanel.addSessionSeparator(
-                        java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")),
+                        java.time.Instant.now().toString(),
                         agentManager.activeProfile.displayName
                     )
                     updateSessionInfo()

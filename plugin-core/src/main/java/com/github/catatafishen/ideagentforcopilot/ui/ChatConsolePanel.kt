@@ -233,7 +233,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val ts = timestamp()
         entries.add(EntryData.Prompt(text, ts, contextFiles))
         val encodedBubble = if (bubbleHtml != null) b64(bubbleHtml) else ""
-        executeJs("ChatController.addUserMessage('${escJs(text)}','$ts','$encodedBubble');ChatController.showWorkingIndicator()")
+        executeJs("ChatController.addUserMessage('${escJs(text)}','${displayTs(ts)}','$encodedBubble');ChatController.showWorkingIndicator()")
     }
 
     override fun startStreaming() {
@@ -417,7 +417,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun addSessionSeparator(timestamp: String, agent: String) {
         finalizeCurrentText()
         entries.add(EntryData.SessionSeparator(timestamp, agent))
-        executeJs("ChatController.addSessionSeparator('${escJs(timestamp)}', '${escJs(agent)}')")
+        executeJs("ChatController.addSessionSeparator('${escJs(displayTsSeparator(timestamp))}', '${escJs(agent)}')")
     }
 
     override fun showPlaceholder(text: String) {
@@ -653,7 +653,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                     Triple(fo["name"]?.asString ?: "", fo["path"]?.asString ?: "", fo["line"]?.asInt ?: 0)
                 }
                 val encodedBubble = if (!ctxFiles.isNullOrEmpty()) b64(buildRestoredBubbleHtml(text, ctxFiles)) else ""
-                executeJs("ChatController.addUserMessage('${escJs(text)}','$ts','$encodedBubble')")
+                executeJs("ChatController.addUserMessage('${escJs(text)}','${escJs(displayTs(ts))}','$encodedBubble')")
             }
 
             "text" -> {
@@ -738,7 +738,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 currentTurnId = ""
                 val ts = obj["timestamp"]?.asString ?: ""
                 val ag = obj["agent"]?.asString ?: ""
-                executeJs("ChatController.addSessionSeparator('${escJs(ts)}', '${escJs(ag)}')")
+                executeJs("ChatController.addSessionSeparator('${escJs(displayTsSeparator(ts))}', '${escJs(ag)}')")
             }
         }
     }
@@ -1158,8 +1158,24 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;").replace("`", "&#96;")
 
     private fun b64(s: String): String = Base64.getEncoder().encodeToString(s.toByteArray(Charsets.UTF_8))
-    private fun timestamp(): String {
-        val c = Calendar.getInstance(); return "%02d:%02d".format(c[Calendar.HOUR_OF_DAY], c[Calendar.MINUTE])
+    private fun timestamp(): String = java.time.Instant.now().toString()
+
+    private fun displayTs(isoOrLegacy: String): String {
+        return try {
+            val zdt = java.time.Instant.parse(isoOrLegacy).atZone(java.time.ZoneId.systemDefault())
+            "%02d:%02d".format(zdt.hour, zdt.minute)
+        } catch (_: Exception) {
+            isoOrLegacy
+        }
+    }
+
+    private fun displayTsSeparator(isoOrLegacy: String): String {
+        return try {
+            val zdt = java.time.Instant.parse(isoOrLegacy).atZone(java.time.ZoneId.systemDefault())
+            java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm").format(zdt)
+        } catch (_: Exception) {
+            isoOrLegacy
+        }
     }
 
     private fun domId(id: String) = id.replace(Regex("[^a-zA-Z0-9_-]"), "_")

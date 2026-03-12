@@ -50,7 +50,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"query", TYPE_STRING, "Text to search for across conversations (case-insensitive)"},
             {"file", TYPE_STRING, "Conversation to read: 'current' for the active session, or an archive timestamp (e.g., '2026-03-04T15-30-00')"},
@@ -64,7 +64,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) {
+    public @NotNull String execute(@NotNull JsonObject args) {
         String basePath = project.getBasePath();
         if (basePath == null) return "Error: project base path unavailable";
 
@@ -214,7 +214,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
         return switch (type) {
             case "prompt" -> {
                 String text = obj.has("text") ? obj.get("text").getAsString() : "";
-                String ts = obj.has("ts") ? " [" + obj.get("ts").getAsString() + "]" : "";
+                String ts = obj.has("ts") ? " [" + formatTimestamp(obj.get("ts").getAsString()) + "]" : "";
                 yield ">>> " + text + ts;
             }
             case "text" -> {
@@ -242,9 +242,23 @@ public final class SearchConversationHistoryTool extends EditorTool {
             }
             case "separator" -> {
                 String ts = obj.has("timestamp") ? obj.get("timestamp").getAsString() : "";
-                yield "--- Session " + ts + " ---";
+                yield "--- Session " + formatTimestamp(ts) + " ---";
             }
             default -> null;
         };
+    }
+
+    /**
+     * Formats a stored timestamp for human-readable display.
+     * Handles ISO 8601 (new format, e.g. "2026-03-12T14:29:47Z") as well as legacy
+     * formats ("14:29", "Mar 11, 2026 1:29 PM") for backward compatibility.
+     */
+    private static String formatTimestamp(String ts) {
+        try {
+            java.time.ZonedDateTime zdt = java.time.Instant.parse(ts).atZone(java.time.ZoneId.systemDefault());
+            return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").format(zdt);
+        } catch (Exception e) {
+            return ts;
+        }
     }
 }
