@@ -230,7 +230,8 @@ object ToolRenderers {
             background = scheme.defaultBackground
             foreground = scheme.defaultForeground
             border = JBUI.Borders.empty(6)
-            lineWrap = false
+            lineWrap = true
+            wrapStyleWord = false
             alignmentX = JComponent.LEFT_ALIGNMENT
         }
     }
