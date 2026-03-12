@@ -41,7 +41,7 @@ public final class FileTools extends AbstractToolHandler {
     private static final String FORMAT_CHARS_SUFFIX = " chars)";
     private static final String PARAM_COUNT = "count";
     private static final String AUTO_FORMAT_SUFFIX = " (auto-format queued)";
-    static final java.awt.Color HIGHLIGHT_EDIT = new java.awt.Color(80, 160, 80, 40);
+    public static final java.awt.Color HIGHLIGHT_EDIT = new java.awt.Color(80, 160, 80, 40);
     static final java.awt.Color HIGHLIGHT_READ = new java.awt.Color(80, 120, 200, 35);
     private static final int MAX_READ_LINES = 2000;
 
@@ -62,7 +62,7 @@ public final class FileTools extends AbstractToolHandler {
 
     /**
      * Queue a file for deferred auto-format (reformat + optimize imports).
-     * Called by other tool handlers (e.g., SymbolEditingTools) that modify files.
+     * Called by other tool handlers (e.g., editing tools) that modify files.
      */
     void queueAutoFormat(String path) {
         pendingAutoFormat.add(path);
@@ -184,9 +184,9 @@ public final class FileTools extends AbstractToolHandler {
     /**
      * Opens the file in the editor if "Follow Agent Files" is enabled.
      * Scrolls to the middle of [startLine, endLine] and briefly highlights the region.
-     * Package-private so other tool handlers can reuse it.
+     * Public so editing tool classes in subpackages can reuse it.
      */
-    static void followFileIfEnabled(Project project, String pathStr, int startLine, int endLine,
+    public static void followFileIfEnabled(Project project, String pathStr, int startLine, int endLine,
                                     java.awt.Color highlightColor, String actionLabel) {
         if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
 

@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.editing;
 
-import com.github.catatafishen.ideagentforcopilot.psi.SymbolEditingTools;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.Tool;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -17,11 +16,11 @@ public final class EditingToolFactory {
     private EditingToolFactory() {
     }
 
-    public static @NotNull List<Tool> create(@NotNull Project project, @NotNull SymbolEditingTools editingTools) {
+    public static @NotNull List<Tool> create(@NotNull Project project) {
         return List.of(
-                new ReplaceSymbolBodyTool(project, editingTools),
-                new InsertBeforeSymbolTool(project, editingTools),
-                new InsertAfterSymbolTool(project, editingTools)
+            new ReplaceSymbolBodyTool(project),
+            new InsertBeforeSymbolTool(project),
+            new InsertAfterSymbolTool(project)
         );
     }
 }

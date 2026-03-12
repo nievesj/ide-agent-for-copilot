@@ -13,10 +13,10 @@ import com.intellij.psi.PsiElement;
 public final class ToolUtils {
 
     // Error message constants
-    static final String ERROR_PREFIX = "Error: ";
-    static final String ERROR_FILE_NOT_FOUND = "File not found: ";
+    public static final String ERROR_PREFIX = "Error: ";
+    public static final String ERROR_FILE_NOT_FOUND = "File not found: ";
     static final String ERROR_CANNOT_PARSE = "Cannot parse file: ";
-    static final String ERROR_PATH_REQUIRED = "Error: 'path' parameter is required";
+    public static final String ERROR_PATH_REQUIRED = "Error: 'path' parameter is required";
     static final String JAVA_EXTENSION = ".java";
     static final String BUILD_DIR = "build";
 
