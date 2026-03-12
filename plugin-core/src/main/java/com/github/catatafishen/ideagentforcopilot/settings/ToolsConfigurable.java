@@ -63,7 +63,7 @@ public final class ToolsConfigurable implements Configurable {
 
         toolsPanel.add(topRow);
 
-        List<ToolDefinition> tools = McpToolFilter.getConfigurableTools();
+        List<ToolDefinition> tools = McpToolFilter.getConfigurableTools(project);
         ToolRegistry.Category currentCategory = null;
 
         for (ToolDefinition tool : tools) {

@@ -45,7 +45,7 @@ public final class McpToolsConfigurable implements Configurable {
         JPanel toolsPanel = new JPanel();
         toolsPanel.setLayout(new BoxLayout(toolsPanel, BoxLayout.Y_AXIS));
 
-        List<ToolDefinition> tools = McpToolFilter.getConfigurableTools();
+        List<ToolDefinition> tools = McpToolFilter.getConfigurableTools(project);
         ToolRegistry.Category currentCategory = null;
 
         for (ToolDefinition tool : tools) {

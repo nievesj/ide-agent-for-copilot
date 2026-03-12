@@ -45,7 +45,7 @@ public final class CopilotToolLayerSettings implements ToolLayerSettings {
         if (top != ToolPermission.ALLOW) return top;
 
         com.github.catatafishen.ideagentforcopilot.services.ToolDefinition entry =
-            com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.findById(toolId);
+            com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getInstance(project).findById(toolId);
         if (entry == null || !entry.supportsPathSubPermissions()) return top;
 
         return insideProject

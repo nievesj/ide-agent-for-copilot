@@ -81,6 +81,8 @@ public class AcpClient implements Closeable {
 
     private final Object writerLock = new Object();
     private final String projectBasePath; // Project path for config-dir
+    @Nullable
+    private final ToolRegistry registry;
     private final AgentConfig agentConfig;
     private final AgentSettings agentSettings;
     private final int mcpPort;
@@ -170,9 +172,11 @@ public class AcpClient implements Closeable {
      * Create ACP client with an agent configuration, settings, and optional project base path.
      */
     public AcpClient(@NotNull AgentConfig agentConfig, @NotNull AgentSettings agentSettings,
+                     @Nullable ToolRegistry registry,
                      @Nullable String projectBasePath, int mcpPort) {
         this.agentConfig = agentConfig;
         this.agentSettings = agentSettings;
+        this.registry = registry;
         this.projectBasePath = projectBasePath;
         this.mcpPort = mcpPort;
     }
@@ -1122,7 +1126,7 @@ public class AcpClient implements Closeable {
             return;
         }
         CompletableFuture<PermissionResponse> future = new CompletableFuture<>();
-        ToolDefinition toolEntry = ToolRegistry.findById(toolId);
+        ToolDefinition toolEntry = registry != null ? registry.findById(toolId) : null;
         String displayName = toolEntry != null ? toolEntry.displayName() : permKind;
 
         // Extract structured tool arguments from the ACP toolCall JSON
@@ -1139,7 +1143,8 @@ public class AcpClient implements Closeable {
         }
 
         // Build structured context JSON for the permission bubble
-        String resolvedQuestion = ToolRegistry.resolvePermissionQuestion(toolId, toolArgs);
+        String resolvedQuestion = registry != null
+            ? registry.resolvePermissionQuestion(toolId, toolArgs) : null;
         JsonObject context = new JsonObject();
         context.addProperty("question", resolvedQuestion != null ? resolvedQuestion
             : "Can I use " + displayName + "?");
@@ -1210,7 +1215,7 @@ public class AcpClient implements Closeable {
      * For file tools, checks inside/outside-project sub-permission when a path is present.
      */
     private ToolPermission resolveEffectivePermission(String toolId, @Nullable JsonObject toolCall) {
-        ToolDefinition entry = ToolRegistry.findById(toolId);
+        ToolDefinition entry = registry != null ? registry.findById(toolId) : null;
 
         // Path-based sub-permissions for file tools (ceiling enforced by AgentSettings)
         if (entry != null && entry.supportsPathSubPermissions() && toolCall != null) {

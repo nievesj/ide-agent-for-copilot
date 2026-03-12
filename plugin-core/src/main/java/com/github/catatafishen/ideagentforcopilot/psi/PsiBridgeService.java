@@ -43,13 +43,14 @@ public final class PsiBridgeService implements Disposable {
         Topic.create("PsiBridgeService.ToolCall", ToolCallListener.class);
 
     private final Project project;
-
+    private final ToolRegistry registry;
     private final FileTools fileTools;
     private final java.util.Set<String> sessionAllowedTools =
         java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public PsiBridgeService(@NotNull Project project) {
         this.project = project;
+        this.registry = ToolRegistry.getInstance(project);
         this.fileTools = new FileTools(project);
         GitToolHandler gitToolHandler = new GitToolHandler(project, fileTools);
 
@@ -66,13 +67,13 @@ public final class PsiBridgeService implements Disposable {
         TerminalTools terminalTools = new TerminalTools(project);
         EditorTools editorTools = new EditorTools(project);
 
-        // Register OO-style individual tool classes (primary registration path)
+        // Register OO-style individual tool classes
         boolean hasJava = PlatformApiCompat.isPluginInstalled("com.intellij.modules.java");
         var allTools = new java.util.ArrayList<com.github.catatafishen.ideagentforcopilot.psi.tools.Tool>();
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.git.GitToolFactory.create(project, gitToolHandler));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileToolFactory.create(project, fileTools));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.navigation.NavigationToolFactory.create(project, navTools, hasJava));
-        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.quality.QualityToolFactory.create(project, qualityTools, com.github.catatafishen.ideagentforcopilot.psi.SonarQubeIntegration.isInstalled()));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.quality.QualityToolFactory.create(project, qualityTools, SonarQubeIntegration.isInstalled()));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring.RefactoringToolFactory.create(project, refactoringTools, hasJava));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.editing.EditingToolFactory.create(project, editingTools));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.testing.TestingToolFactory.create(project, testTools));
@@ -80,7 +81,7 @@ public final class PsiBridgeService implements Disposable {
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.infrastructure.InfrastructureToolFactory.create(project, infraTools));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.terminal.TerminalToolFactory.create(project, terminalTools));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.editor.EditorToolFactory.create(project, editorTools));
-        ToolRegistry.registerAll(allTools);
+        registry.registerAll(allTools);
     }
 
     @SuppressWarnings("java:S1905") // Cast needed: IDE doesn't resolve Project→ComponentManager supertype
@@ -111,7 +112,7 @@ public final class PsiBridgeService implements Disposable {
     }
 
     public String callTool(String toolName, JsonObject arguments) {
-        ToolDefinition def = ToolRegistry.findDefinition(toolName);
+        ToolDefinition def = registry.findDefinition(toolName);
         if (def == null || !def.hasExecutionHandler()) {
             fireToolCallEvent(toolName, System.currentTimeMillis(), false);
             return "Unknown tool: " + toolName;
@@ -167,14 +168,14 @@ public final class PsiBridgeService implements Disposable {
      * (experimental plugin variant) to add user-recorded macros as MCP tools.
      */
     public void registerTool(ToolDefinition toolDef) {
-        ToolRegistry.register(toolDef);
+        registry.register(toolDef);
     }
 
     /**
      * Removes a dynamically registered tool.
      */
     public void unregisterTool(String id) {
-        ToolRegistry.unregister(id);
+        registry.unregister(id);
     }
 
     private void fireToolCallEvent(String toolName, long startTimeMs, boolean success) {
@@ -215,12 +216,12 @@ public final class PsiBridgeService implements Disposable {
 
     @Nullable
     private String askUserPermission(String toolName, JsonObject arguments) {
-        ToolDefinition entry = ToolRegistry.findById(toolName);
+        ToolDefinition entry = registry.findById(toolName);
         String displayName = entry != null ? entry.displayName() : toolName;
         String reqId = java.util.UUID.randomUUID().toString();
 
         // Build a structured context JSON for the permission bubble: {question, args}
-        String resolvedQuestion = ToolRegistry.resolvePermissionQuestion(toolName, arguments);
+        String resolvedQuestion = registry.resolvePermissionQuestion(toolName, arguments);
         com.google.gson.JsonObject context = new com.google.gson.JsonObject();
         context.addProperty("question", resolvedQuestion != null ? resolvedQuestion
             : "Can I use " + displayName + "?");
@@ -285,7 +286,7 @@ public final class PsiBridgeService implements Disposable {
 
     private ToolPermission resolvePluginPermission(String toolName, JsonObject arguments) {
         ToolLayerSettings settings = ToolLayerSettings.getInstance(project);
-        ToolDefinition entry = ToolRegistry.findById(toolName);
+        ToolDefinition entry = registry.findById(toolName);
         if (entry != null && entry.supportsPathSubPermissions()) {
             String path = extractPathArg(arguments);
             if (path != null && !path.isEmpty()) {
@@ -397,7 +398,7 @@ public final class PsiBridgeService implements Disposable {
         try (DaemonWaiter activeWaiter = resolveActiveWaiter(preWriteWaiter, vf, path)) {
             activeWaiter.await();
 
-            ToolDefinition highlightDef = ToolRegistry.findDefinition("get_highlights");
+            ToolDefinition highlightDef = registry.findDefinition("get_highlights");
             if (highlightDef == null || !highlightDef.hasExecutionHandler()) return writeResult;
 
             JsonObject highlightArgs = new JsonObject();

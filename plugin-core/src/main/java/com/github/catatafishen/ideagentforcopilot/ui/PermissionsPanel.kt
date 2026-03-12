@@ -97,7 +97,7 @@ private class NavTreeCellRenderer : TreeCellRenderer {
  * This panel is purely about permission levels (allow/ask/deny).
  * Tool enable/disable is managed in Tool Registration settings.
  */
-internal class PermissionsPanel(private val settings: AgentUiSettings) {
+internal class PermissionsPanel(private val settings: AgentUiSettings, private val registry: ToolRegistry) {
 
     private data class ToolRow(
         val tool: ToolDefinition,
@@ -119,7 +119,7 @@ internal class PermissionsPanel(private val settings: AgentUiSettings) {
     // ── Row construction ──────────────────────────────────────────────────────
 
     private fun buildAllRows() {
-        for (tool in ToolRegistry.getAllTools()) {
+        for (tool in registry.getAllTools()) {
             val permCombo: ComboBox<String>? = when {
                 !tool.isBuiltIn() -> ComboBox(PLUGIN_PERM_OPTIONS).apply {
                     setMinimumAndPreferredWidth(JBUI.scale(108))

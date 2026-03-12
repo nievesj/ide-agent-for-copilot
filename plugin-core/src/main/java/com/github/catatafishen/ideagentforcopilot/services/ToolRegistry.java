@@ -1,12 +1,28 @@
 package com.github.catatafishen.ideagentforcopilot.services;
 
-import java.util.List;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.intellij.openapi.components.ComponentManager;
+import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.*;
 
 /**
- * Registry of all tools the agent can use, both built-in agent tools
- * and MCP tools we provide via IntelliJ.
+ * Project-level service that owns the registry of all tool definitions.
+ * <p>
+ * Each open project gets its own registry (fixing the multi-project leakage bug
+ * that existed when this was a static utility). Consumers obtain it via
+ * {@link #getInstance(Project)}.
+ * <p>
+ * Tool instances are created by {@link com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService}
+ * (which has access to package-private handler constructors) and injected here
+ * via {@link #registerAll(Collection)}.
  */
 public final class ToolRegistry {
+
+    // ── Category enum (static — same across all projects) ────────────────
 
     public enum Category {
         FILE("File Operations"),
@@ -33,31 +49,26 @@ public final class ToolRegistry {
         }
     }
 
+    // ── Built-in tool entries (static — agent-side tools, same across all projects) ──
+
     record ToolEntry(
-        @org.jetbrains.annotations.NotNull String id,
-        @org.jetbrains.annotations.NotNull String displayName,
-        @org.jetbrains.annotations.NotNull String description,
-        @org.jetbrains.annotations.NotNull Category category,
+        @NotNull String id,
+        @NotNull String displayName,
+        @NotNull String description,
+        @NotNull Category category,
         boolean isBuiltIn,
         boolean hasDenyControl,
         boolean supportsPathSubPermissions
     ) implements ToolDefinition {
     }
 
-    /**
-     * Built-in agent tools (bash, edit, etc.) that are handled by the Copilot CLI
-     * rather than our MCP server. These are NOT in DEFINITIONS.
-     */
     private static final List<ToolEntry> BUILT_IN_TOOLS = List.of(
-        // Copilot CLI: view/read/grep/glob run silently -- no permission hook (hasDenyControl=false)
-        // OpenCode:    read/grep/glob/list run silently -- no permission hook (hasDenyControl=false)
         new ToolEntry("view", "Read File (built-in)", "Read file contents from disk (Copilot CLI built-in)", Category.FILE, true, false, true),
         new ToolEntry("read", "Read File (built-in)", "Read file contents from disk (built-in)", Category.FILE, true, false, true),
         new ToolEntry("grep", "Grep Search (built-in)", "Search file contents with regular expressions (built-in)", Category.SEARCH, true, false, false),
         new ToolEntry("glob", "Glob Find (built-in)", "Find files by name pattern (built-in)", Category.SEARCH, true, false, false),
         new ToolEntry("list", "List Files (built-in)", "List files and directories (OpenCode built-in)", Category.SEARCH, true, false, true),
         new ToolEntry("bash", "Bash Shell (built-in)", "Run arbitrary shell commands -- use run_command instead for safer, paginated execution", Category.SHELL, true, true, false),
-        // edit/write/create/execute/runInTerminal fire permission requests (hasDenyControl=true)
         new ToolEntry("edit", "Edit File (built-in)", "Edit a file in place (built-in) -- use edit_text or replace_symbol_body for IDE-aware editing", Category.FILE, true, true, true),
         new ToolEntry("write", "Write File (built-in)", "Create or overwrite a file (OpenCode built-in) -- use intellij_write_file for IDE-aware writing", Category.FILE, true, true, true),
         new ToolEntry("create", "Create File (built-in)", "Create a new file (Copilot CLI built-in) -- use create_file for IDE-aware creation", Category.FILE, true, true, true),
@@ -65,16 +76,8 @@ public final class ToolRegistry {
         new ToolEntry("runInTerminal", "Run in Terminal (built-in)", "Run a command in the integrated terminal (Copilot CLI built-in)", Category.SHELL, true, true, false)
     );
 
-    private ToolRegistry() {
-    }
-
-    /**
-     * Permission question templates for built-in agent tools (bash, edit, etc.).
-     * MCP tools define their templates via {@link ToolDefinition#permissionTemplate()}.
-     * Placeholders like {@code {param}} are replaced with actual argument values at runtime.
-     */
-    private static final java.util.Map<String, String> BUILT_IN_PERMISSION_QUESTIONS =
-        java.util.Map.of(
+    private static final Map<String, String> BUILT_IN_PERMISSION_QUESTIONS =
+        Map.of(
             "bash", "Run: {cmd}",
             "edit", "Edit {path}",
             "write", "Write {path}",
@@ -83,18 +86,103 @@ public final class ToolRegistry {
             "runInTerminal", "Run in terminal: {command}"
         );
 
+    // ── Instance state (project-scoped) ──────────────────────────────────
+
+    private final Map<String, ToolDefinition> definitions = new LinkedHashMap<>();
+
+    @SuppressWarnings("java:S1905") // Cast needed: IDE doesn't resolve Project→ComponentManager supertype
+    public static ToolRegistry getInstance(@NotNull Project project) {
+        return ((ComponentManager) project).getService(ToolRegistry.class);
+    }
+
+    @SuppressWarnings("unused") // instantiated by IntelliJ service container
+    public ToolRegistry(@NotNull Project project) {
+        // Tools are registered later by PsiBridgeService via registerAll()
+    }
+
+    // ── Registration ─────────────────────────────────────────────────────
+
+    public void register(@NotNull ToolDefinition def) {
+        definitions.put(def.id(), def);
+    }
+
+    public void unregister(@NotNull String id) {
+        definitions.remove(id);
+    }
+
+    public void registerAll(@NotNull Collection<? extends ToolDefinition> defs) {
+        for (ToolDefinition def : defs) {
+            definitions.put(def.id(), def);
+        }
+    }
+
+    // ── Lookups ──────────────────────────────────────────────────────────
+
+    /**
+     * Look up a tool definition by ID. Only searches MCP tools (not built-in agent tools).
+     */
+    @Nullable
+    public ToolDefinition findDefinition(@NotNull String id) {
+        return definitions.get(id);
+    }
+
+    /**
+     * Look up a tool by ID (exact match). Checks MCP definitions first,
+     * falls back to built-in tools list.
+     */
+    @Nullable
+    public ToolDefinition findById(@Nullable String id) {
+        if (id == null) return null;
+        ToolDefinition def = definitions.get(id);
+        if (def != null) return def;
+        for (ToolEntry e : BUILT_IN_TOOLS) {
+            if (e.id().equals(id)) return e;
+        }
+        return null;
+    }
+
+    /**
+     * Returns all tools: built-in agent tools plus all registered MCP tool definitions.
+     */
+    @NotNull
+    public List<ToolDefinition> getAllTools() {
+        var all = new ArrayList<ToolDefinition>(BUILT_IN_TOOLS);
+        all.addAll(definitions.values());
+        return List.copyOf(all);
+    }
+
+    /**
+     * Returns the IDs of all built-in agent tools (e.g., view, edit, bash).
+     */
+    @NotNull
+    public static List<String> getBuiltInToolIds() {
+        return BUILT_IN_TOOLS.stream().map(ToolEntry::id).toList();
+    }
+
+    /**
+     * Returns MCP tool annotations for a given tool.
+     */
+    @NotNull
+    public JsonObject getMcpAnnotations(@NotNull String toolId) {
+        ToolDefinition def = findById(toolId);
+        JsonObject ann = new JsonObject();
+        if (def != null) {
+            ann.addProperty("title", def.displayName());
+            ann.addProperty("readOnlyHint", def.isReadOnly());
+            ann.addProperty("destructiveHint", def.isDestructive());
+            ann.addProperty("openWorldHint", def.isOpenWorld());
+        }
+        return ann;
+    }
+
+    // ── Permission question resolution ───────────────────────────────────
+
     /**
      * Resolves a human-readable permission question for the given tool and arguments.
      * Substitutes {@code {paramName}} placeholders with the corresponding argument values.
-     * Returns {@code null} if no custom template is registered for this tool.
-     *
-     * @param toolId the tool identifier (e.g. {@code "git_push"})
-     * @param args   the tool call arguments as a JSON object (may be null)
      */
-    @org.jetbrains.annotations.Nullable
-    public static String resolvePermissionQuestion(
-        @org.jetbrains.annotations.NotNull String toolId,
-        @org.jetbrains.annotations.Nullable com.google.gson.JsonObject args) {
+    @Nullable
+    public String resolvePermissionQuestion(@NotNull String toolId, @Nullable JsonObject args) {
         String template = resolveTemplate(toolId);
         if (template == null) return null;
         if (args == null) return stripPlaceholders(template);
@@ -102,34 +190,32 @@ public final class ToolRegistry {
         return stripPlaceholders(q);
     }
 
-    @org.jetbrains.annotations.Nullable
-    private static String resolveTemplate(@org.jetbrains.annotations.NotNull String toolId) {
-        ToolDefinition def = DEFINITIONS.get(toolId);
+    @Nullable
+    private String resolveTemplate(@NotNull String toolId) {
+        ToolDefinition def = definitions.get(toolId);
         if (def != null && def.permissionTemplate() != null) {
             return def.permissionTemplate();
         }
         return BUILT_IN_PERMISSION_QUESTIONS.get(toolId);
     }
 
-    private static String substituteArgs(
-        @org.jetbrains.annotations.NotNull String template,
-        @org.jetbrains.annotations.NotNull com.google.gson.JsonObject args) {
+    private static String substituteArgs(@NotNull String template, @NotNull JsonObject args) {
         String q = template;
-        for (java.util.Map.Entry<String, com.google.gson.JsonElement> e : args.entrySet()) {
+        for (Map.Entry<String, JsonElement> e : args.entrySet()) {
             q = q.replace("{" + e.getKey() + "}", formatArgValue(e.getValue()));
         }
         return q;
     }
 
-    private static String formatArgValue(@org.jetbrains.annotations.NotNull com.google.gson.JsonElement value) {
+    private static String formatArgValue(@NotNull JsonElement value) {
         if (value.isJsonNull()) return "";
         if (value.isJsonPrimitive()) {
             String s = value.getAsString();
             return s.length() > 60 ? s.substring(0, 57) + "…" : s;
         }
         if (value.isJsonArray()) {
-            java.util.StringJoiner joiner = new java.util.StringJoiner(", ");
-            for (com.google.gson.JsonElement el : value.getAsJsonArray()) {
+            StringJoiner joiner = new StringJoiner(", ");
+            for (JsonElement el : value.getAsJsonArray()) {
                 joiner.add(el.isJsonPrimitive() ? el.getAsString() : el.toString());
             }
             return joiner.toString();
@@ -137,111 +223,10 @@ public final class ToolRegistry {
         return value.toString();
     }
 
-    @org.jetbrains.annotations.Nullable
-    private static String stripPlaceholders(@org.jetbrains.annotations.NotNull String text) {
+    @Nullable
+    private static String stripPlaceholders(@NotNull String text) {
         String q = text.replaceAll("\\{[^}]+}", "").replaceAll("\\(\\s*\\)", "")
             .replaceAll("\\s+", " ").trim();
         return q.isEmpty() ? null : q;
-    }
-
-    // ── ToolDefinition-based registry ────────────────────────────────────────
-
-    /**
-     * Registry of tools defined via the new {@link ToolDefinition} interface.
-     * All MCP tools the plugin provides are registered here at startup.
-     */
-    private static final java.util.Map<String, ToolDefinition> DEFINITIONS =
-        new java.util.LinkedHashMap<>();
-
-    /**
-     * Register a single tool definition. Overwrites any prior definition with the same ID.
-     */
-    public static void register(@org.jetbrains.annotations.NotNull ToolDefinition def) {
-        DEFINITIONS.put(def.id(), def);
-    }
-
-    /**
-     * Unregister a tool definition by ID. Used when removing dynamically registered tools.
-     */
-    public static void unregister(@org.jetbrains.annotations.NotNull String id) {
-        DEFINITIONS.remove(id);
-    }
-
-    /**
-     * Register multiple tool definitions.
-     */
-    public static void registerAll(@org.jetbrains.annotations.NotNull java.util.Collection<? extends ToolDefinition> defs) {
-        for (ToolDefinition def : defs) {
-            DEFINITIONS.put(def.id(), def);
-        }
-    }
-
-    /**
-     * Look up a {@link ToolDefinition} by tool ID. Returns null if not found.
-     */
-    @org.jetbrains.annotations.Nullable
-    public static ToolDefinition findDefinition(@org.jetbrains.annotations.NotNull String id) {
-        return DEFINITIONS.get(id);
-    }
-
-    // ── Unified lookups ────────────────────────────────────────────────────
-
-    /**
-     * Returns all tools: built-in agent tools plus all registered MCP tool definitions.
-     */
-    public static List<ToolDefinition> getAllTools() {
-        var all = new java.util.ArrayList<ToolDefinition>(BUILT_IN_TOOLS);
-        all.addAll(DEFINITIONS.values());
-        return List.copyOf(all);
-    }
-
-    /**
-     * Look up a tool by id (exact match). Checks {@link ToolDefinition} registry first,
-     * falls back to built-in tools list, returns null if not found.
-     */
-    public static ToolDefinition findById(String id) {
-        if (id == null) return null;
-        ToolDefinition def = DEFINITIONS.get(id);
-        if (def != null) return def;
-        for (ToolEntry e : BUILT_IN_TOOLS) {
-            if (e.id.equals(id)) return e;
-        }
-        return null;
-    }
-
-    /**
-     * Returns the IDs of all built-in agent tools (e.g., view, edit, bash).
-     * Used to populate {@code excludedTools} in {@code session/new} for agents
-     * that support filtering out their native tools.
-     */
-    @org.jetbrains.annotations.NotNull
-    public static List<String> getBuiltInToolIds() {
-        List<String> ids = new java.util.ArrayList<>();
-        for (ToolEntry e : BUILT_IN_TOOLS) {
-            ids.add(e.id());
-        }
-        return ids;
-    }
-
-    /**
-     * Returns MCP tool annotations for a given tool ID.
-     * Reads flags from {@link ToolDefinition}; returns empty annotations for unknown tools.
-     */
-    public static com.google.gson.JsonObject getMcpAnnotations(@org.jetbrains.annotations.NotNull String toolId) {
-        ToolDefinition def = DEFINITIONS.get(toolId);
-        com.google.gson.JsonObject ann = new com.google.gson.JsonObject();
-
-        if (def != null) {
-            ann.addProperty("title", def.displayName());
-            ann.addProperty("readOnlyHint", def.isReadOnly());
-            ann.addProperty("destructiveHint", def.isDestructive());
-            ann.addProperty("openWorldHint", def.isOpenWorld());
-        } else {
-            ToolDefinition entry = findById(toolId);
-            if (entry != null) {
-                ann.addProperty("title", entry.displayName());
-            }
-        }
-        return ann;
     }
 }
