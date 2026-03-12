@@ -593,14 +593,17 @@ public final class SonarQubeIntegration {
         }
         sb.append("):\n\n");
 
-        for (int i = start; i < end; i++) {
-            sb.append(findings.get(i)).append('\n');
+        List<String> pageFindings = findings.subList(start, end);
+        for (String finding : pageFindings) {
+            sb.append(finding).append('\n');
         }
 
         if (end < total) {
             sb.append("\nWARNING: ").append(total - end).append(" more findings not shown. Use offset=")
                 .append(end).append(" to see more.");
         }
+
+        sb.append(SonarRuleDescriptions.buildRulesSection(pageFindings));
 
         return sb.toString();
     }

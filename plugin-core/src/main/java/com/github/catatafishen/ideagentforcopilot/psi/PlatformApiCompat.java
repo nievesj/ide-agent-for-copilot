@@ -3,6 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.psi;
 import com.intellij.codeInspection.InspectionToolResultExporter;
 import com.intellij.codeInspection.ex.GlobalInspectionContextEx;
 import com.intellij.codeInspection.ex.InspectionToolWrapper;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.project.Project;
@@ -218,6 +219,21 @@ public final class PlatformApiCompat {
      */
     public static <T> @NotNull T getService(@NotNull Project project, @NotNull Class<T> serviceClass) {
         return project.getService(serviceClass);
+    }
+
+    /**
+     * Application-level analogue of {@link #getServiceByRawClass}. Used by reflection-based
+     * integrations (e.g. SonarLint) where the service class is loaded from a foreign classloader.
+     * <p>
+     * <b>Why extracted:</b> {@code ApplicationManager.getApplication().getService(Class&lt;T&gt;)}
+     * causes an IDE daemon false-positive when passed a raw {@code Class&lt;?&gt;} because the
+     * generic bound differs between SDK versions. The {@code (Class&lt;Object&gt;)} cast silences
+     * the daemon; Gradle compiles cleanly.
+     */
+    @SuppressWarnings("unchecked")
+    public static @Nullable Object getApplicationServiceByRawClass(@NotNull Class<?> serviceClass) {
+        // Cast to Class<Object> satisfies the generic bound; safe because we only use the result as Object.
+        return ApplicationManager.getApplication().getService((Class<Object>) serviceClass);
     }
 
     /**
