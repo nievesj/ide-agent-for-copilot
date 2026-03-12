@@ -14,6 +14,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -46,6 +47,25 @@ public abstract class QualityTool extends Tool {
     }
 
     // ── Shared utilities ─────────────────────────────────────
+
+    /**
+     * Extracts the display names of all quick-fix actions registered on a highlight.
+     * Returns an empty list when no fixes are available (e.g., global inspections, lazy-not-yet-computed).
+     *
+     * <p>Uses {@code findRegisteredQuickFix} (the non-deprecated iteration API). Returning {@code null}
+     * from the predicate on every element causes it to iterate the full list as a side-effect.</p>
+     */
+    protected static List<String> collectQuickFixNames(
+            com.intellij.codeInsight.daemon.impl.HighlightInfo h) {
+        if (!h.hasQuickFixes()) return Collections.emptyList();
+        List<String> names = new ArrayList<>();
+        h.findRegisteredQuickFix((descriptor, range) -> {
+            String text = descriptor.getAction().getText();
+            if (text != null && !text.isBlank()) names.add(text);
+            return null; // return null to continue iterating all registered fixes
+        });
+        return names;
+    }
 
     protected record FilePair(VirtualFile vf, PsiFile psiFile) {
     }

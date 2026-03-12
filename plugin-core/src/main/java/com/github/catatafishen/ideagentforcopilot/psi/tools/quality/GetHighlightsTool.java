@@ -156,7 +156,12 @@ public final class GetHighlightsTool extends QualityTool {
                     && severity != com.intellij.lang.annotation.HighlightSeverity.INFORMATION
                     && severity.myVal >= com.intellij.lang.annotation.HighlightSeverity.WEAK_WARNING.myVal) {
                     int line = doc.getLineNumber(h.getStartOffset()) + 1;
-                    problems.add(String.format(FORMAT_LOCATION, relPath, line, severity.getName(), h.getDescription()));
+                    String entry = String.format(FORMAT_LOCATION, relPath, line, severity.getName(), h.getDescription());
+                    List<String> fixes = collectQuickFixNames(h);
+                    if (!fixes.isEmpty()) {
+                        entry += "  →  Quick fixes: [" + String.join(", ", fixes) + "]";
+                    }
+                    problems.add(entry);
                     added++;
                 }
             }
