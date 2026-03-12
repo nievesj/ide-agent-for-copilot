@@ -1271,6 +1271,9 @@ class AgenticCopilotToolWindowContent(
         )
         object : AnAction() {
             override fun actionPerformed(e: AnActionEvent) {
+                // Consume the underlying AWT key event so IntelliJ's built-in editor paste handler
+                // does not also fire for the same keystroke (which would cause a double-paste).
+                e.inputEvent?.consume()
                 val clipText = contextManager.getClipboardText()
                 if (clipText != null && (clipText.lines().size > 3 || clipText.length > 500)) {
                     val projectSource = contextManager.findClipboardSourceInProject(clipText)
