@@ -8,7 +8,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Creates a new run configuration (application, JUnit, or Gradle).
+ * Creates a new run configuration of any type supported by the IDE.
  */
 public final class CreateRunConfigurationTool extends ProjectTool {
 
@@ -31,14 +31,14 @@ public final class CreateRunConfigurationTool extends ProjectTool {
 
     @Override
     public @NotNull String description() {
-        return "Create a new run configuration (application, JUnit, or Gradle)";
+        return "Create a new run configuration of any type supported by the IDE (e.g., 'application', 'junit', 'gradle', 'maven', 'npm', 'python')";
     }
 
     @Override
     public @Nullable JsonObject inputSchema() {
         JsonObject s = schema(new Object[][]{
             {"name", TYPE_STRING, "Name for the new run configuration"},
-            {"type", TYPE_STRING, "Configuration type: 'application', 'junit', or 'gradle'"},
+            {"type", TYPE_STRING, "Configuration type: any IDE-supported type name (e.g., 'application', 'junit', 'gradle', 'maven', 'npm', 'python'). If unknown, an error will list all available types."},
             {"jvm_args", TYPE_STRING, "Optional: JVM arguments (e.g., '-Xmx512m')"},
             {"program_args", TYPE_STRING, "Optional: program arguments"},
             {"working_dir", TYPE_STRING, "Optional: working directory path"},

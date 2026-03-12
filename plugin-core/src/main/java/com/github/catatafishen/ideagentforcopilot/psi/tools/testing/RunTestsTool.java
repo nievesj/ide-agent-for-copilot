@@ -35,7 +35,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Runs tests by class, method, or wildcard pattern via Gradle.
+ * Runs tests by class, method, or wildcard pattern.
+ * Uses IntelliJ's built-in JUnit runner when possible; falls back to Gradle for unresolvable targets.
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
 public final class RunTestsTool extends TestingTool {
@@ -75,7 +76,7 @@ public final class RunTestsTool extends TestingTool {
 
     @Override
     public @NotNull String description() {
-        return "Run tests by class, method, or wildcard pattern via Gradle";
+        return "Run tests by class, method, or wildcard pattern. Uses IntelliJ's built-in test runner; falls back to Gradle for unresolvable targets";
     }
 
     @Override
@@ -87,7 +88,7 @@ public final class RunTestsTool extends TestingTool {
     public @Nullable JsonObject inputSchema() {
         return schema(new Object[][]{
             {"target", TYPE_STRING, "Test target: fully qualified class class.method (e.g., 'MyTest.testFoo'), or pattern with wildcards (e.g., '*Test')"},
-            {"module", TYPE_STRING, "Optional Gradle module name (e.g., 'plugin-core')", ""}
+            {"module", TYPE_STRING, "Optional module name (e.g., 'plugin-core')", ""}
         }, "target");
     }
 
@@ -358,7 +359,9 @@ public final class RunTestsTool extends TestingTool {
                 PlatformApiCompat.findConfigurationTypeBySearch("Gradle");
 
             if (gradleType == null) {
-                return "Error: Gradle run configuration type not available";
+                return "Error: Gradle run configuration type not available. "
+                    + "For non-Gradle projects, use create_run_configuration with the appropriate type "
+                    + "(e.g., 'maven' for Maven, 'npm' for Node.js) or run_command to invoke the build tool directly.";
             }
 
             var factory = gradleType.getConfigurationFactories()[0];
