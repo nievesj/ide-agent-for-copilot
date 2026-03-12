@@ -58,6 +58,16 @@ public abstract class GitTool extends Tool {
     }
 
     /**
+     * Git write tools (commit, push, merge, etc.) are denied for sub-agents
+     * because sub-agents cannot receive guidance via session/message and
+     * would bypass the main agent's VCS workflow.
+     */
+    @Override
+    public boolean denyForSubAgent() {
+        return !isReadOnly();
+    }
+
+    /**
      * Flush pending auto-format and save all documents to disk.
      * Called before git commands that need the working tree up-to-date.
      */

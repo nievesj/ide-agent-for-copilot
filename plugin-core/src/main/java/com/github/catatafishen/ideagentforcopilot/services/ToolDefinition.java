@@ -91,6 +91,27 @@ public interface ToolDefinition {
         return false;
     }
 
+    /**
+     * Whether this tool should be denied when called by a sub-agent.
+     * Override to return {@code true} for tools that sub-agents must not use
+     * (e.g., git write operations that bypass IntelliJ's VCS layer).
+     */
+    default boolean denyForSubAgent() {
+        return false;
+    }
+
+    /**
+     * Detect abuse patterns in a permission request for this tool.
+     * Called during {@code session/request_permission} handling before the
+     * normal allow/deny/ask flow.
+     *
+     * @param toolCall the {@code toolCall} JSON object from the permission request
+     * @return a human-readable abuse description if detected, null if clean
+     */
+    default @Nullable String detectPermissionAbuse(@Nullable JsonObject toolCall) {
+        return null;
+    }
+
     // ── Schema ───────────────────────────────────────────────
 
     /**

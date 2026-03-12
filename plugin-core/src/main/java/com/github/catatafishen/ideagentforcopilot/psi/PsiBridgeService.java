@@ -69,7 +69,6 @@ public final class PsiBridgeService implements Disposable {
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.infrastructure.InfrastructureToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.terminal.TerminalToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.editor.EditorToolFactory.create(project));
-        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.builtin.BuiltInToolFactory.create(project));
         registry.registerAll(allTools);
     }
 

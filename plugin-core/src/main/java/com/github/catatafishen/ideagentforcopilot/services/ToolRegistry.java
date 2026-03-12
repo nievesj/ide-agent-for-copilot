@@ -41,6 +41,14 @@ public final class ToolRegistry {
 
     // ── Instance state (project-scoped) ──────────────────────────────────
 
+    /**
+     * Well-known built-in agent tool IDs. Used to send {@code excludedTools}
+     * in the session configuration and to build permission deny lists.
+     */
+    private static final List<String> BUILT_IN_TOOL_IDS = List.of(
+        "view", "read", "grep", "glob", "list",
+        "bash", "edit", "write", "create", "execute", "runInTerminal"
+    );
     private final Map<String, ToolDefinition> definitions = new LinkedHashMap<>();
 
     @SuppressWarnings("java:S1905") // Cast needed: IDE doesn't resolve Project→ComponentManager supertype
@@ -98,13 +106,15 @@ public final class ToolRegistry {
     }
 
     /**
-     * Returns the IDs of all built-in agent tools (e.g., view, edit, bash).
+     * Returns IDs of well-known built-in agent tools that should be excluded
+     * from the agent session when the profile enables built-in tool exclusion.
+     * <p>
+     * This is a static set rather than scanning registered tools because
+     * different agents have different built-in tools that change over time.
+     * We cannot enumerate them all — this covers the common ones.
      */
     @NotNull
-    public List<String> getBuiltInToolIds() {
-        return definitions.values().stream()
-            .filter(ToolDefinition::isBuiltIn)
-            .map(ToolDefinition::id)
-            .toList();
+    public static List<String> getBuiltInToolIds() {
+        return BUILT_IN_TOOL_IDS;
     }
 }

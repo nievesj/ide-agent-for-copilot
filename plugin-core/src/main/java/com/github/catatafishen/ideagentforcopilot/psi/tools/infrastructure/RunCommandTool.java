@@ -2,13 +2,13 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.infrastructure;
 
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.RunCommandRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.roots.ProjectRootManager;
 import org.jetbrains.annotations.NotNull;
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.RunCommandRenderer;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -62,6 +62,34 @@ public final class RunCommandTool extends InfrastructureTool {
             {PARAM_OFFSET, TYPE_INTEGER, "Character offset to start output from (default: 0). Use for pagination when output is truncated"},
             {PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return per page (default: 8000)"}
         }, "command");
+    }
+
+    @Override
+    public @Nullable String detectPermissionAbuse(@Nullable com.google.gson.JsonObject toolCall) {
+        if (toolCall == null) return null;
+        String command = extractCommandFromToolCall(toolCall);
+        if (command == null) return null;
+        return ToolUtils.detectCommandAbuseType(command);
+    }
+
+    private static @Nullable String extractCommandFromToolCall(com.google.gson.JsonObject toolCall) {
+        // Check direct parameters
+        if (toolCall.has("parameters") && toolCall.get("parameters").isJsonObject()) {
+            var params = toolCall.getAsJsonObject("parameters");
+            if (params.has("command") && params.get("command").isJsonPrimitive()) {
+                return params.get("command").getAsString().toLowerCase().trim();
+            }
+        }
+        // Check nested input/arguments
+        for (String wrapper : new String[]{"arguments", "input"}) {
+            if (toolCall.has(wrapper) && toolCall.get(wrapper).isJsonObject()) {
+                var nested = toolCall.getAsJsonObject(wrapper);
+                if (nested.has("command") && nested.get("command").isJsonPrimitive()) {
+                    return nested.get("command").getAsString().toLowerCase().trim();
+                }
+            }
+        }
+        return null;
     }
 
     @Override
