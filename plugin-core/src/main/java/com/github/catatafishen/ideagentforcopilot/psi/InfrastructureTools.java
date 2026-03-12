@@ -206,7 +206,7 @@ public final class InfrastructureTools extends AbstractToolHandler {
         return String.join("\n", result);
     }
 
-    @SuppressWarnings("unused") // ToolHandler interface requires JsonObject parameter
+    @SuppressWarnings("unused") // ToolDefinition interface requires JsonObject parameter
     public String getNotifications(JsonObject args) {
         StringBuilder result = new StringBuilder();
         try {

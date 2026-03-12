@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.project;
 
 import com.github.catatafishen.ideagentforcopilot.psi.ProjectTools;
+import com.github.catatafishen.ideagentforcopilot.psi.RunConfigurationService;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.Tool;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -18,9 +19,10 @@ public final class ProjectToolFactory {
     }
 
     public static @NotNull List<Tool> create(
-            @NotNull Project project,
-            @NotNull ProjectTools projectTools,
-            boolean hasJava) {
+        @NotNull Project project,
+        @NotNull ProjectTools projectTools,
+        @NotNull RunConfigurationService runConfigService,
+        boolean hasJava) {
         var tools = new ArrayList<Tool>();
         tools.add(new GetProjectInfoTool(project, projectTools));
         if (hasJava) {
@@ -32,6 +34,11 @@ public final class ProjectToolFactory {
         if (hasJava) {
             tools.add(new EditProjectStructureTool(project, projectTools));
         }
+        tools.add(new ListRunConfigurationsTool(project, projectTools, runConfigService));
+        tools.add(new RunConfigurationTool(project, projectTools, runConfigService));
+        tools.add(new CreateRunConfigurationTool(project, projectTools, runConfigService));
+        tools.add(new EditRunConfigurationTool(project, projectTools, runConfigService));
+        tools.add(new DeleteRunConfigurationTool(project, projectTools, runConfigService));
         return List.copyOf(tools);
     }
 }

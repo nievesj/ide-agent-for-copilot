@@ -49,7 +49,7 @@ public final class ProjectTools extends AbstractToolHandler {
 
     // ---- get_project_info ----
 
-    @SuppressWarnings("unused") // ToolHandler interface requires JsonObject parameter
+    @SuppressWarnings("unused") // ToolDefinition interface requires JsonObject parameter
     public String getProjectInfo(JsonObject args) {
         return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             StringBuilder sb = new StringBuilder();
