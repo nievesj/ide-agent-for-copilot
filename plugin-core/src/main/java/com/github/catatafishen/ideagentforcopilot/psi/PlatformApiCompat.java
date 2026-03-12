@@ -445,7 +445,7 @@ public final class PlatformApiCompat {
      * IDE versions. Cascading: {@code descriptor.getName()} and {@code descriptor.getVersion()}
      * fail because the return type of {@code getPlugin} is unresolved.</p>
      */
-    static @Nullable String getPluginVersionInfo(@NotNull String pluginId) {
+    public static @Nullable String getPluginVersionInfo(@NotNull String pluginId) {
         var descriptor = com.intellij.ide.plugins.PluginManagerCore.getPlugin(
             com.intellij.openapi.extensions.PluginId.getId(pluginId));
         if (descriptor == null) return null;
@@ -461,7 +461,7 @@ public final class PlatformApiCompat {
      * JAR whose version differs between the dev IDE and target SDK. The Gradle build resolves
      * them correctly from the configured platform dependency.</p>
      */
-    static void addSourceFolder(@NotNull com.intellij.openapi.roots.ContentEntry entry,
+    public static void addSourceFolder(@NotNull com.intellij.openapi.roots.ContentEntry entry,
                                 @NotNull com.intellij.openapi.vfs.VirtualFile dir,
                                 @NotNull String type) {
         boolean isTest = type.startsWith("test_");
@@ -491,7 +491,7 @@ public final class PlatformApiCompat {
      * and the returned entry's {@code homePath()}/{@code versionString()} all fail.
      * The Gradle build compiles without errors.</p>
      */
-    static @NotNull String listSdkTypes(@NotNull Project project) {
+    public static @NotNull String listSdkTypes(@NotNull Project project) {
         var sb = new StringBuilder();
         var sdkTypes = com.intellij.openapi.projectRoots.SdkType.EP_NAME.getExtensionList();
         sb.append("\nAvailable SDK types:\n");
@@ -515,7 +515,7 @@ public final class PlatformApiCompat {
      * <p><b>Why extracted:</b> Same {@code SdkType.EP_NAME.getExtensionList()} resolution issue
      * as {@link #listSdkTypes}.</p>
      */
-    static @Nullable com.intellij.openapi.projectRoots.SdkType findSdkTypeByName(@NotNull String name) {
+    public static @Nullable com.intellij.openapi.projectRoots.SdkType findSdkTypeByName(@NotNull String name) {
         var sdkTypes = com.intellij.openapi.projectRoots.SdkType.EP_NAME.getExtensionList();
         for (var type : sdkTypes) {
             if (type.getName().equalsIgnoreCase(name) || type.getPresentableName().equalsIgnoreCase(name)) {
@@ -535,7 +535,7 @@ public final class PlatformApiCompat {
      * the false positive in calling code.</p>
      */
     @SuppressWarnings("unchecked")
-    static void writeActionRunAndWait(@NotNull Runnable action) throws Exception {
+    public static void writeActionRunAndWait(@NotNull Runnable action) throws Exception {
         com.intellij.openapi.application.WriteAction.runAndWait(
             (com.intellij.util.ThrowableRunnable<Exception>) action::run);
     }

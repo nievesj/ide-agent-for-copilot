@@ -1,11 +1,12 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.project;
 
-import com.github.catatafishen.ideagentforcopilot.psi.ProjectTools;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.BuildResultRenderer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Triggers incremental compilation of the project or a specific module.
@@ -13,8 +14,12 @@ import org.jetbrains.annotations.Nullable;
 @SuppressWarnings("java:S112")
 public final class BuildProjectTool extends ProjectTool {
 
-    public BuildProjectTool(Project project, ProjectTools projectTools) {
-        super(project, projectTools);
+    private static final String JSON_MODULE = "module";
+
+    private final AtomicBoolean buildInProgress = new AtomicBoolean(false);
+
+    public BuildProjectTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -51,6 +56,13 @@ public final class BuildProjectTool extends ProjectTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        return projectTools.buildProject(args);
+        if (!buildInProgress.compareAndSet(false, true)) {
+            return "Build already in progress. Please wait for the current build to complete before requesting another.";
+        }
+
+        String moduleName = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
+
+        return com.github.catatafishen.ideagentforcopilot.psi.java.ProjectBuildSupport.buildProject(
+            project, moduleName, buildInProgress);
     }
 }

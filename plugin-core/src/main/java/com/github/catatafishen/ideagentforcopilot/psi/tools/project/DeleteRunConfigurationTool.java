@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.project;
 
-import com.github.catatafishen.ideagentforcopilot.psi.ProjectTools;
 import com.github.catatafishen.ideagentforcopilot.psi.RunConfigurationService;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -15,9 +14,8 @@ public final class DeleteRunConfigurationTool extends ProjectTool {
 
     private final RunConfigurationService runConfigService;
 
-    public DeleteRunConfigurationTool(Project project, ProjectTools projectTools,
-                                      RunConfigurationService runConfigService) {
-        super(project, projectTools);
+    public DeleteRunConfigurationTool(Project project, RunConfigurationService runConfigService) {
+        super(project);
         this.runConfigService = runConfigService;
     }
 

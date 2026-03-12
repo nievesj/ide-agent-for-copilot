@@ -1,11 +1,15 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.project;
 
-import com.github.catatafishen.ideagentforcopilot.psi.ProjectTools;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.IdeInfoRenderer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Checks whether IntelliJ indexing is in progress; optionally waits until it finishes.
@@ -13,8 +17,10 @@ import org.jetbrains.annotations.Nullable;
 @SuppressWarnings("java:S112")
 public final class GetIndexingStatusTool extends ProjectTool {
 
-    public GetIndexingStatusTool(Project project, ProjectTools projectTools) {
-        super(project, projectTools);
+    private static final String PARAM_TIMEOUT = "timeout";
+
+    public GetIndexingStatusTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -52,6 +58,27 @@ public final class GetIndexingStatusTool extends ProjectTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        return projectTools.getIndexingStatus(args);
+        boolean wait = args.has("wait") && args.get("wait").getAsBoolean();
+        int timeoutSec = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 60;
+
+        var dumbService = DumbService.getInstance(project);
+        boolean indexing = dumbService.isDumb();
+
+        if (indexing && wait) {
+            CompletableFuture<Void> done = new CompletableFuture<>();
+            dumbService.runWhenSmart(() -> done.complete(null));
+            try {
+                done.get(timeoutSec, TimeUnit.SECONDS);
+                return "Indexing finished. IDE is ready.";
+            } catch (TimeoutException e) {
+                return "Indexing still in progress after " + timeoutSec + "s timeout. Try again later.";
+            }
+        }
+
+        if (indexing) {
+            return "Indexing is in progress. Use wait=true to block until finished. " +
+                "Some tools (inspections, find_references, search_symbols) may return incomplete results while indexing.";
+        }
+        return "IDE is ready. Indexing is complete.";
     }
 }
