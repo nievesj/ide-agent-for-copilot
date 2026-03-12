@@ -51,7 +51,7 @@ public final class PsiBridgeService implements Disposable {
         this.project = project;
         this.registry = ToolRegistry.getInstance(project);
 
-        // Initialize handler groups
+        // Initialize services
         RunConfigurationService runConfigService = new RunConfigurationService(
             project, className -> ClassResolverUtil.resolveClass(project, className));
 
