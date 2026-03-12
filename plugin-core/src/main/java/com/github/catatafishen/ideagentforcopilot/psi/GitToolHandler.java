@@ -36,11 +36,9 @@ public final class GitToolHandler {
         Pattern.compile("^commit ([0-9a-f]{40})$", Pattern.MULTILINE);
 
     private final Project project;
-    private final FileTools fileTools;
 
-    GitToolHandler(Project project, FileTools fileTools) {
+    GitToolHandler(Project project) {
         this.project = project;
-        this.fileTools = fileTools;
     }
 
     /**
@@ -48,7 +46,7 @@ public final class GitToolHandler {
      * Called by git tool classes before commands that need the working tree up-to-date.
      */
     public void flushAndSave() {
-        fileTools.flushPendingAutoFormat();
+        com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool.flushPendingAutoFormat(project);
         saveAllDocuments();
     }
 

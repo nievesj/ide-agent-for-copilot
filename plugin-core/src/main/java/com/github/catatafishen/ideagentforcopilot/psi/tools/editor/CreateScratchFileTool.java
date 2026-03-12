@@ -1,8 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.editor;
 
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
-import com.github.catatafishen.ideagentforcopilot.psi.FileTools;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings;
+import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ScratchFileRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.ide.scratch.ScratchFileService;
@@ -77,8 +77,8 @@ public final class CreateScratchFileTool extends EditorTool {
 
             String scratchPath = resultFile[0].getPath();
             int lineCount = content.isEmpty() ? 1 : (int) content.lines().count();
-            FileTools.followFileIfEnabled(project, scratchPath, 1, lineCount,
-                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel(project) + " created scratch");
+            FileTool.followFileIfEnabled(project, scratchPath, 1, lineCount,
+                FileTool.HIGHLIGHT_EDIT, FileTool.agentLabel(project) + " created scratch");
 
             return "Created scratch file: " + scratchPath + " (" + content.length() + " chars)";
         } catch (Exception e) {

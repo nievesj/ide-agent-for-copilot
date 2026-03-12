@@ -1,11 +1,19 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.file;
 
-import com.github.catatafishen.ideagentforcopilot.psi.FileTools;
+import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
+import com.github.catatafishen.ideagentforcopilot.psi.FileAccessTracker;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.WriteFileRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.LocalFileSystem;
 import org.jetbrains.annotations.NotNull;
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.WriteFileRenderer;
 import org.jetbrains.annotations.Nullable;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Creates a new file and registers it in IntelliJ's VFS.
@@ -13,8 +21,10 @@ import org.jetbrains.annotations.Nullable;
 @SuppressWarnings("java:S112")
 public final class CreateFileTool extends FileTool {
 
-    public CreateFileTool(Project project, FileTools fileTools) {
-        super(project, fileTools);
+    private static final String FORMAT_CHARS_SUFFIX = " chars)";
+
+    public CreateFileTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -52,6 +62,48 @@ public final class CreateFileTool extends FileTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        return fileTools.createFile(args);
+        if (!args.has("path") || !args.has("content")) {
+            return "Error: 'path' and 'content' parameters are required";
+        }
+        String pathStr = args.get("path").getAsString();
+        String content = args.get("content").getAsString();
+
+        String basePath = project.getBasePath();
+        Path pathObj = Path.of(pathStr);
+        Path filePath;
+        if (pathObj.isAbsolute()) {
+            filePath = pathObj;
+        } else if (basePath != null) {
+            filePath = Path.of(basePath, pathStr);
+        } else {
+            return "Error: Cannot resolve relative path without project base path";
+        }
+
+        if (Files.exists(filePath)) {
+            return "Error: File already exists: " + pathStr +
+                ". Use edit_text to modify existing files.";
+        }
+
+        Path parentDir = filePath.getParent();
+        if (parentDir != null) {
+            Files.createDirectories(parentDir);
+        }
+        Files.writeString(filePath, content, StandardCharsets.UTF_8);
+
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+        int lineCount = content.split("\n", -1).length;
+        EdtUtil.invokeLater(() -> {
+            try {
+                LocalFileSystem.getInstance().refreshAndFindFileByPath(filePath.toString());
+                resultFuture.complete("✓ Created file: " + pathStr + " (" + content.length() + FORMAT_CHARS_SUFFIX);
+            } catch (Exception e) {
+                resultFuture.complete("File created but VFS refresh failed: " + e.getMessage());
+            }
+        });
+
+        String result = resultFuture.get(10, TimeUnit.SECONDS);
+        followFileIfEnabled(project, pathStr, 1, lineCount, HIGHLIGHT_EDIT, agentLabel(project) + " created");
+        FileAccessTracker.recordWrite(project, pathStr);
+        return result;
     }
 }

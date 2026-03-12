@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.file;
 
-import com.github.catatafishen.ideagentforcopilot.psi.FileTools;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -10,30 +9,15 @@ import org.jetbrains.annotations.Nullable;
  * Backward-compatible alias for {@link ReadFileTool} using the {@code read_file} id.
  */
 @SuppressWarnings("java:S112")
-public final class ReadFileAliasTool extends FileTool {
+public final class ReadFileAliasTool extends ReadFileTool {
 
-    public ReadFileAliasTool(Project project, FileTools fileTools) {
-        super(project, fileTools);
+    public ReadFileAliasTool(Project project) {
+        super(project);
     }
 
     @Override
     public @NotNull String id() {
         return "read_file";
-    }
-
-    @Override
-    public @NotNull String displayName() {
-        return "Read File";
-    }
-
-    @Override
-    public @NotNull String description() {
-        return "Read a file via IntelliJ's editor buffer -- always returns the current in-memory content";
-    }
-
-    @Override
-    public boolean isReadOnly() {
-        return true;
     }
 
     @Override
@@ -43,10 +27,5 @@ public final class ReadFileAliasTool extends FileTool {
             {"start_line", TYPE_INTEGER, "Optional: first line to read (1-based, inclusive)"},
             {"end_line", TYPE_INTEGER, "Optional: last line to read (1-based, inclusive). Use with start_line to read a range"}
         }, "path");
-    }
-
-    @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        return fileTools.readFile(args);
     }
 }

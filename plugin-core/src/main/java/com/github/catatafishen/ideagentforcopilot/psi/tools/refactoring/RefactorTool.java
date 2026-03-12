@@ -1,8 +1,9 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring;
 
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
-import com.github.catatafishen.ideagentforcopilot.psi.FileTools;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
+import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.RefactorRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
@@ -18,7 +19,6 @@ import com.intellij.psi.PsiNamedElement;
 import com.intellij.psi.PsiReference;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.searches.ReferencesSearch;
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.RefactorRenderer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -103,8 +103,8 @@ public final class RefactorTool extends RefactoringTool {
 
         String result = resultFuture.get(30, TimeUnit.SECONDS);
         if (!result.startsWith("Error")) {
-            FileTools.followFileIfEnabled(project, pathStr, Math.max(targetLine, 1), Math.max(targetLine, 1),
-                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel(project) + " refactored");
+            FileTool.followFileIfEnabled(project, pathStr, Math.max(targetLine, 1), Math.max(targetLine, 1),
+                FileTool.HIGHLIGHT_EDIT, FileTool.agentLabel(project) + " refactored");
         }
         return result;
     }

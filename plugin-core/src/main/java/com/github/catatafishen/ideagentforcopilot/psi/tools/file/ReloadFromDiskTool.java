@@ -1,10 +1,12 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.file;
 
-import com.github.catatafishen.ideagentforcopilot.psi.FileTools;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.VfsUtil;
+import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.SimpleStatusRenderer;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -14,8 +16,8 @@ import org.jetbrains.annotations.Nullable;
 @SuppressWarnings("java:S112")
 public final class ReloadFromDiskTool extends FileTool {
 
-    public ReloadFromDiskTool(Project project, FileTools fileTools) {
-        super(project, fileTools);
+    public ReloadFromDiskTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -51,7 +53,31 @@ public final class ReloadFromDiskTool extends FileTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        return fileTools.reloadFromDisk(args);
+    public @Nullable String execute(@NotNull JsonObject args) {
+        String basePath = project.getBasePath();
+        if (basePath == null) return "No project base path";
+
+        if (!args.has("path") || args.get("path").isJsonNull()) {
+            VirtualFile root = LocalFileSystem.getInstance().findFileByPath(basePath);
+            if (root == null) return "Project root not found";
+            VfsUtil.markDirtyAndRefresh(false, true, true, root);
+            return "Reloaded project root from disk (" + basePath + ")";
+        }
+
+        String pathStr = args.get("path").getAsString();
+        VirtualFile vf = resolveVirtualFile(pathStr);
+        if (vf == null) {
+            java.io.File f = new java.io.File(pathStr);
+            if (!f.isAbsolute()) f = new java.io.File(basePath, pathStr);
+            java.io.File parent = f.getParentFile();
+            if (parent != null) {
+                VirtualFile parentVf = LocalFileSystem.getInstance().refreshAndFindFileByPath(parent.getAbsolutePath());
+                if (parentVf != null) return "Reloaded parent directory: " + parent.getAbsolutePath();
+            }
+            return "File not found: " + pathStr;
+        }
+
+        VfsUtil.markDirtyAndRefresh(false, vf.isDirectory(), true, vf);
+        return "Reloaded from disk: " + vf.getPath();
     }
 }

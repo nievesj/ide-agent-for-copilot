@@ -63,7 +63,7 @@ public final class PlatformApiCompat {
      * differences ({@code @ActionText String} vs plain {@code String}) between the dev IDE
      * and the target SDK. The Gradle build compiles without errors.</p>
      */
-    static @Nullable String getUndoActionName(
+    public static @Nullable String getUndoActionName(
         @NotNull com.intellij.openapi.command.undo.UndoManager undoManager,
         @Nullable com.intellij.openapi.fileEditor.FileEditor fileEditor) {
         return undoManager.getUndoActionNameAndDescription(fileEditor).first;
@@ -77,7 +77,7 @@ public final class PlatformApiCompat {
      * {@code getRedoActionNameAndDescription()} triggers false-positive
      * daemon errors between SDK versions.</p>
      */
-    static @Nullable String getRedoActionName(
+    public static @Nullable String getRedoActionName(
         @NotNull com.intellij.openapi.command.undo.UndoManager undoManager,
         @Nullable com.intellij.openapi.fileEditor.FileEditor fileEditor) {
         return undoManager.getRedoActionNameAndDescription(fileEditor).first;

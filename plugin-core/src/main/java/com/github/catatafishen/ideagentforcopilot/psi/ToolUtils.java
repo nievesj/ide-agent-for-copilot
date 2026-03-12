@@ -217,7 +217,7 @@ public final class ToolUtils {
      * This handles em-dashes, smart quotes, non-breaking spaces, emoji, etc. that LLMs often can't reproduce exactly.
      * Uses codepoint iteration to correctly handle surrogate pairs (e.g. 4-byte emoji).
      */
-    static String normalizeForMatch(String s) {
+    public static String normalizeForMatch(String s) {
         // First normalize line endings.
         s = s.replace("\r\n", "\n").replace('\r', '\n');
         // Replace ALL non-ASCII codepoints with '?' for fuzzy matching.
@@ -237,7 +237,7 @@ public final class ToolUtils {
      * starting from the given position. This accounts for multibyte/surrogate-pair chars that normalize
      * to a single '?' character.
      */
-    static int findOriginalLength(String original, int startIdx, int normalizedLen) {
+    public static int findOriginalLength(String original, int startIdx, int normalizedLen) {
         int origPos = startIdx;
         int normCount = 0;
         while (normCount < normalizedLen && origPos < original.length()) {

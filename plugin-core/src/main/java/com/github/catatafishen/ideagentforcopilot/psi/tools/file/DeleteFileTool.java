@@ -1,11 +1,20 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.file;
 
-import com.github.catatafishen.ideagentforcopilot.psi.FileTools;
-import com.google.gson.JsonObject;
-import com.intellij.openapi.project.Project;
-import org.jetbrains.annotations.NotNull;
+import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
+import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SimpleStatusRenderer;
+import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.concurrency.AppExecutorUtil;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Deletes a file from the project via IntelliJ.
@@ -13,8 +22,8 @@ import org.jetbrains.annotations.Nullable;
 @SuppressWarnings("java:S112")
 public final class DeleteFileTool extends FileTool {
 
-    public DeleteFileTool(Project project, FileTools fileTools) {
-        super(project, fileTools);
+    public DeleteFileTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -56,6 +65,55 @@ public final class DeleteFileTool extends FileTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        return fileTools.deleteFile(args);
+        if (!args.has("path")) return ToolUtils.ERROR_PATH_REQUIRED;
+        String pathStr = args.get("path").getAsString();
+
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+
+        ReadAction.nonBlocking(() -> {
+            try {
+                VirtualFile vf = resolveVirtualFile(pathStr);
+                if (vf == null) {
+                    resultFuture.complete(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
+                    return null;
+                }
+                if (vf.isDirectory()) {
+                    resultFuture.complete("Error: Cannot delete directories. Path is a directory: " + pathStr);
+                    return null;
+                }
+                scheduleFileDeletion(vf, pathStr, resultFuture);
+                return null;
+            } catch (Exception e) {
+                resultFuture.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
+                return null;
+            }
+        }).inSmartMode(project).submit(AppExecutorUtil.getAppExecutorService());
+
+        return resultFuture.get(10, TimeUnit.SECONDS);
+    }
+
+    private void scheduleFileDeletion(VirtualFile vf, String pathStr, CompletableFuture<String> resultFuture) {
+        final DeleteFileTool requestor = this;
+        EdtUtil.invokeLater(() ->
+            ApplicationManager.getApplication().runWriteAction(() -> {
+                try {
+                    com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
+                        project,
+                        () -> {
+                            try {
+                                vf.delete(requestor);
+                            } catch (IOException e) {
+                                throw new RuntimeException(e);
+                            }
+                        },
+                        "Delete File: " + vf.getName(),
+                        null
+                    );
+                    resultFuture.complete("Deleted file: " + pathStr);
+                } catch (Exception e) {
+                    resultFuture.complete("Error deleting file: " + e.getMessage());
+                }
+            })
+        );
     }
 }

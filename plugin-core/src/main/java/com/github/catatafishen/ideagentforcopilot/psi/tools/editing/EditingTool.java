@@ -1,8 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.editing;
 
-import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
-import com.github.catatafishen.ideagentforcopilot.psi.FileAccessTracker;
-import com.github.catatafishen.ideagentforcopilot.psi.FileTools;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.Tool;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;

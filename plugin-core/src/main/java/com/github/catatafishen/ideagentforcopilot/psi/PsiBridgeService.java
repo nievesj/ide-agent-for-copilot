@@ -44,15 +44,13 @@ public final class PsiBridgeService implements Disposable {
 
     private final Project project;
     private final ToolRegistry registry;
-    private final FileTools fileTools;
     private final java.util.Set<String> sessionAllowedTools =
         java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public PsiBridgeService(@NotNull Project project) {
         this.project = project;
         this.registry = ToolRegistry.getInstance(project);
-        this.fileTools = new FileTools(project);
-        GitToolHandler gitToolHandler = new GitToolHandler(project, fileTools);
+        GitToolHandler gitToolHandler = new GitToolHandler(project);
 
         // Initialize handler groups
         RunConfigurationService runConfigService = new RunConfigurationService(
@@ -64,7 +62,7 @@ public final class PsiBridgeService implements Disposable {
         boolean hasJava = PlatformApiCompat.isPluginInstalled("com.intellij.modules.java");
         var allTools = new java.util.ArrayList<com.github.catatafishen.ideagentforcopilot.psi.tools.Tool>();
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.git.GitToolFactory.create(project, gitToolHandler));
-        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileToolFactory.create(project, fileTools));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.navigation.NavigationToolFactory.create(project, hasJava));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.quality.QualityToolFactory.create(project, qualityTools, SonarQubeIntegration.isInstalled()));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring.RefactoringToolFactory.create(project, hasJava));
@@ -95,7 +93,7 @@ public final class PsiBridgeService implements Disposable {
      * Runs deferred auto-format and import optimization on all files modified during the turn.
      */
     public void flushPendingAutoFormat() {
-        fileTools.flushPendingAutoFormat();
+        com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool.flushPendingAutoFormat(project);
     }
 
     /**

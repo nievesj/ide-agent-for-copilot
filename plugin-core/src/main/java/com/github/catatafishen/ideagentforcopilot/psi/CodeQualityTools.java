@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
+import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -945,8 +946,8 @@ public final class CodeQualityTools extends AbstractToolHandler {
         });
         String result = resultFuture.get(10, TimeUnit.SECONDS);
         if (result.startsWith("Added") || result.startsWith("Suppressed")) {
-            FileTools.followFileIfEnabled(project, pathStr, line, line,
-                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel(project) + " suppressed");
+            FileTool.followFileIfEnabled(project, pathStr, line, line,
+                FileTool.HIGHLIGHT_EDIT, FileTool.agentLabel(project) + " suppressed");
         }
         return result;
     }
@@ -1116,8 +1117,8 @@ public final class CodeQualityTools extends AbstractToolHandler {
         });
         String result = resultFuture.get(30, TimeUnit.SECONDS);
         if (result.startsWith("Code formatted")) {
-            FileTools.followFileIfEnabled(project, pathStr, 1, 1,
-                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel(project) + " formatted");
+            FileTool.followFileIfEnabled(project, pathStr, 1, 1,
+                FileTool.HIGHLIGHT_EDIT, FileTool.agentLabel(project) + " formatted");
         }
         return result;
     }
@@ -1176,8 +1177,8 @@ public final class CodeQualityTools extends AbstractToolHandler {
 
         String result = resultFuture.get(30, TimeUnit.SECONDS);
         if (!result.startsWith("Error") && !result.startsWith("No ")) {
-            FileTools.followFileIfEnabled(project, pathStr, targetLine, targetLine,
-                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel(project) + " applied fix");
+            FileTool.followFileIfEnabled(project, pathStr, targetLine, targetLine,
+                FileTool.HIGHLIGHT_EDIT, FileTool.agentLabel(project) + " applied fix");
         }
         return result;
     }

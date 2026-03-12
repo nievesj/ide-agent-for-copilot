@@ -1,10 +1,19 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.file;
 
-import com.github.catatafishen.ideagentforcopilot.psi.FileTools;
+import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
+import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Renames a file in place without moving it to a different directory.
@@ -12,8 +21,8 @@ import org.jetbrains.annotations.Nullable;
 @SuppressWarnings("java:S112")
 public final class RenameFileTool extends FileTool {
 
-    public RenameFileTool(Project project, FileTools fileTools) {
-        super(project, fileTools);
+    public RenameFileTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -46,6 +55,50 @@ public final class RenameFileTool extends FileTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        return fileTools.renameFile(args);
+        if (!args.has("path") || !args.has("new_name"))
+            return ToolUtils.ERROR_PREFIX + "'path' and 'new_name' parameters are required";
+        String pathStr = args.get("path").getAsString();
+        String newName = args.get("new_name").getAsString();
+
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+        final RenameFileTool requestor = this;
+
+        ReadAction.nonBlocking(() -> {
+            try {
+                VirtualFile vf = resolveVirtualFile(pathStr);
+                if (vf == null) {
+                    resultFuture.complete(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
+                    return null;
+                }
+                String oldName = vf.getName();
+                EdtUtil.invokeLater(() ->
+                    ApplicationManager.getApplication().runWriteAction(() -> {
+                        try {
+                            com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
+                                project,
+                                () -> {
+                                    try {
+                                        vf.rename(requestor, newName);
+                                    } catch (IOException e) {
+                                        throw new RuntimeException(e);
+                                    }
+                                },
+                                "Rename File: " + oldName + " to " + newName,
+                                null
+                            );
+                            resultFuture.complete("Renamed " + oldName + " to " + newName);
+                        } catch (Exception e) {
+                            resultFuture.complete("Error renaming file: " + e.getMessage());
+                        }
+                    })
+                );
+                return null;
+            } catch (Exception e) {
+                resultFuture.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
+                return null;
+            }
+        }).inSmartMode(project).submit(AppExecutorUtil.getAppExecutorService());
+
+        return resultFuture.get(10, TimeUnit.SECONDS);
     }
 }

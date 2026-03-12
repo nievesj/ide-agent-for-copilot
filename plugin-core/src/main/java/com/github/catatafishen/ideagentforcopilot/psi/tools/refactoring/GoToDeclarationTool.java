@@ -1,7 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring;
 
-import com.github.catatafishen.ideagentforcopilot.psi.FileTools;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
+import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.GoToDeclarationRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
@@ -16,7 +17,6 @@ import com.intellij.psi.PsiManager;
 import com.intellij.psi.PsiNamedElement;
 import com.intellij.psi.PsiRecursiveElementWalkingVisitor;
 import com.intellij.psi.PsiReference;
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.GoToDeclarationRenderer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -86,8 +86,8 @@ public final class GoToDeclarationTool extends RefactoringTool {
 
         if (declInfo[0] != null && declInfo[1] != null) {
             int declLine = Integer.parseInt(declInfo[1]);
-            FileTools.followFileIfEnabled(project, declInfo[0], declLine, declLine,
-                FileTools.HIGHLIGHT_READ, FileTools.agentLabel(project) + " found declaration");
+            FileTool.followFileIfEnabled(project, declInfo[0], declLine, declLine,
+                FileTool.HIGHLIGHT_READ, FileTool.agentLabel(project) + " found declaration");
         }
         return result;
     }

@@ -45,7 +45,7 @@ public final class FileAccessTracker {
     private FileAccessTracker() {
     }
 
-    static void recordRead(Project project, String path) {
+    public static void recordRead(Project project, String path) {
         VirtualFile vf = ToolUtils.resolveVirtualFile(project, path);
         if (vf == null) return;
         String key = vf.getPath();

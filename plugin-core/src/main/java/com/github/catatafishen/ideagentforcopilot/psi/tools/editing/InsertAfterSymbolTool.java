@@ -2,8 +2,8 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.editing;
 
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.FileAccessTracker;
-import com.github.catatafishen.ideagentforcopilot.psi.FileTools;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
+import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ReplaceSymbolRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
@@ -132,8 +132,8 @@ public final class InsertAfterSymbolTool extends EditingTool {
         if (!resultStr.startsWith(ToolUtils.ERROR_PREFIX) && !resultStr.startsWith(SYMBOL_PREFIX)) {
             int insertedLines = (int) content.chars().filter(c -> c == '\n').count() + 1;
             int insertStart = endLine[0] + 1;
-            FileTools.followFileIfEnabled(project, pathStr, insertStart, insertStart + insertedLines - 1,
-                FileTools.HIGHLIGHT_EDIT, "inserting after " + symbolName);
+            FileTool.followFileIfEnabled(project, pathStr, insertStart, insertStart + insertedLines - 1,
+                FileTool.HIGHLIGHT_EDIT, "inserting after " + symbolName);
             FileAccessTracker.recordWrite(project, pathStr);
         }
         return resultStr;
