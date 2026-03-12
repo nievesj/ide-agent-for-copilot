@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Handles project environment tools: get_project_info, build_project, get_indexing_status, download_sources.
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
-class ProjectTools extends AbstractToolHandler {
+public final class ProjectTools extends AbstractToolHandler {
     private static final Logger LOG = Logger.getInstance(ProjectTools.class);
 
     private static final String PARAM_TIMEOUT = "timeout";
@@ -78,7 +78,7 @@ class ProjectTools extends AbstractToolHandler {
     // ---- get_project_info ----
 
     @SuppressWarnings("unused") // ToolHandler interface requires JsonObject parameter
-    private String getProjectInfo(JsonObject args) {
+    public String getProjectInfo(JsonObject args) {
         return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             StringBuilder sb = new StringBuilder();
             String basePath = project.getBasePath();
@@ -192,7 +192,7 @@ class ProjectTools extends AbstractToolHandler {
 
     // ---- build_project ----
 
-    private String buildProject(JsonObject args) throws Exception {
+    public String buildProject(JsonObject args) throws Exception {
         if (!buildInProgress.compareAndSet(false, true)) {
             return "Build already in progress. Please wait for the current build to complete before requesting another.";
         }
@@ -204,7 +204,7 @@ class ProjectTools extends AbstractToolHandler {
 
     // ---- get_indexing_status ----
 
-    private String getIndexingStatus(JsonObject args) throws Exception {
+    public String getIndexingStatus(JsonObject args) throws Exception {
         boolean wait = args.has("wait") && args.get("wait").getAsBoolean();
         int timeoutSec = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 60;
 
@@ -231,7 +231,7 @@ class ProjectTools extends AbstractToolHandler {
 
     // ---- mark_directory ----
 
-    private String markDirectory(JsonObject args) throws Exception {
+    public String markDirectory(JsonObject args) throws Exception {
         String pathStr = args.get("path").getAsString();
         String type = args.get("type").getAsString();
 
@@ -340,7 +340,7 @@ class ProjectTools extends AbstractToolHandler {
     // ---- download_sources ----
 
     @SuppressWarnings({"JavaReflectionMemberAccess", "RedundantSuppression"})
-    private String downloadSources(JsonObject args) {
+    public String downloadSources(JsonObject args) {
         String library = args.has(PARAM_LIBRARY) ? args.get(PARAM_LIBRARY).getAsString() : "";
 
         try {
@@ -577,7 +577,7 @@ class ProjectTools extends AbstractToolHandler {
     private static final String MSG_MODULE_PREFIX = "Module '";
     private static final String MSG_NOT_FOUND = "' not found";
 
-    private String editProjectStructure(JsonObject args) throws Exception {
+    public String editProjectStructure(JsonObject args) throws Exception {
         String action = args.has(PARAM_ACTION) ? args.get(PARAM_ACTION).getAsString() : "";
         return switch (action) {
             case "list_modules" -> listModules();

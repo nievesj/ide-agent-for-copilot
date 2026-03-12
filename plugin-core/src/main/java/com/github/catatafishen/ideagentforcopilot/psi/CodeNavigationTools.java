@@ -34,7 +34,7 @@ import java.util.Set;
  * Handles code navigation tool calls: search_symbols, get_file_outline,
  * find_references, and list_project_files.
  */
-class CodeNavigationTools extends AbstractToolHandler {
+public final class CodeNavigationTools extends AbstractToolHandler {
 
     private final List<ToolDefinition> definitions;
 
@@ -81,7 +81,7 @@ class CodeNavigationTools extends AbstractToolHandler {
         });
     }
 
-    String listProjectFiles(JsonObject args) {
+    public String listProjectFiles(JsonObject args) {
         String dir = args.has("directory") ? args.get("directory").getAsString() : "";
         String pattern = args.has("pattern") ? args.get("pattern").getAsString() : "";
         String sort = args.has("sort") ? args.get("sort").getAsString() : "name";
@@ -157,7 +157,7 @@ class CodeNavigationTools extends AbstractToolHandler {
 
     // ---- get_file_outline ----
 
-    String getFileOutline(JsonObject args) {
+    public String getFileOutline(JsonObject args) {
         if (!args.has("path") || args.get("path").isJsonNull())
             return ToolUtils.ERROR_PATH_REQUIRED;
         String pathStr = args.get("path").getAsString();
@@ -210,7 +210,7 @@ class CodeNavigationTools extends AbstractToolHandler {
      * Delegates to {@link com.github.catatafishen.ideagentforcopilot.psi.java.CodeNavigationJavaSupport} which uses Java-only PSI classes.
      * Only registered when {@code com.intellij.modules.java} is present.
      */
-    String getClassOutline(JsonObject args) {
+    public String getClassOutline(JsonObject args) {
         String className = args.has("class_name") ? args.get("class_name").getAsString() : "";
         if (className.isEmpty()) return "Error: 'class_name' parameter is required";
         boolean includeInherited = args.has("include_inherited")
@@ -223,7 +223,7 @@ class CodeNavigationTools extends AbstractToolHandler {
 
     // ---- search_symbols ----
 
-    String searchSymbols(JsonObject args) {
+    public String searchSymbols(JsonObject args) {
         String query = args.has(PARAM_QUERY) ? args.get(PARAM_QUERY).getAsString() : "";
         String typeFilter = args.has("type") ? args.get("type").getAsString() : "";
 
@@ -336,7 +336,7 @@ class CodeNavigationTools extends AbstractToolHandler {
 
     // ---- find_references ----
 
-    String findReferences(JsonObject args) {
+    public String findReferences(JsonObject args) {
         if (!args.has(PARAM_SYMBOL) || args.get(PARAM_SYMBOL).isJsonNull())
             return "Error: 'symbol' parameter is required";
         String symbol = args.get(PARAM_SYMBOL).getAsString();
@@ -451,7 +451,7 @@ class CodeNavigationTools extends AbstractToolHandler {
         }
     }
 
-    String searchText(JsonObject args) {
+    public String searchText(JsonObject args) {
         if (!args.has(PARAM_QUERY) || args.get(PARAM_QUERY).isJsonNull())
             return "Error: 'query' parameter is required";
         String query = args.get(PARAM_QUERY).getAsString();

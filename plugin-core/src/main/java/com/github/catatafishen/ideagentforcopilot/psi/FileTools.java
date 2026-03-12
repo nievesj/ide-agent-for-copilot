@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Handles file read/write/create/delete tool calls for the PSI Bridge.
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
-class FileTools extends AbstractToolHandler {
+public final class FileTools extends AbstractToolHandler {
 
     private static final Logger LOG = Logger.getInstance(FileTools.class);
 
@@ -168,7 +168,7 @@ class FileTools extends AbstractToolHandler {
         return definitions;
     }
 
-    private String readFile(JsonObject args) {
+    public String readFile(JsonObject args) {
         if (!args.has("path") || args.get("path").isJsonNull())
             return ToolUtils.ERROR_PATH_REQUIRED;
         String pathStr = args.get("path").getAsString();
@@ -454,7 +454,7 @@ class FileTools extends AbstractToolHandler {
         return true; // default
     }
 
-    private String writeFile(JsonObject args) throws Exception {
+    public String writeFile(JsonObject args) throws Exception {
         if (!args.has("path") || args.get("path").isJsonNull())
             return ToolUtils.ERROR_PATH_REQUIRED;
         String pathStr = args.get("path").getAsString();
@@ -819,7 +819,7 @@ class FileTools extends AbstractToolHandler {
         }
     }
 
-    private String createFile(JsonObject args) throws Exception {
+    public String createFile(JsonObject args) throws Exception {
         if (!args.has("path") || !args.has(PARAM_CONTENT)) {
             return "Error: 'path' and 'content' parameters are required";
         }
@@ -869,7 +869,7 @@ class FileTools extends AbstractToolHandler {
         return result;
     }
 
-    private String deleteFile(JsonObject args) throws Exception {
+    public String deleteFile(JsonObject args) throws Exception {
         if (!args.has("path")) return ToolUtils.ERROR_PATH_REQUIRED;
         String pathStr = args.get("path").getAsString();
 
@@ -921,7 +921,7 @@ class FileTools extends AbstractToolHandler {
         );
     }
 
-    private String renameFile(JsonObject args) throws Exception {
+    public String renameFile(JsonObject args) throws Exception {
         if (!args.has("path") || !args.has("new_name"))
             return ToolUtils.ERROR_PREFIX + "'path' and 'new_name' parameters are required";
         String pathStr = args.get("path").getAsString();
@@ -968,7 +968,7 @@ class FileTools extends AbstractToolHandler {
         return resultFuture.get(10, TimeUnit.SECONDS);
     }
 
-    private String moveFile(JsonObject args) throws Exception {
+    public String moveFile(JsonObject args) throws Exception {
         if (!args.has("path") || !args.has("destination"))
             return ToolUtils.ERROR_PREFIX + "'path' and 'destination' parameters are required";
         String pathStr = args.get("path").getAsString();
@@ -1066,7 +1066,7 @@ class FileTools extends AbstractToolHandler {
         return "Undid " + undone + " action(s) on " + pathStr + ": " + actions;
     }
 
-    private String undo(JsonObject args) throws Exception {
+    public String undo(JsonObject args) throws Exception {
         if (!args.has("path")) return ToolUtils.ERROR_PATH_REQUIRED;
         String pathStr = args.get("path").getAsString();
         int count = args.has(PARAM_COUNT) ? args.get(PARAM_COUNT).getAsInt() : 1;
@@ -1076,7 +1076,7 @@ class FileTools extends AbstractToolHandler {
         return resultFuture.get(10, TimeUnit.SECONDS);
     }
 
-    private String redo(JsonObject args) throws Exception {
+    public String redo(JsonObject args) throws Exception {
         if (!args.has("path")) return ToolUtils.ERROR_PATH_REQUIRED;
         String pathStr = args.get("path").getAsString();
         int count = args.has(PARAM_COUNT) ? args.get(PARAM_COUNT).getAsInt() : 1;
@@ -1124,7 +1124,7 @@ class FileTools extends AbstractToolHandler {
      * Refreshes one or more files/directories in IntelliJ's VFS from disk.
      * Useful after external tools (e.g. build scripts) modify files outside the editor.
      */
-    private String reloadFromDisk(JsonObject args) {
+    public String reloadFromDisk(JsonObject args) {
         String basePath = project.getBasePath();
         if (basePath == null) return "No project base path";
 

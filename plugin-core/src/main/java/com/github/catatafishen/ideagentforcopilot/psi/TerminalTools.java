@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
  * Terminal tool handlers: run_in_terminal, write_terminal_input, read_terminal_output, list_terminals.
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
-final class TerminalTools extends AbstractToolHandler {
+public final class TerminalTools extends AbstractToolHandler {
 
     private static final Logger LOG = Logger.getInstance(TerminalTools.class);
     private static final String JSON_TAB_NAME = "tab_name";
@@ -67,7 +67,7 @@ final class TerminalTools extends AbstractToolHandler {
             .handler(handler);
     }
 
-    private String runInTerminal(JsonObject args) {
+    public String runInTerminal(JsonObject args) {
         String command = args.get("command").getAsString();
         String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
         boolean newTab = args.has("new_tab") && args.get("new_tab").getAsBoolean();
@@ -113,7 +113,7 @@ final class TerminalTools extends AbstractToolHandler {
      * Send raw text/keystrokes to a running terminal without appending Enter.
      * Useful for answering prompts (y/n), sending Ctrl-C, or typing partial input.
      */
-    private String writeTerminalInput(JsonObject args) {
+    public String writeTerminalInput(JsonObject args) {
         String input = args.get("input").getAsString();
         String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
 
@@ -277,7 +277,7 @@ final class TerminalTools extends AbstractToolHandler {
     /**
      * Read terminal output from a named tab using TerminalWidget.getText().
      */
-    private String readTerminalOutput(JsonObject args) {
+    public String readTerminalOutput(JsonObject args) {
         String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
         int maxLines = args.has("max_lines") ? args.get("max_lines").getAsInt() : DEFAULT_MAX_LINES;
 
@@ -385,7 +385,7 @@ final class TerminalTools extends AbstractToolHandler {
         return sb.toString();
     }
 
-    private String listTerminals() {
+    public String listTerminals() {
         StringBuilder result = new StringBuilder();
 
         appendOpenTerminalTabs(result);

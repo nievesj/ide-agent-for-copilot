@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit;
  * create_scratch_file, and list_scratch_files.
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
-class EditorTools extends AbstractToolHandler {
+public class EditorTools extends AbstractToolHandler {
 
     private static final Logger LOG = Logger.getInstance(EditorTools.class);
 
@@ -85,7 +85,7 @@ class EditorTools extends AbstractToolHandler {
             .handler(handler);
     }
 
-    private String openInEditor(JsonObject args) throws Exception {
+    public String openInEditor(JsonObject args) throws Exception {
         if (!args.has("file")) {
             return "Error: 'file' parameter is required";
         }
@@ -134,7 +134,7 @@ class EditorTools extends AbstractToolHandler {
      * Show a diff between two files, or between the current file content and a provided string,
      * in IntelliJ's diff viewer.
      */
-    private String showDiff(JsonObject args) throws Exception {
+    public String showDiff(JsonObject args) throws Exception {
         if (!args.has("file")) {
             return "Error: 'file' parameter is required";
         }
@@ -206,7 +206,7 @@ class EditorTools extends AbstractToolHandler {
             "Tip: pass 'file2' for two-file diff, or 'content' to diff against proposed changes.";
     }
 
-    private String createScratchFile(JsonObject args) {
+    public String createScratchFile(JsonObject args) {
         String name = args.has("name") ? args.get("name").getAsString() : "scratch.txt";
         String content = args.has(PARAM_CONTENT) ? args.get(PARAM_CONTENT).getAsString() : "";
 
@@ -276,7 +276,7 @@ class EditorTools extends AbstractToolHandler {
         }
     }
 
-    private String listScratchFiles(JsonObject args) {
+    public String listScratchFiles(JsonObject args) {
         try {
             final List<String> lines = new ArrayList<>();
             final String[] errorMsg = new String[1];
@@ -337,7 +337,7 @@ class EditorTools extends AbstractToolHandler {
     }
 
     @SuppressWarnings("unused")
-    private String getChatHtml(JsonObject args) throws Exception {
+    public String getChatHtml(JsonObject args) throws Exception {
         var panel = com.github.catatafishen.ideagentforcopilot.ui.ChatConsolePanel.Companion.getInstance(project);
         if (panel == null) {
             return "Error: Chat panel not found. Is the Copilot tool window open?";
@@ -351,7 +351,7 @@ class EditorTools extends AbstractToolHandler {
 
     // ---- Conversation History ----
 
-    private String searchConversationHistory(JsonObject args) {
+    public String searchConversationHistory(JsonObject args) {
         String basePath = project.getBasePath();
         if (basePath == null) return "Error: project base path unavailable";
 
@@ -554,7 +554,7 @@ class EditorTools extends AbstractToolHandler {
      * Returns the currently active (focused) file in the editor.
      */
     @SuppressWarnings("unused")
-    private String getActiveFile(JsonObject args) throws Exception {
+    public String getActiveFile(JsonObject args) throws Exception {
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
 
         EdtUtil.invokeLater(() -> {
@@ -592,7 +592,7 @@ class EditorTools extends AbstractToolHandler {
      * Supports .kts, .kt, .java, .groovy, .py and other runnable file types.
      */
     @SuppressWarnings("unused")
-    private String runScratchFile(JsonObject args) throws Exception {
+    public String runScratchFile(JsonObject args) throws Exception {
         if (!args.has("name")) {
             return "Error: 'name' parameter is required (scratch file name, e.g. 'test.kts')";
         }
@@ -879,7 +879,7 @@ class EditorTools extends AbstractToolHandler {
 
     // ---- End Scratch File Helpers ----
 
-    private String getOpenEditors(JsonObject args) throws Exception {
+    public String getOpenEditors(JsonObject args) throws Exception {
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
             try {
@@ -922,7 +922,7 @@ class EditorTools extends AbstractToolHandler {
         return sb.toString().trim();
     }
 
-    private String listThemes(JsonObject args) {
+    public String listThemes(JsonObject args) {
         var lafManager = com.intellij.ide.ui.LafManager.getInstance();
         var current = lafManager.getCurrentUIThemeLookAndFeel();
         String currentName = current != null ? current.getName() : "";
@@ -939,7 +939,7 @@ class EditorTools extends AbstractToolHandler {
         return sb.toString().trim();
     }
 
-    private String setTheme(JsonObject args) throws Exception {
+    public String setTheme(JsonObject args) throws Exception {
         if (!args.has("theme")) {
             return "Missing required parameter: 'theme' (theme name or partial name)";
         }

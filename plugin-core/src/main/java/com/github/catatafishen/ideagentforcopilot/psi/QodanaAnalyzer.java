@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
  * Extracted from {@link CodeQualityTools} to keep that class focused on
  * inspection, highlight, and formatting operations.
  */
-final class QodanaAnalyzer {
+public final class QodanaAnalyzer {
 
     private static final Logger LOG = Logger.getInstance(QodanaAnalyzer.class);
 
@@ -40,7 +40,7 @@ final class QodanaAnalyzer {
         this.project = project;
     }
 
-    String runQodana(JsonObject args) throws Exception {
+    public String runQodana(JsonObject args) throws Exception {
         int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();

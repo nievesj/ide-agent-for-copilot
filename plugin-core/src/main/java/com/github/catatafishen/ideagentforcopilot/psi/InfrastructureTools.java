@@ -29,7 +29,7 @@ import java.util.List;
  * get_notifications, read_run_output, read_build_output.
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
-class InfrastructureTools extends AbstractToolHandler {
+public final class InfrastructureTools extends AbstractToolHandler {
     private static final Logger LOG = Logger.getInstance(InfrastructureTools.class);
     private static final String PARAM_OFFSET = "offset";
 
@@ -73,7 +73,7 @@ class InfrastructureTools extends AbstractToolHandler {
         }
     }
 
-    private String httpRequest(JsonObject args) throws Exception {
+    public String httpRequest(JsonObject args) throws Exception {
         String urlStr = args.get("url").getAsString();
         String method = args.has(PARAM_METHOD) ? args.get(PARAM_METHOD).getAsString().toUpperCase() : "GET";
         String body = args.has("body") ? args.get("body").getAsString() : null;
@@ -124,7 +124,7 @@ class InfrastructureTools extends AbstractToolHandler {
         return result.toString();
     }
 
-    private String runCommand(JsonObject args) throws Exception {
+    public String runCommand(JsonObject args) throws Exception {
         String command = args.get("command").getAsString();
         // Block abusive commands — MCP tools bypass the ACP permission system
         String abuseType = ToolUtils.detectCommandAbuseType(command);
@@ -184,7 +184,7 @@ class InfrastructureTools extends AbstractToolHandler {
         return command.length() > 40 ? command.substring(0, 37) + "..." : command;
     }
 
-    private String readIdeLog(JsonObject args) throws IOException {
+    public String readIdeLog(JsonObject args) throws IOException {
         int lines = args.has("lines") ? args.get("lines").getAsInt() : 50;
         String filter = args.has("filter") ? args.get("filter").getAsString() : null;
         String level = args.has(PARAM_LEVEL) ? args.get(PARAM_LEVEL).getAsString().toUpperCase() : null;
@@ -232,7 +232,7 @@ class InfrastructureTools extends AbstractToolHandler {
     }
 
     @SuppressWarnings("unused") // ToolHandler interface requires JsonObject parameter
-    private String getNotifications(JsonObject args) {
+    public String getNotifications(JsonObject args) {
         StringBuilder result = new StringBuilder();
         try {
             var notifications = com.intellij.notification.NotificationsManager.getNotificationsManager()
@@ -253,7 +253,7 @@ class InfrastructureTools extends AbstractToolHandler {
         return result.toString();
     }
 
-    private String readRunOutput(JsonObject args) {
+    public String readRunOutput(JsonObject args) {
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
         String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
 
@@ -653,7 +653,7 @@ class InfrastructureTools extends AbstractToolHandler {
      * Read output from a tab in the Build tool window.
      * Works for Gradle builds, Maven builds, and incremental compiler output.
      */
-    private String readBuildOutput(JsonObject args) {
+    public String readBuildOutput(JsonObject args) {
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
         String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
 

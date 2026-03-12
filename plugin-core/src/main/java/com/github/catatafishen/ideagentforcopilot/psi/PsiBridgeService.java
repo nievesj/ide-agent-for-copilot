@@ -60,30 +60,48 @@ public final class PsiBridgeService implements Disposable {
         RefactoringTools refactoringTools = new RefactoringTools(project);
         this.runConfigService = new RunConfigurationService(project, refactoringTools::resolveClass);
 
-        // Register all tools from handler groups
+        CodeNavigationTools navTools = new CodeNavigationTools(project);
+        CodeQualityTools qualityTools = new CodeQualityTools(project);
+        SymbolEditingTools editingTools = new SymbolEditingTools(project);
+        TestTools testTools = new TestTools(project, refactoringTools);
+        ProjectTools projectTools = new ProjectTools(project);
+        InfrastructureTools infraTools = new InfrastructureTools(project);
+        TerminalTools terminalTools = new TerminalTools(project);
+        EditorTools editorTools = new EditorTools(project);
+
+        // Register all tools from handler groups (legacy handler map)
         var handlerGroups = List.of(
-            new CodeNavigationTools(project),
+            navTools,
             fileTools,
-            new CodeQualityTools(project),
+            qualityTools,
             refactoringTools,
-            new SymbolEditingTools(project),
-            new TestTools(project, refactoringTools),
-            new ProjectTools(project),
+            editingTools,
+            testTools,
+            projectTools,
             new GitTools(project, gitToolHandler),
-            new InfrastructureTools(project),
-            new TerminalTools(project),
-            new EditorTools(project)
+            infraTools,
+            terminalTools,
+            editorTools
         );
         for (AbstractToolHandler handler : handlerGroups) {
             toolRegistry.putAll(handler.getTools());
-            // Also register as ToolDefinition for the new OO registry
-            ToolRegistry.registerAll(handler.getDefinitions());
         }
 
-        // Register new OO-style individual tool classes (override legacy definitions)
-        ToolRegistry.registerAll(
-            com.github.catatafishen.ideagentforcopilot.psi.tools.git.GitToolFactory.create(project, gitToolHandler)
-        );
+        // Register new OO-style individual tool classes
+        boolean hasJava = AbstractToolHandler.isPluginInstalled("com.intellij.modules.java");
+        var allTools = new java.util.ArrayList<com.github.catatafishen.ideagentforcopilot.psi.tools.Tool>();
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.git.GitToolFactory.create(project, gitToolHandler));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileToolFactory.create(project, fileTools));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.navigation.NavigationToolFactory.create(project, navTools, hasJava));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.quality.QualityToolFactory.create(project, qualityTools, com.github.catatafishen.ideagentforcopilot.psi.SonarQubeIntegration.isInstalled()));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring.RefactoringToolFactory.create(project, refactoringTools, hasJava));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.editing.EditingToolFactory.create(project, editingTools));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.testing.TestingToolFactory.create(project, testTools));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.project.ProjectToolFactory.create(project, projectTools, hasJava));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.infrastructure.InfrastructureToolFactory.create(project, infraTools));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.terminal.TerminalToolFactory.create(project, terminalTools));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.editor.EditorToolFactory.create(project, editorTools));
+        ToolRegistry.registerAll(allTools);
 
         // RunConfigurationService tools (not an AbstractToolHandler)
         toolRegistry.put("list_run_configurations", args -> runConfigService.listRunConfigurations());

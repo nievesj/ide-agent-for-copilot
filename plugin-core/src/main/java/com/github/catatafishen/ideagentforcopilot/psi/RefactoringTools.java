@@ -37,7 +37,7 @@ import java.util.concurrent.TimeUnit;
  * get_type_hierarchy, and get_documentation.
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
-class RefactoringTools extends AbstractToolHandler {
+public final class RefactoringTools extends AbstractToolHandler {
 
     private static final Logger LOG = Logger.getInstance(RefactoringTools.class);
 
@@ -132,7 +132,7 @@ class RefactoringTools extends AbstractToolHandler {
 
     // ---- get_documentation ----
 
-    private String getDocumentation(JsonObject args) {
+    public String getDocumentation(JsonObject args) {
         String symbol = args.has(PARAM_SYMBOL) ? args.get(PARAM_SYMBOL).getAsString() : "";
         if (symbol.isEmpty())
             return "Error: 'symbol' parameter required (e.g. java.util.List, com.google.gson.Gson.fromJson)";
@@ -290,7 +290,7 @@ class RefactoringTools extends AbstractToolHandler {
 
     // ---- refactor ----
 
-    private String refactor(JsonObject args) throws Exception {
+    public String refactor(JsonObject args) throws Exception {
         if (!args.has("operation") || !args.has("file") || !args.has(PARAM_SYMBOL)) {
             return "Error: 'operation', 'file', and 'symbol' parameters are required";
         }
@@ -463,7 +463,7 @@ class RefactoringTools extends AbstractToolHandler {
 
     // ---- go_to_declaration ----
 
-    private String goToDeclaration(JsonObject args) {
+    public String goToDeclaration(JsonObject args) {
         if (!args.has("file") || !args.has(PARAM_SYMBOL) || !args.has("line")) {
             return "Error: 'file', 'symbol', and 'line' parameters are required";
         }
@@ -641,7 +641,7 @@ class RefactoringTools extends AbstractToolHandler {
 
     // ---- get_type_hierarchy (delegates to RefactoringJavaSupport) ----
 
-    private String getTypeHierarchyWrapper(JsonObject args) {
+    public String getTypeHierarchyWrapper(JsonObject args) {
         if (!args.has(PARAM_SYMBOL)) return "Error: 'symbol' parameter is required";
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
         String direction = args.has("direction") ? args.get("direction").getAsString() : "both";
@@ -653,7 +653,7 @@ class RefactoringTools extends AbstractToolHandler {
 
     // ---- Utilities ----
 
-    private String findImplementationsWrapper(JsonObject args) {
+    public String findImplementationsWrapper(JsonObject args) {
         if (!args.has(PARAM_SYMBOL)) return "Error: 'symbol' parameter is required";
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
         String filePath = args.has("file") ? args.get("file").getAsString() : null;
@@ -666,7 +666,7 @@ class RefactoringTools extends AbstractToolHandler {
         return truncateOutput(result);
     }
 
-    private String getCallHierarchyWrapper(JsonObject args) {
+    public String getCallHierarchyWrapper(JsonObject args) {
         if (!args.has(PARAM_SYMBOL) || !args.has("file") || !args.has("line")) {
             return "Error: 'symbol', 'file', and 'line' parameters are required";
         }

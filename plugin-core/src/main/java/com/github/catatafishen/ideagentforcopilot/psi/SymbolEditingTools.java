@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit;
  * Symbol-level editing tools that resolve PSI symbols by name and perform
  * structural edits (replace body, insert before/after) using line-range operations.
  */
-class SymbolEditingTools extends AbstractToolHandler {
+public final class SymbolEditingTools extends AbstractToolHandler {
 
     private static final String PARAM_FILE = "file";
     private static final String PARAM_SYMBOL = "symbol";
@@ -66,7 +66,7 @@ class SymbolEditingTools extends AbstractToolHandler {
 
     // ---- replace_symbol_body ----
 
-    private String replaceSymbolBody(JsonObject args) throws Exception {
+    public String replaceSymbolBody(JsonObject args) throws Exception {
         String error = validateArgs(args, PARAM_NEW_BODY);
         if (error != null) return error;
 
@@ -153,7 +153,7 @@ class SymbolEditingTools extends AbstractToolHandler {
 
     // ---- insert_before_symbol ----
 
-    private String insertBeforeSymbol(JsonObject args) throws Exception {
+    public String insertBeforeSymbol(JsonObject args) throws Exception {
         String error = validateArgs(args, PARAM_CONTENT);
         if (error != null) return error;
 
@@ -223,7 +223,7 @@ class SymbolEditingTools extends AbstractToolHandler {
 
     // ---- insert_after_symbol ----
 
-    private String insertAfterSymbol(JsonObject args) throws Exception {
+    public String insertAfterSymbol(JsonObject args) throws Exception {
         String error = validateArgs(args, PARAM_CONTENT);
         if (error != null) return error;
 

@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * Handles test-related tool calls: list_tests, run_tests, get_coverage.
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
-class TestTools extends AbstractToolHandler {
+public final class TestTools extends AbstractToolHandler {
     private static final Logger LOG = Logger.getInstance(TestTools.class);
 
     private static final String PARAM_FILE_PATTERN = "file_pattern";
@@ -128,7 +128,7 @@ class TestTools extends AbstractToolHandler {
 
     // ---- Tool Methods ----
 
-    private String listTests(JsonObject args) {
+    public String listTests(JsonObject args) {
         String filePattern = args.has(PARAM_FILE_PATTERN) ? args.get(PARAM_FILE_PATTERN).getAsString() : "";
 
         return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
@@ -181,7 +181,7 @@ class TestTools extends AbstractToolHandler {
         });
     }
 
-    private String runTests(JsonObject args) throws Exception {
+    public String runTests(JsonObject args) throws Exception {
         String target = args.get("target").getAsString();
         String module = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
         String basePath = project.getBasePath();
@@ -205,7 +205,7 @@ class TestTools extends AbstractToolHandler {
         return runTestsViaGradleConfig(target, module);
     }
 
-    private String getCoverage(JsonObject args) {
+    public String getCoverage(JsonObject args) {
         String file = args.has("file") ? args.get("file").getAsString() : "";
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;

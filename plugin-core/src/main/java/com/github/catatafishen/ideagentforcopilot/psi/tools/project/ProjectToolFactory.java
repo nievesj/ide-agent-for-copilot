@@ -1,0 +1,37 @@
+package com.github.catatafishen.ideagentforcopilot.psi.tools.project;
+
+import com.github.catatafishen.ideagentforcopilot.psi.ProjectTools;
+import com.github.catatafishen.ideagentforcopilot.psi.tools.Tool;
+import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Factory producing all individual project tool instances.
+ * Conditionally includes Java-specific tools based on plugin availability.
+ */
+public final class ProjectToolFactory {
+
+    private ProjectToolFactory() {
+    }
+
+    public static @NotNull List<Tool> create(
+            @NotNull Project project,
+            @NotNull ProjectTools projectTools,
+            boolean hasJava) {
+        var tools = new ArrayList<Tool>();
+        tools.add(new GetProjectInfoTool(project, projectTools));
+        if (hasJava) {
+            tools.add(new BuildProjectTool(project, projectTools));
+        }
+        tools.add(new GetIndexingStatusTool(project, projectTools));
+        tools.add(new DownloadSourcesTool(project, projectTools));
+        tools.add(new MarkDirectoryTool(project, projectTools));
+        if (hasJava) {
+            tools.add(new EditProjectStructureTool(project, projectTools));
+        }
+        return List.copyOf(tools);
+    }
+}

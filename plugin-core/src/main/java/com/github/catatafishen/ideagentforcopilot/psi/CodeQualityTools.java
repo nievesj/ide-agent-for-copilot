@@ -36,10 +36,11 @@ import java.util.concurrent.TimeUnit;
  * quickfixes, suppress, Qodana, optimize imports, format code, and dictionary.
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
-class CodeQualityTools extends AbstractToolHandler {
+public final class CodeQualityTools extends AbstractToolHandler {
 
     private static final Logger LOG = Logger.getInstance(CodeQualityTools.class);
     private final List<ToolDefinition> definitions;
+    private QodanaAnalyzer qodanaAnalyzer;
 
     // Constants duplicated from PsiBridgeService for use within this handler
     private static final String ERROR_PREFIX = "Error: ";
@@ -79,8 +80,8 @@ class CodeQualityTools extends AbstractToolHandler {
         defs.add(quality("suppress_inspection", LABEL_SUPPRESS_INSPECTION, "Insert a suppress annotation or comment for a specific inspection at a given line", this::suppressInspection)
             .build());
         if (isPluginInstalled("org.jetbrains.qodana")) {
-            var qodana = new QodanaAnalyzer(project);
-            defs.add(quality("run_qodana", "Run Qodana", "Run Qodana static analysis and return findings", qodana::runQodana)
+            qodanaAnalyzer = new QodanaAnalyzer(project);
+            defs.add(quality("run_qodana", "Run Qodana", "Run Qodana static analysis and return findings", qodanaAnalyzer::runQodana)
                 .readOnly().build());
             LOG.info("Qodana plugin detected — run_qodana tool registered");
         }
@@ -111,9 +112,13 @@ class CodeQualityTools extends AbstractToolHandler {
         return definitions;
     }
 
+    public QodanaAnalyzer getQodanaAnalyzer() {
+        return qodanaAnalyzer;
+    }
+
     // ---- get_problems ----
 
-    private String getProblems(JsonObject args) throws Exception {
+    public String getProblems(JsonObject args) throws Exception {
         String pathStr = args.has("path") ? args.get("path").getAsString() : "";
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
@@ -184,7 +189,7 @@ class CodeQualityTools extends AbstractToolHandler {
 
     // ---- get_highlights ----
 
-    private String getHighlights(JsonObject args) throws Exception {
+    public String getHighlights(JsonObject args) throws Exception {
         String pathStr = args.has("path") ? args.get("path").getAsString() : null;
         int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
         // include_unindexed bypasses the isInSourceContent guard for newly created files
@@ -361,7 +366,7 @@ class CodeQualityTools extends AbstractToolHandler {
      * Lightweight compilation check — scans open/specified files for ERROR-severity highlights.
      * Much faster than build_project since it uses cached daemon analysis results.
      */
-    private String getCompilationErrors(JsonObject args) throws Exception {
+    public String getCompilationErrors(JsonObject args) throws Exception {
         String pathStr = args.has("path") ? args.get("path").getAsString() : null;
 
         if (!project.isInitialized()) {
@@ -428,7 +433,7 @@ class CodeQualityTools extends AbstractToolHandler {
 
 // ---- run_inspections ----
 
-    private String runInspections(JsonObject args) throws Exception {
+    public String runInspections(JsonObject args) throws Exception {
         int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
         int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
         String minSeverity = args.has("min_severity") ? args.get("min_severity").getAsString() : null;
@@ -940,7 +945,7 @@ class CodeQualityTools extends AbstractToolHandler {
 
 // ---- add_to_dictionary ----
 
-    private String addToDictionary(JsonObject args) throws Exception {
+    public String addToDictionary(JsonObject args) throws Exception {
         String word = args.get("word").getAsString().trim().toLowerCase();
         if (word.isEmpty()) {
             return "Error: word cannot be empty";
@@ -963,7 +968,7 @@ class CodeQualityTools extends AbstractToolHandler {
 
 // ---- suppress_inspection ----
 
-    private String suppressInspection(JsonObject args) throws Exception {
+    public String suppressInspection(JsonObject args) throws Exception {
         String pathStr = args.get("path").getAsString();
         int line = args.get("line").getAsInt();
         String inspectionId = args.get(PARAM_INSPECTION_ID).getAsString().trim();
@@ -1096,7 +1101,7 @@ class CodeQualityTools extends AbstractToolHandler {
 
 // ---- run_sonarqube_analysis ----
 
-    private String runSonarQubeAnalysis(JsonObject args) {
+    public String runSonarQubeAnalysis(JsonObject args) {
         String scope = args.has(PARAM_SCOPE) ? args.get(PARAM_SCOPE).getAsString() : "all";
         int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
         int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
@@ -1107,7 +1112,7 @@ class CodeQualityTools extends AbstractToolHandler {
 
 // ---- optimize_imports ----
 
-    private String optimizeImports(JsonObject args) throws Exception {
+    public String optimizeImports(JsonObject args) throws Exception {
         String pathStr = args.get("path").getAsString();
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
@@ -1132,7 +1137,7 @@ class CodeQualityTools extends AbstractToolHandler {
 
 // ---- format_code ----
 
-    private String formatCode(JsonObject args) throws Exception {
+    public String formatCode(JsonObject args) throws Exception {
         String pathStr = args.get("path").getAsString();
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
@@ -1179,7 +1184,7 @@ class CodeQualityTools extends AbstractToolHandler {
 
 // ---- apply_quickfix ----
 
-    private String applyQuickfix(JsonObject args) throws Exception {
+    public String applyQuickfix(JsonObject args) throws Exception {
         if (!args.has("file") || !args.has("line") || !args.has(PARAM_INSPECTION_ID)) {
             return "Error: 'file', 'line', and '" + PARAM_INSPECTION_ID + "' parameters are required";
         }
