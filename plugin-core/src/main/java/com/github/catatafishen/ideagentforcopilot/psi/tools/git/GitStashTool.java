@@ -1,0 +1,94 @@
+package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
+
+import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
+import com.google.gson.JsonObject;
+import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Pushes, pops, applies, lists, or drops stashed changes.
+ */
+@SuppressWarnings("java:S112")
+public final class GitStashTool extends GitTool {
+
+    public GitStashTool(Project project, GitToolHandler git) {
+        super(project, git);
+    }
+
+    @Override
+    public @NotNull String id() {
+        return "git_stash";
+    }
+
+    @Override
+    public @NotNull String displayName() {
+        return "Git Stash";
+    }
+
+    @Override
+    public @NotNull String description() {
+        return "Push, pop, apply, list, or drop stashed changes";
+    }
+
+    @Override
+    public @NotNull String permissionTemplate() {
+        return "{action} stash";
+    }
+
+    @Override
+    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+        String action = args.has("action")
+                ? args.get("action").getAsString()
+                : "list";
+
+        return switch (action) {
+            case "list" -> git.runGit("stash", "list");
+            case "push", "save" -> {
+                List<String> cmdArgs = new ArrayList<>();
+                cmdArgs.add("stash");
+                cmdArgs.add("push");
+
+                if (args.has("message") && !args.get("message").getAsString().isEmpty()) {
+                    cmdArgs.add("-m");
+                    cmdArgs.add(args.get("message").getAsString());
+                }
+
+                if (args.has("include_untracked") && args.get("include_untracked").getAsBoolean()) {
+                    cmdArgs.add("--include-untracked");
+                }
+
+                yield git.runGit(cmdArgs.toArray(String[]::new));
+            }
+            case "pop" -> {
+                String index = stashRef(args);
+                yield index != null
+                        ? git.runGit("stash", "pop", index)
+                        : git.runGit("stash", "pop");
+            }
+            case "apply" -> {
+                String index = stashRef(args);
+                yield index != null
+                        ? git.runGit("stash", "apply", index)
+                        : git.runGit("stash", "apply");
+            }
+            case "drop" -> {
+                String index = stashRef(args);
+                yield index != null
+                        ? git.runGit("stash", "drop", index)
+                        : git.runGit("stash", "drop");
+            }
+            default -> "Error: unknown action '" + action + "'. Use: list, push, pop, apply, drop";
+        };
+    }
+
+    private static @Nullable String stashRef(JsonObject args) {
+        if (args.has("index") && !args.get("index").getAsString().isEmpty()) {
+            return "stash@{" + args.get("index").getAsString() + "}";
+        }
+        return null;
+    }
+}
