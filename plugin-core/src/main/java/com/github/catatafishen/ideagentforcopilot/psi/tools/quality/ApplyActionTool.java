@@ -3,15 +3,15 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.quality;
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.SimpleStatusRenderer;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitDiffRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.openapi.command.WriteCommandAction;
+import com.intellij.openapi.command.undo.UndoManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.LogicalPosition;
-import com.intellij.openapi.command.undo.UndoManager;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.TextEditor;
@@ -113,7 +113,7 @@ public final class ApplyActionTool extends QualityTool {
 
     @Override
     public @NotNull Object resultRenderer() {
-        return SimpleStatusRenderer.INSTANCE;
+        return GitDiffRenderer.INSTANCE;
     }
 
     // ── Private helpers ──────────────────────────────────────
