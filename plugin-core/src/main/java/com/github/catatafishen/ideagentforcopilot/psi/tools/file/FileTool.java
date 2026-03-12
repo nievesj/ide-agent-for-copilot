@@ -56,7 +56,7 @@ public abstract class FileTool extends Tool {
     private static final ConcurrentHashMap<Project, Set<String>> PENDING_AUTO_FORMAT =
         new ConcurrentHashMap<>();
 
-    static void queueAutoFormat(Project project, String path) {
+    public static void queueAutoFormat(Project project, String path) {
         PENDING_AUTO_FORMAT.computeIfAbsent(project,
             k -> Collections.synchronizedSet(new LinkedHashSet<>())).add(path);
     }
