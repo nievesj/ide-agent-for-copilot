@@ -857,16 +857,13 @@ public final class PlatformApiCompat {
     }
 
     /**
-     * Launches a full IDE inspection run against the given scope and profile, and invokes
-     * {@code onFinished} with the populated context once analysis is complete.
-     *
-     * <p><b>Why extracted:</b> The inspection infrastructure requires subclassing
-     * {@code GlobalInspectionContextEx} (rather than using a plain instance) to intercept
-     * {@code notifyInspectionsFinished}, which is the only reliable callback for when all
-     * tool analysis has completed. {@code setExternalProfile()} and {@code doInspections()}
-     * are inherited from {@code GlobalInspectionContextBase} (both public). The analysis runs
-     * without opening the IDE Inspection Results tool window, which is intentional for
-     * programmatic MCP use.</p>
+     * Runs the full inspection engine on the given scope using the supplied profile.
+     * <p>
+     * <b>Why extracted:</b> The inspection API has been stable across 2024.3–2025.2, but the
+     * method must be invoked on the EDT and uses {@link com.intellij.openapi.project.DumbService}
+     * to wait until indexing finishes — this guard was missing from call sites and caused the
+     * analysis to silently no-op when dumb mode was active (the context's
+     * {@code notifyInspectionsFinished} fires immediately with 0 used tools).
      *
      * @param project    the current project
      * @param scope      the analysis scope to inspect
@@ -888,9 +885,10 @@ public final class PlatformApiCompat {
                 }
             };
         context.setExternalProfile(profile);
-        // doInspections asserts EDT — launch it there; the actual file analysis runs on a
-        // background thread inside the backgroundable task that doInspections creates.
-        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
+        // doInspections asserts EDT and internally calls canRunInspections(), which returns false
+        // when the project is in dumb mode (indexing). Use runWhenSmart() so we wait for indexing
+        // to finish before triggering the analysis; it dispatches on EDT like invokeLater().
+        com.intellij.openapi.project.DumbService.getInstance(project).runWhenSmart(() ->
             context.doInspections(scope));
     }
 }

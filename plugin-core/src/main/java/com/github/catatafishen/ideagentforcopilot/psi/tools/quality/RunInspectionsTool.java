@@ -64,7 +64,7 @@ public final class RunInspectionsTool extends QualityTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_SCOPE, TYPE_STRING, "Optional: file or directory path to inspect. Examples: 'src/main/java/com/example/MyClass.java' or 'src/main/java/com/example'"},
             {PARAM_LIMIT, TYPE_INTEGER, "Page size (default: 100). Maximum problems per response"},
@@ -82,6 +82,9 @@ public final class RunInspectionsTool extends QualityTool {
 
         if (!project.isInitialized()) {
             return ERROR_IDE_INITIALIZING;
+        }
+        if (com.intellij.openapi.project.DumbService.isDumb(project)) {
+            return "IDE is currently indexing the project. Please wait for indexing to finish and try again.";
         }
 
         // Serve from cache if available and fresh (5 min TTL)
