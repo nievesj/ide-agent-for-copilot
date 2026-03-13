@@ -39,7 +39,7 @@ import java.util.function.Consumer;
  * Agent-specific concerns (binary discovery, auth, model parsing) are delegated
  * to the {@link AgentConfig} strategy provided at construction time.
  */
-public class AcpClient implements Closeable {
+public class AcpClient implements AgentClient, Closeable {
     private static final Logger LOG = Logger.getInstance(AcpClient.class);
     private static final long REQUEST_TIMEOUT_SECONDS = 30;
     private static final long INITIALIZE_TIMEOUT_SECONDS = 90;
@@ -257,7 +257,8 @@ public class AcpClient implements Closeable {
      *
      * @param cwd The working directory for the session, or null to use user.home.
      */
-    public synchronized String createSession(@Nullable String cwd) throws AcpException {
+    @Override
+    public synchronized @NotNull String createSession(@Nullable String cwd) throws AcpException {
         ensureStarted();
 
         JsonObject params = new JsonObject();
@@ -399,11 +400,12 @@ public class AcpClient implements Closeable {
      * @param onUpdate  receives raw update JSON objects for plan events, tool calls, etc.
      * @param onRequest called each time a session/prompt RPC request is sent (including retries)
      */
-    public String sendPrompt(@NotNull String sessionId, @NotNull String prompt,
-                             @Nullable String model, @Nullable List<ResourceReference> references,
-                             @Nullable Consumer<String> onChunk,
-                             @Nullable Consumer<JsonObject> onUpdate,
-                             @Nullable Runnable onRequest)
+    @Override
+    public @NotNull String sendPrompt(@NotNull String sessionId, @NotNull String prompt,
+                                      @Nullable String model, @Nullable List<ResourceReference> references,
+                                      @Nullable Consumer<String> onChunk,
+                                      @Nullable Consumer<JsonObject> onUpdate,
+                                      @Nullable Runnable onRequest)
         throws AcpException {
         ensureStarted();
 

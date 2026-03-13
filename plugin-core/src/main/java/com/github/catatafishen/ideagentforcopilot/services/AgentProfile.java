@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.services;
 
+import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -25,6 +26,10 @@ public final class AgentProfile {
     private boolean builtIn;
     private boolean experimental;
     private String description;
+
+    // ── Transport ─────────────────────────────────────────────────────────────
+
+    private TransportType transportType;
 
     // ── Binary Discovery ─────────────────────────────────────────────────────
 
@@ -82,6 +87,7 @@ public final class AgentProfile {
     public AgentProfile() {
         this.id = UUID.randomUUID().toString();
         this.displayName = "New Agent";
+        this.transportType = TransportType.ACP;
         this.binaryName = "";
         this.alternateNames = new ArrayList<>();
         this.installHint = "";
@@ -109,6 +115,7 @@ public final class AgentProfile {
         copy.builtIn = false;
         copy.experimental = false;
         copy.description = description;
+        copy.transportType = transportType;
         copy.binaryName = binaryName;
         copy.alternateNames = new ArrayList<>(alternateNames);
         copy.installHint = installHint;
@@ -145,6 +152,7 @@ public final class AgentProfile {
         copy.builtIn = this.builtIn;
         copy.experimental = this.experimental;
         copy.description = this.description;
+        copy.transportType = this.transportType;
         copy.binaryName = binaryName;
         copy.alternateNames = new ArrayList<>(alternateNames);
         copy.installHint = installHint;
@@ -175,6 +183,7 @@ public final class AgentProfile {
         this.displayName = other.displayName;
         this.experimental = other.experimental;
         this.description = other.description;
+        this.transportType = other.transportType;
         this.binaryName = other.binaryName;
         this.alternateNames = new ArrayList<>(other.alternateNames);
         this.installHint = other.installHint;
@@ -240,6 +249,15 @@ public final class AgentProfile {
 
     public void setDescription(@Nullable String description) {
         this.description = description;
+    }
+
+    @NotNull
+    public TransportType getTransportType() {
+        return transportType != null ? transportType : TransportType.ACP;
+    }
+
+    public void setTransportType(@NotNull TransportType transportType) {
+        this.transportType = transportType;
     }
 
     @NotNull
@@ -402,7 +420,9 @@ public final class AgentProfile {
         return !bundledAgentFiles.isEmpty();
     }
 
-    /** @deprecated Use {@link #getBundledAgentFiles()} instead. */
+    /**
+     * @deprecated Use {@link #getBundledAgentFiles()} instead.
+     */
     @Deprecated
     public void setEnsureCopilotAgents(boolean ensureCopilotAgents) {
         // no-op: replaced by bundledAgentFiles
