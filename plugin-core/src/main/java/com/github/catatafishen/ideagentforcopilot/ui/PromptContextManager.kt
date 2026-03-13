@@ -116,17 +116,15 @@ class PromptContextManager(
         }
     }
 
-    /**
-     * Checks whether the clipboard text matches the current editor's selection.
-     * Returns a [ContextItemData] referencing the source file + line range if found,
-     * or null if the active editor doesn't have a matching selection.
-     */
     fun findClipboardSourceInProject(clipText: String): ContextItemData? {
         val fileEditorManager = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
         val selectedEditor = fileEditorManager.selectedTextEditor ?: return null
         val selectedFile = fileEditorManager.selectedFiles.firstOrNull() ?: return null
 
-        if (!com.intellij.openapi.roots.ProjectFileIndex.getInstance(project).isInContent(selectedFile)) return null
+        val isInContent = ApplicationManager.getApplication().runReadAction<Boolean> {
+            com.intellij.openapi.roots.ProjectFileIndex.getInstance(project).isInContent(selectedFile)
+        }
+        if (!isInContent) return null
 
         return matchEditorSelection(selectedEditor, selectedFile, clipText)
     }
