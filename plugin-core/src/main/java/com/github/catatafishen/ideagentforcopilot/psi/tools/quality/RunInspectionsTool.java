@@ -3,7 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.quality;
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -11,7 +11,6 @@ import com.intellij.psi.PsiDirectory;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -73,7 +72,7 @@ public final class RunInspectionsTool extends QualityTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
         int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
         String minSeverity = args.has(PARAM_MIN_SEVERITY) ? args.get(PARAM_MIN_SEVERITY).getAsString() : null;
@@ -163,10 +162,8 @@ public final class RunInspectionsTool extends QualityTool {
                 LOG.info("Used tools count: " + ctx.getUsedTools().size());
                 // Collect synchronously while the context is still valid — the callback is
                 // invoked BEFORE super.notifyInspectionsFinished which calls cleanup().
-                //noinspection RedundantCast - required to disambiguate Computable<T> vs ThrowableComputable<T,E> overloads
-                InspectionCollectionResult collected = ApplicationManager.getApplication().runReadAction(
-                    (com.intellij.openapi.util.Computable<InspectionCollectionResult>) () ->
-                        collectInspectionProblems(ctx, severityRank, requiredRank, basePath));
+                InspectionCollectionResult collected = ReadAction.compute(
+                    () -> collectInspectionProblems(ctx, severityRank, requiredRank, basePath));
                 cacheAndCompleteInspection(collected, new InspectionPageParams(profileName, offset, limit), resultFuture);
             });
 
@@ -210,10 +207,8 @@ public final class RunInspectionsTool extends QualityTool {
             return null;
         }
         if (scopeFile.isDirectory()) {
-            //noinspection RedundantCast - required to disambiguate Computable<T> vs ThrowableComputable<T,E> overloads
-            PsiDirectory psiDir = ApplicationManager.getApplication().runReadAction(
-                (com.intellij.openapi.util.Computable<PsiDirectory>) () ->
-                    PsiManager.getInstance(project).findDirectory(scopeFile)
+            PsiDirectory psiDir = ReadAction.compute(
+                () -> PsiManager.getInstance(project).findDirectory(scopeFile)
             );
             if (psiDir == null) {
                 resultFuture.complete("Error: Cannot resolve directory: " + scopePath);
@@ -222,10 +217,8 @@ public final class RunInspectionsTool extends QualityTool {
             LOG.info("Analysis scope: directory " + scopePath);
             return new com.intellij.analysis.AnalysisScope(psiDir);
         }
-        //noinspection RedundantCast - required to disambiguate Computable<T> vs ThrowableComputable<T,E> overloads
-        PsiFile psiFile = ApplicationManager.getApplication().runReadAction(
-            (com.intellij.openapi.util.Computable<PsiFile>) () ->
-                PsiManager.getInstance(project).findFile(scopeFile));
+        PsiFile psiFile = ReadAction.compute(
+            () -> PsiManager.getInstance(project).findFile(scopeFile));
         if (psiFile == null) {
             resultFuture.complete(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + scopePath);
             return null;

@@ -5,6 +5,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -49,7 +50,7 @@ public final class OpenInEditorTool extends EditorTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"file", TYPE_STRING, "Path to the file to open"},
             {"line", TYPE_INTEGER, "Optional: line number to navigate to after opening"},
@@ -63,7 +64,7 @@ public final class OpenInEditorTool extends EditorTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("file")) {
             return "Error: 'file' parameter is required";
         }
@@ -88,8 +89,8 @@ public final class OpenInEditorTool extends EditorTool {
                     FileEditorManager.getInstance(project).openFile(vf, focus);
                 }
 
-                PsiFile psiFile = ApplicationManager.getApplication().runReadAction(
-                    (Computable<PsiFile>) () -> PsiManager.getInstance(project).findFile(vf));
+                PsiFile psiFile = ReadAction.compute(
+                    () -> PsiManager.getInstance(project).findFile(vf));
                 if (psiFile != null) {
                     DaemonCodeAnalyzer.getInstance(project).restart(psiFile, "File opened in editor");
                 }

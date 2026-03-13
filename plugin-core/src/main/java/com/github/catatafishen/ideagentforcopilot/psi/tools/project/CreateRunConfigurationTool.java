@@ -35,7 +35,7 @@ public final class CreateRunConfigurationTool extends ProjectTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         JsonObject s = schema(new Object[][]{
             {"name", TYPE_STRING, "Name for the new run configuration"},
             {"type", TYPE_STRING, "Configuration type: any IDE-supported type name (e.g., 'application', 'junit', 'gradle', 'maven', 'npm', 'python'). If unknown, an error will list all available types."},
@@ -59,7 +59,7 @@ public final class CreateRunConfigurationTool extends ProjectTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         return runConfigService.createRunConfiguration(args);
     }
 }

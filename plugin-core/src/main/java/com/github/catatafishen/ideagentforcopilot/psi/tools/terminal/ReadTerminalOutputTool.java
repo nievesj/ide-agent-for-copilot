@@ -43,7 +43,7 @@ public final class ReadTerminalOutputTool extends TerminalTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"tab_name", TYPE_STRING, "Name of the terminal tab to read from"},
             {PARAM_MAX_LINES, TYPE_INTEGER, "Maximum number of lines to return from the end of the terminal buffer (default: 50). Use 0 for the full buffer."}
@@ -51,7 +51,7 @@ public final class ReadTerminalOutputTool extends TerminalTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
         int maxLines = args.has(PARAM_MAX_LINES) ? args.get(PARAM_MAX_LINES).getAsInt() : DEFAULT_MAX_LINES;
 

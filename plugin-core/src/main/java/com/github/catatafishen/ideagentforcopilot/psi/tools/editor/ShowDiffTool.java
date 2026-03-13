@@ -47,7 +47,7 @@ public final class ShowDiffTool extends EditorTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"file", TYPE_STRING, "Path to the first file"},
             {PARAM_FILE2, TYPE_STRING, "Optional: path to second file for two-file comparison"},
@@ -62,7 +62,7 @@ public final class ShowDiffTool extends EditorTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("file")) {
             return "Error: 'file' parameter is required";
         }

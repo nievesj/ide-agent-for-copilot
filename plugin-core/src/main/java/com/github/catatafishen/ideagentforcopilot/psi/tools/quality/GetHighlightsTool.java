@@ -4,6 +4,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -12,7 +13,6 @@ import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -55,7 +55,7 @@ public final class GetHighlightsTool extends QualityTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Optional: file path to check. If omitted, checks all open files", ""},
             {PARAM_LIMIT, TYPE_INTEGER, "Maximum number of highlights to return (default: 100)"}
@@ -63,7 +63,7 @@ public final class GetHighlightsTool extends QualityTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String pathStr = args.has("path") ? args.get("path").getAsString() : null;
         int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
         boolean includeUnindexed = args.has("include_unindexed") && args.get("include_unindexed").getAsBoolean();
@@ -87,7 +87,7 @@ public final class GetHighlightsTool extends QualityTool {
     private void getHighlightsCached(String pathStr, int limit, boolean includeUnindexed,
                                      CompletableFuture<String> resultFuture) {
         StringBuilder result = new StringBuilder();
-        ApplicationManager.getApplication().runReadAction(() -> {
+        ReadAction.run(() -> {
             ProjectFileIndex fileIndex = ProjectRootManager.getInstance(project).getFileIndex();
             Collection<VirtualFile> allFiles =
                 collectFilesForHighlightAnalysis(pathStr, includeUnindexed, fileIndex, resultFuture);

@@ -5,6 +5,8 @@ import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.IdeInfoRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.WriteAction;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
@@ -22,12 +24,10 @@ import com.intellij.openapi.roots.OrderRootType;
 import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -75,7 +75,7 @@ public final class EditProjectStructureTool extends ProjectTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_ACTION, TYPE_STRING, "Action: 'list_modules', 'list_dependencies', 'add_dependency', 'remove_dependency', 'list_sdks', 'add_sdk', 'remove_sdk'"},
             {JSON_MODULE, TYPE_STRING, "Module name (required for list_dependencies, add_dependency, remove_dependency)"},
@@ -95,7 +95,7 @@ public final class EditProjectStructureTool extends ProjectTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String action = args.has(PARAM_ACTION) ? args.get(PARAM_ACTION).getAsString() : "";
         return switch (action) {
             case "list_modules" -> listModules();
@@ -111,7 +111,7 @@ public final class EditProjectStructureTool extends ProjectTool {
     }
 
     private String listModules() {
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+        return ReadAction.compute(() -> {
             Module[] modules = ModuleManager.getInstance(project).getModules();
             if (modules.length == 0) {
                 return "No modules found in the project.";
@@ -158,7 +158,7 @@ public final class EditProjectStructureTool extends ProjectTool {
             return ToolUtils.ERROR_PREFIX + "'module' parameter is required for list_dependencies";
         }
 
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+        return ReadAction.compute(() -> {
             Module module = ModuleManager.getInstance(project).findModuleByName(moduleName);
             if (module == null) {
                 return ToolUtils.ERROR_PREFIX + MSG_MODULE_PREFIX + moduleName + MSG_NOT_FOUND;
@@ -255,7 +255,7 @@ public final class EditProjectStructureTool extends ProjectTool {
         CompletableFuture<String> future = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
             try {
-                String result = ApplicationManager.getApplication().runWriteAction((Computable<String>)
+                String result = WriteAction.compute(
                     () -> doAddModuleDependency(moduleName, depModuleName, scope));
                 future.complete(result);
             } catch (Exception e) {
@@ -322,7 +322,7 @@ public final class EditProjectStructureTool extends ProjectTool {
         CompletableFuture<String> future = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
             try {
-                String result = ApplicationManager.getApplication().runWriteAction((Computable<String>)
+                String result = WriteAction.compute(
                     () -> doAddLibraryDependency(
                         moduleName, effectiveLibName, absoluteJarPath, scope));
                 future.complete(result);
@@ -403,7 +403,7 @@ public final class EditProjectStructureTool extends ProjectTool {
         CompletableFuture<String> future = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
             try {
-                String result = ApplicationManager.getApplication().runWriteAction((Computable<String>)
+                String result = WriteAction.compute(
                     () -> doRemoveDependency(moduleName, depName));
                 future.complete(result);
             } catch (Exception e) {
@@ -452,7 +452,7 @@ public final class EditProjectStructureTool extends ProjectTool {
     }
 
     private String listSdks() {
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+        return ReadAction.compute(() -> {
             var jdkTable = ProjectJdkTable.getInstance();
             Sdk[] sdks = jdkTable.getAllJdks();
 

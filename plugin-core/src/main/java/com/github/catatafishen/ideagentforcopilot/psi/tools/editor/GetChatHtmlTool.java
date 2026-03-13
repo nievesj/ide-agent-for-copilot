@@ -41,7 +41,7 @@ public final class GetChatHtmlTool extends EditorTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         var panel = com.github.catatafishen.ideagentforcopilot.ui.ChatConsolePanel.Companion.getInstance(project);
         if (panel == null) {
             return "Error: Chat panel not found. Is the Copilot tool window open?";

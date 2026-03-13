@@ -36,14 +36,14 @@ public final class GitStatusTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_VERBOSE, TYPE_BOOLEAN, "If true, show full 'git status' output including untracked files"}
         });
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
         boolean verbose = args.has(PARAM_VERBOSE)

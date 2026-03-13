@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.navigation;
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ClassOutlineRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
@@ -38,7 +39,7 @@ public final class GetClassOutlineTool extends NavigationTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_CLASS_NAME, TYPE_STRING, "Fully qualified class name (e.g. 'java.util.ArrayList', 'com.intellij.openapi.project.Project')"},
             {PARAM_INCLUDE_INHERITED, TYPE_BOOLEAN, "If true, include inherited methods and fields from superclasses. Default: false (own members only)"}
@@ -51,13 +52,13 @@ public final class GetClassOutlineTool extends NavigationTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) {
+    public @NotNull String execute(@NotNull JsonObject args) {
         String className = args.has(PARAM_CLASS_NAME) ? args.get(PARAM_CLASS_NAME).getAsString() : "";
         if (className.isEmpty()) return "Error: 'class_name' parameter is required";
         boolean includeInherited = args.has(PARAM_INCLUDE_INHERITED)
             && args.get(PARAM_INCLUDE_INHERITED).getAsBoolean();
 
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
+        return ReadAction.compute(() ->
             com.github.catatafishen.ideagentforcopilot.psi.java.CodeNavigationJavaSupport.computeClassOutline(project, className, includeInherited)
         );
     }

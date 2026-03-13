@@ -4,6 +4,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
@@ -56,7 +57,7 @@ public final class MarkDirectoryTool extends ProjectTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Directory path (absolute or project-relative)"},
             {"type", TYPE_STRING, "Directory type: 'sources', 'test_sources', 'resources', 'test_resources', 'generated_sources', 'excluded', or 'unmark' to remove marking"}
@@ -69,7 +70,7 @@ public final class MarkDirectoryTool extends ProjectTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String pathStr = args.get("path").getAsString();
         String type = args.get("type").getAsString();
 
@@ -98,8 +99,8 @@ public final class MarkDirectoryTool extends ProjectTool {
         CompletableFuture<String> future = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
             try {
-                String result = ApplicationManager.getApplication().runWriteAction(
-                    (Computable<String>) () -> applyDirectoryMarking(absolutePath, vDir, type));
+                String result = WriteAction.compute(
+                    () -> applyDirectoryMarking(absolutePath, vDir, type));
                 future.complete(result);
             } catch (Exception e) {
                 future.completeExceptionally(e);

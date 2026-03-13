@@ -41,7 +41,7 @@ public final class GitBranchTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_ACTION, TYPE_STRING, "Action: 'list' (default), 'create', 'switch', 'delete'"},
             {PARAM_NAME, TYPE_STRING, "Branch name (required for create/switch/delete)"},
@@ -52,7 +52,7 @@ public final class GitBranchTool extends GitTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String action = args.has(PARAM_ACTION)
             ? args.get(PARAM_ACTION).getAsString()
             : "list";

@@ -44,7 +44,7 @@ public final class GetIndexingStatusTool extends ProjectTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"wait", TYPE_BOOLEAN, "If true, blocks until indexing finishes"},
             {PARAM_TIMEOUT, TYPE_INTEGER, "Max seconds to wait when wait=true (default: 30)"}
@@ -57,7 +57,7 @@ public final class GetIndexingStatusTool extends ProjectTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         boolean wait = args.has("wait") && args.get("wait").getAsBoolean();
         int timeoutSec = args.has(PARAM_TIMEOUT) ? args.get(PARAM_TIMEOUT).getAsInt() : 60;
 

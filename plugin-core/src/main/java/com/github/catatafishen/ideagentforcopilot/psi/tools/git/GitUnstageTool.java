@@ -41,7 +41,7 @@ public final class GitUnstageTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         JsonObject s = schema(new Object[][]{
             {"path", TYPE_STRING, "Single file path to unstage"},
             {PARAM_PATHS, TYPE_ARRAY, "Multiple file paths to unstage"}
@@ -51,7 +51,7 @@ public final class GitUnstageTool extends GitTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("restore");
         cmdArgs.add("--staged");

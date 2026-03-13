@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.editor;
 
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
+import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.ide.ui.LafManager;
@@ -8,7 +9,6 @@ import com.intellij.ide.ui.laf.UIThemeLookAndFeelInfo;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -43,7 +43,7 @@ public final class SetThemeTool extends EditorTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_THEME, TYPE_STRING, "Theme name or partial name (e.g., 'Darcula', 'Light')"}
         }, PARAM_THEME);
@@ -55,7 +55,7 @@ public final class SetThemeTool extends EditorTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has(PARAM_THEME)) {
             return "Missing required parameter: 'theme' (theme name or partial name)";
         }
@@ -63,7 +63,7 @@ public final class SetThemeTool extends EditorTool {
         String queryLower = themeQuery.toLowerCase();
 
         var lafManager = LafManager.getInstance();
-        var themes = kotlin.sequences.SequencesKt.toList(lafManager.getInstalledThemes());
+        var themes = PlatformApiCompat.getInstalledThemes(lafManager);
 
         UIThemeLookAndFeelInfo target = null;
         for (var theme : themes) {

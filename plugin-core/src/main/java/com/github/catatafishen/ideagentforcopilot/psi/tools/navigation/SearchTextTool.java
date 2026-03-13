@@ -3,6 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.navigation;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SearchResultRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -50,7 +51,7 @@ public final class SearchTextTool extends NavigationTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"query", TYPE_STRING, "Text or regex pattern to search for"},
             {"file_pattern", TYPE_STRING, "Optional glob pattern to filter files (e.g., '*.kt', '*.java')", ""},
@@ -66,7 +67,7 @@ public final class SearchTextTool extends NavigationTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) {
+    public @NotNull String execute(@NotNull JsonObject args) {
         if (!args.has(PARAM_QUERY) || args.get(PARAM_QUERY).isJsonNull())
             return "Error: 'query' parameter is required";
         String query = args.get(PARAM_QUERY).getAsString();
@@ -76,7 +77,7 @@ public final class SearchTextTool extends NavigationTool {
         int maxResults = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt() : 100;
 
         showSearchFeedback("🔍 Searching text: " + query);
-        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
+        String result = ReadAction.compute(() ->
             performSearch(query, filePattern, isRegex, caseSensitive, maxResults));
         showSearchFeedback("✓ Text search complete: " + query);
         return result;

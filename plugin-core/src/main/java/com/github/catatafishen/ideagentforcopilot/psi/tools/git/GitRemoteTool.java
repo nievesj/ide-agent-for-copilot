@@ -39,7 +39,7 @@ public final class GitRemoteTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_ACTION, TYPE_STRING, "Action: 'list' (default), 'add', 'remove', 'set_url', 'get_url'"},
             {"name", TYPE_STRING, "Remote name (required for add/remove/set_url/get_url)"},
@@ -48,7 +48,7 @@ public final class GitRemoteTool extends GitTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String action = args.has(PARAM_ACTION)
             ? args.get(PARAM_ACTION).getAsString()
             : "list";

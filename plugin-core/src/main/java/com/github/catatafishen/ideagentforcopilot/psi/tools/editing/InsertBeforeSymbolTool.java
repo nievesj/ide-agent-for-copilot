@@ -6,6 +6,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ReplaceSymbolRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.editor.Document;
@@ -52,7 +53,7 @@ public final class InsertBeforeSymbolTool extends EditingTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"},
             {"symbol", TYPE_STRING, "Name of the symbol to insert before"},
@@ -67,7 +68,7 @@ public final class InsertBeforeSymbolTool extends EditingTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String error = validateArgs(args, PARAM_CONTENT);
         if (error != null) return error;
 
@@ -107,7 +108,7 @@ public final class InsertBeforeSymbolTool extends EditingTool {
                 final String fContent = normalized;
                 final int fOffset = offset;
 
-                ApplicationManager.getApplication().runWriteAction(() ->
+                WriteAction.run(() ->
                     CommandProcessor.getInstance().executeCommand(
                         project, () -> doc.insertString(fOffset, fContent),
                         "Insert Before Symbol", null)

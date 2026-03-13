@@ -44,7 +44,7 @@ public final class GitLogTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_MAX_COUNT, TYPE_INTEGER, "Maximum number of commits to show (default: 10)"},
             {PARAM_FORMAT, TYPE_STRING, "Output format: 'oneline', 'short', 'medium', 'full'"},
@@ -56,7 +56,7 @@ public final class GitLogTool extends GitTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("log");
 

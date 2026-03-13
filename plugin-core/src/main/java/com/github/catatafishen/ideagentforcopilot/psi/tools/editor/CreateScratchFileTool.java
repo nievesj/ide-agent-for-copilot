@@ -5,6 +5,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ScratchFileRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.ide.scratch.ScratchFileService;
 import com.intellij.ide.scratch.ScratchRootType;
 import com.intellij.openapi.application.ApplicationManager;
@@ -45,7 +46,7 @@ public final class CreateScratchFileTool extends EditorTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"name", TYPE_STRING, "Scratch file name with extension (e.g., 'test.py', 'notes.md')"},
             {PARAM_CONTENT, TYPE_STRING, "The content to write to the scratch file"}
@@ -58,7 +59,7 @@ public final class CreateScratchFileTool extends EditorTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String name = args.has("name") ? args.get("name").getAsString() : "scratch.txt";
         String content = args.has(PARAM_CONTENT) ? args.get(PARAM_CONTENT).getAsString() : "";
 
@@ -93,8 +94,8 @@ public final class CreateScratchFileTool extends EditorTool {
 
             // Cast needed: runWriteAction is overloaded (Computable vs. ThrowableComputable)
             //noinspection RedundantCast
-            resultFile[0] = ApplicationManager.getApplication().runWriteAction(
-                (Computable<VirtualFile>) () -> {
+            resultFile[0] = WriteAction.compute(
+                () -> {
                     try {
                         VirtualFile file = scratchService.findFile(
                             scratchRoot, name,

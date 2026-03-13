@@ -48,7 +48,7 @@ public final class GitRebaseTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_BRANCH, TYPE_STRING, "Branch to rebase onto"},
             {"onto", TYPE_STRING, "Rebase onto a specific commit (used with --onto)"},
@@ -61,7 +61,7 @@ public final class GitRebaseTool extends GitTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
         if (args.has(PARAM_ABORT) && args.get(PARAM_ABORT).getAsBoolean()) {

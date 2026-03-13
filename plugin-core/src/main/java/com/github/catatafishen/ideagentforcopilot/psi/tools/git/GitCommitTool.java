@@ -43,7 +43,7 @@ public final class GitCommitTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_MESSAGE, TYPE_STRING, "Commit message (use conventional commit format)"},
             {PARAM_AMEND, TYPE_BOOLEAN, "If true, amend the previous commit instead of creating a new one"},
@@ -52,7 +52,7 @@ public final class GitCommitTool extends GitTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
         if (!args.has(PARAM_MESSAGE) || args.get(PARAM_MESSAGE).getAsString().isEmpty()) {

@@ -54,7 +54,7 @@ public final class ListScratchFilesTool extends EditorTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         try {
             final List<String> lines = new ArrayList<>();
             final String[] errorMsg = new String[1];

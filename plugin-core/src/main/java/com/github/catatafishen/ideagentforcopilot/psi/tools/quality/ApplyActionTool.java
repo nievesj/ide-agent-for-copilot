@@ -81,7 +81,7 @@ public final class ApplyActionTool extends QualityTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("file") || !args.has("line") || !args.has(PARAM_ACTION_NAME)) {
             return "Error: 'file', 'line', and 'action_name' parameters are required";
         }

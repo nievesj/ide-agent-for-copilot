@@ -43,7 +43,7 @@ public final class BuildProjectTool extends ProjectTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {JSON_MODULE, TYPE_STRING, "Optional: build only a specific module (e.g., 'plugin-core')"}
         });
@@ -55,7 +55,7 @@ public final class BuildProjectTool extends ProjectTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!buildInProgress.compareAndSet(false, true)) {
             return "Build already in progress. Please wait for the current build to complete before requesting another.";
         }

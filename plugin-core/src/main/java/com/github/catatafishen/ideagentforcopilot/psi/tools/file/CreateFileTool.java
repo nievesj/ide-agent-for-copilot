@@ -46,7 +46,7 @@ public final class CreateFileTool extends FileTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Path for the new file (absolute or project-relative). File must not already exist"},
             {PARAM_CONTENT, TYPE_STRING, "Content to write to the file"}
@@ -59,7 +59,7 @@ public final class CreateFileTool extends FileTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("path") || !args.has(PARAM_CONTENT)) {
             return "Error: 'path' and 'content' parameters are required";
         }

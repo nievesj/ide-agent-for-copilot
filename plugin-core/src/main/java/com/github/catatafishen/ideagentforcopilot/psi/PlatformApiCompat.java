@@ -227,7 +227,7 @@ public final class PlatformApiCompat {
 
     /**
      * Application-level analogue of {@link #getServiceByRawClass}. Used by reflection-based
-     * integrations (e.g. SonarLint) where the service class is loaded from a foreign classloader.
+     * integrations (e.g., SonarLint) where the service class is loaded from a foreign classloader.
      * <p>
      * <b>Why extracted:</b> {@code ApplicationManager.getApplication().getService(Class&lt;T&gt;)}
      * causes an IDE daemon false-positive when passed a raw {@code Class&lt;?&gt;} because the
@@ -339,7 +339,7 @@ public final class PlatformApiCompat {
         var vcsLog = com.intellij.vcs.log.impl.VcsProjectLog.getInstance(project);
         var data = vcsLog.getDataManager();
         if (data == null) {
-            // Log not initialized — fall back to direct navigation
+            // Log not yet initialized — fall back to direct navigation
             com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash);
             return;
         }
@@ -390,7 +390,7 @@ public final class PlatformApiCompat {
      * </ul>
      *
      * <p>All methods exist and work correctly at runtime. The Gradle build compiles without errors.
-     * Isolated in this class so Git4Idea class loading is deferred until first use; if Git4Idea
+     * Isolated in this class, so Git4Idea class loading is deferred until first use; if Git4Idea
      * is disabled, the caller catches {@code NoClassDefFoundError} and falls back.</p>
      */
     public static @Nullable String runIdeGitCommand(@NotNull Project project, @NotNull String[] args) {
@@ -555,7 +555,6 @@ public final class PlatformApiCompat {
      * reports "ThrowableRunnable is not a functional interface". Wrapping the call here avoids
      * the false positive in calling code.</p>
      */
-    @SuppressWarnings("unchecked")
     public static void writeActionRunAndWait(@NotNull Runnable action) throws Exception {
         com.intellij.openapi.application.WriteAction.runAndWait(
             (com.intellij.util.ThrowableRunnable<Exception>) action::run);
@@ -653,9 +652,9 @@ public final class PlatformApiCompat {
      *
      * <p><b>Why extracted:</b> {@code FileTypeDetector.EP_NAME} and
      * {@code LanguageUtil.getFileTypeLanguage()} have subtle signature changes across IDE
-     * versions. Centralising here keeps the caller insulated.</p>
+     * versions. Centralizing here keeps the caller insulated.</p>
      *
-     * @param text the pasted / imported text to analyse
+     * @param text the pasted / imported text to analyze
      * @return the detected {@link com.intellij.lang.Language}, or {@code null} if unknown
      */
     @Nullable
@@ -702,6 +701,10 @@ public final class PlatformApiCompat {
         try {
             int desired = detector.getDesiredContentPrefixLength();
             var seq = desired > 0 && desired < bytes.length ? prefixSeq : byteSeq;
+            // Passing null VirtualFile is the standard pattern for content-based detection; the
+            // @NotNull annotation on detect() is overly strict in some SDK versions. The outer
+            // try-catch handles detectors that reject a null file.
+            @SuppressWarnings("DataFlowIssue")
             var ft = detector.detect(null, seq, text);
             if (ft instanceof com.intellij.openapi.fileTypes.LanguageFileType lft
                 && lft.getLanguage() != com.intellij.openapi.fileTypes.PlainTextLanguage.INSTANCE) {
@@ -857,6 +860,23 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Returns all installed UI themes.
+     *
+     * <p><b>Why extracted:</b> {@code LafManager.getInstalledThemes()} is annotated
+     * {@code @ApiStatus.Experimental} and its return type changed from {@code Sequence<UIThemeLookAndFeelInfo>}
+     * to {@code List<UIThemeLookAndFeelInfo>} across supported IDE versions. Centralizing here
+     * isolates callers from the unstable API and the Kotlin sequence adapter.</p>
+     *
+     * @param lafManager the LafManager instance to query
+     * @return list of all installed themes
+     */
+    @SuppressWarnings("UnstableApiUsage") // getInstalledThemes() is @Experimental; no stable alternative exists
+    public static @NotNull java.util.List<com.intellij.ide.ui.laf.UIThemeLookAndFeelInfo> getInstalledThemes(
+        @NotNull com.intellij.ide.ui.LafManager lafManager) {
+        return kotlin.sequences.SequencesKt.toList(lafManager.getInstalledThemes());
+    }
+
+    /**
      * Runs the full inspection engine on the given scope using the supplied profile.
      * <p>
      * <b>Why extracted:</b> The actual analysis requires {@code GlobalInspectionContextImpl}
@@ -879,6 +899,10 @@ public final class PlatformApiCompat {
      * @param profile    the inspection profile to use
      * @param onFinished callback invoked synchronously before cleanup; context is still valid
      */
+    // GlobalInspectionContextImpl and InspectionManagerEx are @ApiStatus.Internal but are the only
+    // way to run real inspections (GlobalInspectionContextBase.runTools() is a no-op). No stable
+    // alternative exists; see Javadoc above for full rationale. Confined here per PlatformApiCompat policy.
+    @SuppressWarnings("UnstableApiUsage")
     public static void runFullInspections(
         @NotNull Project project,
         @NotNull com.intellij.analysis.AnalysisScope scope,
@@ -895,7 +919,7 @@ public final class PlatformApiCompat {
                 @Override
                 protected void notifyInspectionsFinished(
                     @NotNull com.intellij.analysis.AnalysisScope finishedScope) {
-                    // Collect results BEFORE super, which calls cleanup() and disposes the context
+                    // Collect results before calling super, which invokes cleanup() and disposes the context
                     onFinished.accept(this);
                     super.notifyInspectionsFinished(finishedScope);
                 }

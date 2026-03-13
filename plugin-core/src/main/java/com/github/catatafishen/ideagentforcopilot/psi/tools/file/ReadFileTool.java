@@ -4,6 +4,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.FileAccessTracker;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ReadFileRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -52,7 +53,7 @@ public class ReadFileTool extends FileTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Absolute or project-relative path to the file to read"},
             {PARAM_START_LINE, TYPE_INTEGER, "Optional: first line to read (1-based, inclusive)"},
@@ -66,14 +67,14 @@ public class ReadFileTool extends FileTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) {
+    public @NotNull String execute(@NotNull JsonObject args) {
         if (!args.has("path") || args.get("path").isJsonNull())
             return ToolUtils.ERROR_PATH_REQUIRED;
         String pathStr = args.get("path").getAsString();
         int startLine = args.has(PARAM_START_LINE) ? args.get(PARAM_START_LINE).getAsInt() : -1;
         int endLine = args.has(PARAM_END_LINE) ? args.get(PARAM_END_LINE).getAsInt() : -1;
 
-        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+        String result = ReadAction.compute(() -> {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 

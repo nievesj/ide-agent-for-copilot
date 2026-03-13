@@ -3,6 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.file;
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
@@ -48,7 +49,7 @@ public final class RenameFileTool extends FileTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Path to the file to rename (absolute or project-relative)"},
             {PARAM_NEW_NAME, TYPE_STRING, "New file name (just the filename, not a full path)"}
@@ -56,7 +57,7 @@ public final class RenameFileTool extends FileTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("path") || !args.has(PARAM_NEW_NAME))
             return ToolUtils.ERROR_PREFIX + "'path' and 'new_name' parameters are required";
         String pathStr = args.get("path").getAsString();
@@ -74,7 +75,7 @@ public final class RenameFileTool extends FileTool {
                 }
                 String oldName = vf.getName();
                 EdtUtil.invokeLater(() ->
-                    ApplicationManager.getApplication().runWriteAction(() -> {
+                    WriteAction.run(() -> {
                         try {
                             com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
                                 project,

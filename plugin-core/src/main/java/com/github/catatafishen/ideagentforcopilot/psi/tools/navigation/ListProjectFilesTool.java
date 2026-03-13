@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.navigation;
 
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
@@ -52,7 +53,7 @@ public final class ListProjectFilesTool extends NavigationTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_DIRECTORY, TYPE_STRING, "Optional subdirectory to list (relative to project root)", ""},
             {PARAM_PATTERN, TYPE_STRING, "Optional glob pattern (e.g., '*.java', 'src/**/*.kt')", ""},
@@ -70,7 +71,7 @@ public final class ListProjectFilesTool extends NavigationTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) {
+    public @NotNull String execute(@NotNull JsonObject args) {
         String dir = args.has(PARAM_DIRECTORY) ? args.get(PARAM_DIRECTORY).getAsString() : "";
         String pattern = args.has(PARAM_PATTERN) ? args.get(PARAM_PATTERN).getAsString() : "";
         String sort = args.has("sort") ? args.get("sort").getAsString() : "name";
@@ -78,8 +79,8 @@ public final class ListProjectFilesTool extends NavigationTool {
         long maxSize = args.has(PARAM_MAX_SIZE) ? args.get(PARAM_MAX_SIZE).getAsLong() : -1;
         long modifiedAfter = args.has(PARAM_MODIFIED_AFTER) ? ToolUtils.parseDateParam(args.get(PARAM_MODIFIED_AFTER).getAsString()) : -1;
         long modifiedBefore = args.has(PARAM_MODIFIED_BEFORE) ? ToolUtils.parseDateParam(args.get(PARAM_MODIFIED_BEFORE).getAsString()) : -1;
-        return ApplicationManager.getApplication().runReadAction(
-            (Computable<String>) () -> computeFilesList(dir, pattern, sort, minSize, maxSize, modifiedAfter, modifiedBefore));
+        return ReadAction.compute(
+            () -> computeFilesList(dir, pattern, sort, minSize, maxSize, modifiedAfter, modifiedBefore));
     }
 
     private record FileEntry(String relPath, String tag, String typeName, long size, long timestamp) {

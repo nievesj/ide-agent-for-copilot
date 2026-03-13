@@ -1280,34 +1280,38 @@ var __chatUI = (() => {
     _render() {
       const reqId = this.getAttribute("req-id") || "";
       this.className = "perm-actions";
+      this._buildArgsTable();
+      this._buildButtons(reqId);
+    }
+    _buildArgsTable() {
       const argsAttr = this.getAttribute("args");
-      if (argsAttr) {
-        try {
-          const args = JSON.parse(argsAttr);
-          const entries = Object.entries(args).filter(([, v]) => v !== null && v !== void 0 && v !== false && v !== "");
-          if (entries.length > 0) {
-            const table = document.createElement("div");
-            table.className = "perm-args";
-            for (const [key, value] of entries) {
-              const row = document.createElement("div");
-              row.className = "perm-arg-row";
-              const label = document.createElement("span");
-              label.className = "perm-arg-key";
-              label.textContent = key;
-              const val = document.createElement("span");
-              val.className = "perm-arg-val";
-              const strVal = Array.isArray(value) ? value.join(", ") : String(value);
-              val.title = strVal;
-              val.textContent = strVal.length > 80 ? strVal.slice(0, 77) + "\u2026" : strVal;
-              row.appendChild(label);
-              row.appendChild(val);
-              table.appendChild(row);
-            }
-            this.appendChild(table);
-          }
-        } catch {
+      if (!argsAttr) return;
+      try {
+        const args = JSON.parse(argsAttr);
+        const entries = Object.entries(args).filter(([, v]) => v !== null && v !== void 0 && v !== false && v !== "");
+        if (entries.length === 0) return;
+        const table = document.createElement("div");
+        table.className = "perm-args";
+        for (const [key, value] of entries) {
+          const row = document.createElement("div");
+          row.className = "perm-arg-row";
+          const label = document.createElement("span");
+          label.className = "perm-arg-key";
+          label.textContent = key;
+          const val = document.createElement("span");
+          val.className = "perm-arg-val";
+          const strVal = Array.isArray(value) ? value.join(", ") : String(value);
+          val.title = strVal;
+          val.textContent = strVal.length > 80 ? strVal.slice(0, 77) + "\u2026" : strVal;
+          row.appendChild(label);
+          row.appendChild(val);
+          table.appendChild(row);
         }
+        this.appendChild(table);
+      } catch {
       }
+    }
+    _buildButtons(reqId) {
       const denyBtn = document.createElement("button");
       denyBtn.type = "button";
       denyBtn.className = "quick-reply-btn perm-deny";

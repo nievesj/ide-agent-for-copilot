@@ -46,7 +46,7 @@ public final class GitTagTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_ACTION, TYPE_STRING, "Action: 'list' (default), 'create', 'delete'"},
             {"name", TYPE_STRING, "Tag name (required for create/delete)"},
@@ -59,7 +59,7 @@ public final class GitTagTool extends GitTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String action = args.has(PARAM_ACTION)
             ? args.get(PARAM_ACTION).getAsString()
             : "list";

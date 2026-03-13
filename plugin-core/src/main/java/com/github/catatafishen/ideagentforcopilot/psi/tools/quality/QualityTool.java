@@ -4,6 +4,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.Tool;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.InspectionResultRenderer;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInsight.intention.IntentionAction;
@@ -85,7 +86,7 @@ public abstract class QualityTool extends Tool {
     protected List<String> collectIntentionNames(Editor editor, PsiFile psiFile) {
         List<IntentionAction> registered = IntentionManager.getInstance().getAvailableIntentions();
         List<String> names = new ArrayList<>();
-        ApplicationManager.getApplication().runReadAction(() -> {
+        ReadAction.run(() -> {
             for (IntentionAction action : registered) {
                 try {
                     if (action.isAvailable(project, editor, psiFile)) {

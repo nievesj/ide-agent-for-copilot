@@ -44,7 +44,7 @@ public final class GitStashTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_ACTION, TYPE_STRING, "Action: 'list' (default), 'push', 'pop', 'apply', 'drop'"},
             {PARAM_MESSAGE, TYPE_STRING, "Stash message (for push action)"},
@@ -54,7 +54,7 @@ public final class GitStashTool extends GitTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String action = args.has(PARAM_ACTION)
             ? args.get(PARAM_ACTION).getAsString()
             : "list";

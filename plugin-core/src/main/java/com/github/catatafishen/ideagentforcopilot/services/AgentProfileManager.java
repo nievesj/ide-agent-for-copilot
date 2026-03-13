@@ -94,7 +94,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     // ── Persistence ──────────────────────────────────────────────────────────
 
     @Override
-    public @Nullable ProfileState getState() {
+    public @NotNull ProfileState getState() {
         ProfileState state = new ProfileState();
         synchronized (this) {
             for (AgentProfile profile : profiles.values()) {
@@ -183,29 +183,14 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         return createCopilotProfile();
     }
 
-    /**
-     * Creates the default OpenCode profile. Public for use in tests.
-     */
-    @NotNull
-    public static AgentProfile createDefaultOpenCodeProfile() {
-        return createOpenCodeProfile();
-    }
-
-    /**
-     * Creates the default Claude Code profile. Public for use in tests.
-     */
-    @NotNull
-    public static AgentProfile createDefaultClaudeCodeProfile() {
-        return createClaudeCodeProfile();
-    }
-
     private static final String COPILOT_ADDITIONAL_INSTRUCTIONS =
-        "SUB-AGENT SELECTION:\n"
-            + "When spawning sub-agents via the `task` tool, ALWAYS prefer these IDE-aware custom agents \\\n"
-            + "over the equivalent built-in agents — they use IntelliJ MCP tools and live editor buffers \\\n"
-            + "instead of stale CLI tools:\n"
-            + "- Use `@ide-explore` instead of the built-in `explore` agent\n"
-            + "- Use `@ide-task` instead of the built-in `task` agent";
+        """
+            SUB-AGENT SELECTION:
+            When spawning sub-agents via the `task` tool, ALWAYS prefer these IDE-aware custom agents \\
+            over the equivalent built-in agents — they use IntelliJ MCP tools and live editor buffers \\
+            instead of stale CLI tools:
+            - Use `@ide-explore` instead of the built-in `explore` agent
+            - Use `@ide-task` instead of the built-in `task` agent""";
 
     @NotNull
     private static AgentProfile createCopilotProfile() {
@@ -299,15 +284,12 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
      * Serializable state wrapper for {@link PersistentStateComponent}.
      */
     public static final class ProfileState {
-        private List<ProfileEntry> profiles = new ArrayList<>();
+        private final List<ProfileEntry> profiles = new ArrayList<>();
 
         public List<ProfileEntry> getProfiles() {
             return profiles;
         }
 
-        public void setProfiles(List<ProfileEntry> profiles) {
-            this.profiles = profiles;
-        }
     }
 
     /**
@@ -334,7 +316,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         private boolean requiresResourceDuplication;
         private String modelUsageField = "";
         private String agentsDirectory = "";
-        private boolean ensureCopilotAgents; // kept for backward-compat deserialization (ignored on write)
+        // kept for backward-compat deserialization (ignored on write)
         private String bundledAgentFiles = "";
         private String additionalInstructions = "";
         private String prependInstructionsTo = "";
@@ -492,14 +474,6 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
 
         public void setAgentsDirectory(String agentsDirectory) {
             this.agentsDirectory = agentsDirectory;
-        }
-
-        public boolean isEnsureCopilotAgents() {
-            return ensureCopilotAgents;
-        }
-
-        public void setEnsureCopilotAgents(boolean ensureCopilotAgents) {
-            this.ensureCopilotAgents = ensureCopilotAgents;
         }
 
         public String getBundledAgentFiles() {

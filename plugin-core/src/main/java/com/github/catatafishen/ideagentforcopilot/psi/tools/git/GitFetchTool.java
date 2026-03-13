@@ -48,7 +48,7 @@ public final class GitFetchTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_REMOTE, TYPE_STRING, "Remote name (default: origin)"},
             {PARAM_BRANCH, TYPE_STRING, "Specific branch to fetch"},
@@ -58,7 +58,7 @@ public final class GitFetchTool extends GitTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("fetch");
 

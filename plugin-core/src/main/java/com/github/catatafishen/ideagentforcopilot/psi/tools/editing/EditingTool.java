@@ -4,6 +4,8 @@ import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.Tool;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.WriteAction;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.codeInsight.actions.ReformatCodeProcessor;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
@@ -63,7 +65,7 @@ public abstract class EditingTool extends Tool {
     protected void formatInline(VirtualFile vf) {
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return;
-        ApplicationManager.getApplication().runWriteAction(() ->
+        WriteAction.run(() ->
             CommandProcessor.getInstance().executeCommand(project, () -> {
                 PsiDocumentManager.getInstance(project).commitAllDocuments();
                 new ReformatCodeProcessor(psiFile, false).run();
@@ -77,7 +79,7 @@ public abstract class EditingTool extends Tool {
 
     protected @Nullable SymbolLocation resolveSymbol(String pathStr, String symbolName, @Nullable Integer lineHint) {
         // Cast required: resolves ambiguity between runReadAction(Computable) and runReadAction(ThrowableComputable)
-        return ApplicationManager.getApplication().runReadAction((Computable<SymbolLocation>) () -> {
+        return ReadAction.compute(() -> {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return null;
             PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
@@ -105,7 +107,7 @@ public abstract class EditingTool extends Tool {
 
     protected String symbolNotFoundMessage(String pathStr, String symbolName, @Nullable Integer lineHint) {
         // Cast required: resolves ambiguity between runReadAction(Computable) and runReadAction(ThrowableComputable)
-        String available = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+        String available = ReadAction.compute(() -> {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
             PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);

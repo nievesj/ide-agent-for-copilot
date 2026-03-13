@@ -59,7 +59,7 @@ public final class RunScratchFileTool extends EditorTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"name", TYPE_STRING, "Scratch file name with extension (e.g., 'test.kts', 'MyApp.java', 'hello.js')"},
             {PARAM_MODULE, TYPE_STRING, "Optional: module name for classpath (e.g., 'plugin-core')"},
@@ -73,7 +73,7 @@ public final class RunScratchFileTool extends EditorTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("name")) {
             return "Error: 'name' parameter is required (scratch file name, e.g. 'test.kts')";
         }

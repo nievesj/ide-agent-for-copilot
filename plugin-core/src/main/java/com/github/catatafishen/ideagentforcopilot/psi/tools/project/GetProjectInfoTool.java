@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.project;
 
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.execution.RunManager;
 import com.intellij.openapi.application.ApplicationInfo;
 import com.intellij.openapi.application.ApplicationManager;
@@ -57,8 +58,8 @@ public final class GetProjectInfoTool extends ProjectTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) {
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+    public @NotNull String execute(@NotNull JsonObject args) {
+        return ReadAction.compute(() -> {
             StringBuilder sb = new StringBuilder();
             String basePath = project.getBasePath();
             sb.append("Project: ").append(project.getName()).append("\n");

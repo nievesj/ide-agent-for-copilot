@@ -44,7 +44,7 @@ public final class GitDiffTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_STAGED, TYPE_BOOLEAN, "If true, show staged (cached) changes only"},
             {PARAM_COMMIT, TYPE_STRING, "Compare against this commit (e.g., 'HEAD~1', branch name)"},
@@ -54,7 +54,7 @@ public final class GitDiffTool extends GitTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
         List<String> cmdArgs = new ArrayList<>();

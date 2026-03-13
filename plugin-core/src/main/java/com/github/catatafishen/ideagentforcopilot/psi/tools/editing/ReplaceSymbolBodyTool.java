@@ -6,6 +6,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ReplaceSymbolRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.editor.Document;
@@ -53,7 +54,7 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"},
             {"symbol", TYPE_STRING, "Name of the symbol to replace (method, class, function, or field)"},
@@ -68,7 +69,7 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String error = validateArgs(args, PARAM_NEW_BODY);
         if (error != null) return error;
 
@@ -111,7 +112,7 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
                 final int fEnd = endOffset;
                 final String fNew = normalized;
 
-                ApplicationManager.getApplication().runWriteAction(() ->
+                WriteAction.run(() ->
                     CommandProcessor.getInstance().executeCommand(
                         project, () -> doc.replaceString(fStart, fEnd, fNew),
                         "Replace Symbol Body", null)

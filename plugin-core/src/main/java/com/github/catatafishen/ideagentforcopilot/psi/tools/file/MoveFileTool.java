@@ -3,6 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.file;
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
@@ -47,7 +48,7 @@ public final class MoveFileTool extends FileTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Path to the file to move (absolute or project-relative)"},
             {PARAM_DESTINATION, TYPE_STRING, "Destination directory path (absolute or project-relative)"}
@@ -55,7 +56,7 @@ public final class MoveFileTool extends FileTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("path") || !args.has(PARAM_DESTINATION))
             return ToolUtils.ERROR_PREFIX + "'path' and 'destination' parameters are required";
         String pathStr = args.get("path").getAsString();
@@ -89,7 +90,7 @@ public final class MoveFileTool extends FileTool {
         String oldPath = vf.getPath();
         MoveFileTool requestor = this;
         EdtUtil.invokeLater(() ->
-            ApplicationManager.getApplication().runWriteAction(() -> {
+            WriteAction.run(() -> {
                 try {
                     com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
                         project,

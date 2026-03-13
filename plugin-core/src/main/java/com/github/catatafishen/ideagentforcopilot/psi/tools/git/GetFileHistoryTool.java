@@ -36,7 +36,7 @@ public final class GetFileHistoryTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Path to the file to get history for (absolute or project-relative)"},
             {PARAM_MAX_COUNT, TYPE_INTEGER, "Maximum number of commits to show (default: 20)"}
@@ -44,7 +44,7 @@ public final class GetFileHistoryTool extends GitTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("path") || args.get("path").getAsString().isEmpty()) {
             return "Error: 'path' parameter is required";
         }

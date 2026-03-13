@@ -44,7 +44,7 @@ public final class ReadBuildOutputTool extends InfrastructureTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {JSON_TAB_NAME, TYPE_STRING, "Name of the Build tab to read (default: currently selected or most recent). Use tab names shown in IntelliJ's Build tool window."},
             {PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return (default: 8000)"}
@@ -52,7 +52,7 @@ public final class ReadBuildOutputTool extends InfrastructureTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) {
+    public @NotNull String execute(@NotNull JsonObject args) {
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
         String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
 

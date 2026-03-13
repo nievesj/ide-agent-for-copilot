@@ -4,6 +4,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.RunCommandRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
@@ -56,7 +57,7 @@ public final class RunCommandTool extends InfrastructureTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_COMMAND, TYPE_STRING, "Shell command to execute (e.g., 'gradle build', 'cat file.txt')"},
             {PARAM_TIMEOUT, TYPE_INTEGER, "Timeout in seconds (default: 60)"},
@@ -96,13 +97,13 @@ public final class RunCommandTool extends InfrastructureTool {
 
     @Override
     @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String command = args.get(PARAM_COMMAND).getAsString();
         String abuseType = ToolUtils.detectCommandAbuseType(command);
         if (abuseType != null) return ToolUtils.getCommandAbuseMessage(abuseType);
 
         EdtUtil.invokeAndWait(() ->
-            com.intellij.openapi.application.ApplicationManager.getApplication().runWriteAction(() ->
+            com.intellij.openapi.application.WriteAction.run(() ->
                 com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments()));
 
         String title = args.has(JSON_TITLE) ? args.get(JSON_TITLE).getAsString() : null;

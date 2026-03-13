@@ -4,6 +4,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.TerminalOutputRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -80,7 +81,7 @@ public final class RunInTerminalTool extends TerminalTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String command = args.get(JSON_COMMAND).getAsString();
 
         // Runtime guard: reject abuse patterns even if the pre-check was skipped
@@ -93,7 +94,7 @@ public final class RunInTerminalTool extends TerminalTool {
 
         // Flush all editor buffers to disk so terminal commands see current content
         EdtUtil.invokeAndWait(() ->
-            com.intellij.openapi.application.ApplicationManager.getApplication().runWriteAction(() ->
+            com.intellij.openapi.application.WriteAction.run(() ->
                 com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments()));
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();

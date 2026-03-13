@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.execution.ExecutionManager;
 import com.intellij.execution.RunManager;
 import com.intellij.execution.configurations.RunConfiguration;
@@ -60,7 +61,7 @@ public final class RunConfigurationService {
     }
 
     public String listRunConfigurations() {
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+        return ReadAction.compute(() -> {
             try {
                 var configs = RunManager.getInstance(project).getAllSettings();
                 if (configs.isEmpty()) return "No run configurations found";

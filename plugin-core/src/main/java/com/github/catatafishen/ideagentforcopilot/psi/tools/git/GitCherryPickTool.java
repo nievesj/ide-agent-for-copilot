@@ -42,7 +42,7 @@ public final class GitCherryPickTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         JsonObject s = schema(new Object[][]{
             {PARAM_COMMITS, TYPE_ARRAY, "One or more commit SHAs to cherry-pick"},
             {PARAM_NO_COMMIT, TYPE_BOOLEAN, "Apply changes without creating commits"},
@@ -54,7 +54,7 @@ public final class GitCherryPickTool extends GitTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
         if (args.has(PARAM_ABORT) && args.get(PARAM_ABORT).getAsBoolean()) {

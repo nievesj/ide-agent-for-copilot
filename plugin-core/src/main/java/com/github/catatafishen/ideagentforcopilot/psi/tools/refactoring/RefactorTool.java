@@ -5,6 +5,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.RefactorRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.diagnostic.Logger;
@@ -59,7 +60,7 @@ public final class RefactorTool extends RefactoringTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_OPERATION, TYPE_STRING, "Refactoring type: 'rename', 'extract_method', 'inline', or 'safe_delete'"},
             {"file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"},
@@ -75,7 +76,7 @@ public final class RefactorTool extends RefactoringTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has(PARAM_OPERATION) || !args.has("file") || !args.has(PARAM_SYMBOL)) {
             return "Error: 'operation', 'file', and 'symbol' parameters are required";
         }
@@ -125,7 +126,7 @@ public final class RefactorTool extends RefactoringTool {
         }
 
         String[] result = new String[1];
-        ApplicationManager.getApplication().runWriteAction(() -> {
+        WriteAction.run(() -> {
             try {
                 result[0] = executeRefactoring(operation, targetElement, symbolName, newName, pathStr);
             } catch (Exception e) {

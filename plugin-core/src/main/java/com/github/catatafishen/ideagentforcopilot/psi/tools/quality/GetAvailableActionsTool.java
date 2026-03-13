@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.quality;
 
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -73,7 +74,7 @@ public final class GetAvailableActionsTool extends QualityTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("file") || !args.has("line")) {
             return "Error: 'file' and 'line' parameters are required";
         }
@@ -98,7 +99,7 @@ public final class GetAvailableActionsTool extends QualityTool {
 
         CompletableFuture<String> future = new CompletableFuture<>();
         com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread(() ->
-            com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction(() -> {
+            com.intellij.openapi.application.ReadAction.run(() -> {
                 try {
                     future.complete(collectQuickFixesOnly(pathStr, targetLine));
                 } catch (Exception e) {

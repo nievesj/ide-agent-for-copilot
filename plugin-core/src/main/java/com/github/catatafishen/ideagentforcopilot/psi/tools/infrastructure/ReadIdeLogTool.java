@@ -43,7 +43,7 @@ public final class ReadIdeLogTool extends InfrastructureTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_LINES, TYPE_INTEGER, "Number of recent lines to return (default: 50)"},
             {PARAM_FILTER, TYPE_STRING, "Only return lines containing this text"},
@@ -52,7 +52,7 @@ public final class ReadIdeLogTool extends InfrastructureTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws IOException {
+    public @NotNull String execute(@NotNull JsonObject args) throws IOException {
         int lines = args.has(PARAM_LINES) ? args.get(PARAM_LINES).getAsInt() : 50;
         String filter = args.has(PARAM_FILTER) ? args.get(PARAM_FILTER).getAsString() : null;
         String level = args.has(PARAM_LEVEL) ? args.get(PARAM_LEVEL).getAsString().toUpperCase() : null;

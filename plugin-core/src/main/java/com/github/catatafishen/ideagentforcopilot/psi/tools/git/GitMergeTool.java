@@ -46,7 +46,7 @@ public final class GitMergeTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_BRANCH, TYPE_STRING, "Branch to merge into current branch"},
             {PARAM_MESSAGE, TYPE_STRING, "Custom merge commit message"},
@@ -58,7 +58,7 @@ public final class GitMergeTool extends GitTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         boolean hasAbort = args.has(PARAM_ABORT) && args.get(PARAM_ABORT).getAsBoolean();
         boolean hasBranch = args.has(PARAM_BRANCH) && !args.get(PARAM_BRANCH).getAsString().isEmpty();
 

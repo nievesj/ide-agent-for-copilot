@@ -5,6 +5,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.Tool;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor;
 import com.intellij.codeInsight.actions.ReformatCodeProcessor;
 import com.intellij.openapi.application.ApplicationManager;
@@ -74,7 +75,7 @@ public abstract class FileTool extends Tool {
                     if (vf != null) {
                         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
                         if (psiFile != null) {
-                            ApplicationManager.getApplication().runWriteAction(() ->
+                            WriteAction.run(() ->
                                 CommandProcessor.getInstance().executeCommand(project, () -> {
                                     PsiDocumentManager.getInstance(project).commitAllDocuments();
                                     new OptimizeImportsProcessor(project, psiFile).run();
@@ -90,7 +91,7 @@ public abstract class FileTool extends Tool {
                 }
             }
             // Save all documents to disk so git sees the formatted content
-            ApplicationManager.getApplication().runWriteAction(() ->
+            WriteAction.run(() ->
                 FileDocumentManager.getInstance().saveAllDocuments());
         });
     }

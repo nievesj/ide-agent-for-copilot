@@ -39,7 +39,7 @@ public final class EditTextTool extends WriteFileTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Absolute or project-relative path to the file to edit"},
             {"old_str", TYPE_STRING, "Exact string to find and replace. Must match exactly one location in the file"},

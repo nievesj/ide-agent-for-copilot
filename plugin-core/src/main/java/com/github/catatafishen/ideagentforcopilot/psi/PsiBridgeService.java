@@ -5,6 +5,7 @@ import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.ComponentManager;
 import com.intellij.openapi.components.Service;
@@ -372,13 +373,11 @@ public final class PsiBridgeService implements Disposable {
      */
     private static long getDocumentStamp(@Nullable com.intellij.openapi.vfs.VirtualFile vf) {
         if (vf == null) return -1L;
-        // Cast required for overload disambiguation: runReadAction(Computable) vs runReadAction(ThrowableComputable)
-        return com.intellij.openapi.application.ApplicationManager.getApplication()
-            .runReadAction((com.intellij.openapi.util.Computable<Long>) () -> {
-                com.intellij.openapi.editor.Document doc =
-                    com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf);
-                return doc != null ? doc.getModificationStamp() : -1L;
-            });
+        return com.intellij.openapi.application.ReadAction.compute(() -> {
+            com.intellij.openapi.editor.Document doc =
+                com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf);
+            return doc != null ? doc.getModificationStamp() : -1L;
+        });
     }
 
     private String appendAutoHighlights(String writeResult, String path, DaemonWaiter preWriteWaiter) {

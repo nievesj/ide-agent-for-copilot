@@ -46,7 +46,7 @@ public final class GitResetTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_COMMIT, TYPE_STRING, "Target commit (default: HEAD)"},
             {"mode", TYPE_STRING, "Reset mode: 'soft' (keep staged), 'mixed' (default, unstage), 'hard' (discard all changes)"},
@@ -55,7 +55,7 @@ public final class GitResetTool extends GitTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("reset");

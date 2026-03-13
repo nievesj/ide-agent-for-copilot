@@ -5,6 +5,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -52,7 +53,7 @@ public final class ApplyQuickfixTool extends QualityTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"file", TYPE_STRING, "Path to the file containing the problem"},
             {"line", TYPE_INTEGER, "Line number where the problem is located"},
@@ -62,7 +63,7 @@ public final class ApplyQuickfixTool extends QualityTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("file") || !args.has("line") || !args.has(PARAM_INSPECTION_ID)) {
             return "Error: 'file', 'line', and '" + PARAM_INSPECTION_ID + "' parameters are required";
         }
@@ -81,7 +82,7 @@ public final class ApplyQuickfixTool extends QualityTool {
                     return;
                 }
 
-                ApplicationManager.getApplication().runWriteAction(() -> {
+                WriteAction.run(() -> {
                     try {
                         resultFuture.complete(executeQuickfix(vf, pathStr, targetLine, inspectionId, fixIndex));
                     } catch (Exception e) {

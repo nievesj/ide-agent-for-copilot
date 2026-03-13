@@ -40,7 +40,7 @@ public final class GitBlameTool extends GitTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "File path to blame"},
             {PARAM_LINE_START, TYPE_INTEGER, "Start line number for partial blame"},
@@ -49,7 +49,7 @@ public final class GitBlameTool extends GitTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("path") || args.get("path").getAsString().isEmpty()) {
             return "Error: 'path' parameter is required";
         }
