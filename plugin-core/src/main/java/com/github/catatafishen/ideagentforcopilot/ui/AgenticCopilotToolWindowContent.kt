@@ -1808,12 +1808,9 @@ class AgenticCopilotToolWindowContent(
     }
 
     private fun handlePromptError(e: Exception) {
-        val msg = if (e is InterruptedException || e.cause is InterruptedException) {
-            "Request cancelled"
-        } else {
-            e.message ?: MSG_UNKNOWN_ERROR
-        }
-        consolePanel.addErrorEntry("Error: $msg")
+        val isCancelled = e is InterruptedException || e.cause is InterruptedException
+        val msg = if (isCancelled) "Request cancelled" else e.message ?: MSG_UNKNOWN_ERROR
+
         // Persist whatever was collected so far — partial turns survive disconnects and crashes.
         saveConversation()
 
@@ -1821,15 +1818,42 @@ class AgenticCopilotToolWindowContent(
         if (authService.isAuthenticationError(msg)) {
             authService.markAuthError(msg)
             copilotBanner?.triggerCheck()
+            consolePanel.addErrorEntry("Error: $msg")
+            e.printStackTrace()
+            return
         }
 
-        val isRecoverable = e is InterruptedException || e.cause is InterruptedException ||
-            (e is AcpException && e.isRecoverable)
+        val isRecoverable = isCancelled || (e is AcpException && e.isRecoverable)
         if (!isRecoverable) {
             currentSessionId = null
             updateSessionInfo()
         }
+
+        // ACP/stream errors may leave the JCEF panel unresponsive, so show the error in the
+        // always-visible Swing status banner with a Reconnect action. Also add an entry in the
+        // chat panel so it is visible in the conversation history if the browser is alive.
+        consolePanel.addErrorEntry("Error: $msg")
+        if (!isCancelled) {
+            statusBanner?.showError(msg, "Reconnect") { reconnectAfterError() }
+        }
+
         e.printStackTrace()
+    }
+
+    private fun reconnectAfterError() {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                agentManager.restart()
+                ApplicationManager.getApplication().invokeLater {
+                    statusBanner?.showInfo("Reconnected — ready for a new message.")
+                }
+            } catch (ex: Exception) {
+                LOG.warn("Reconnect failed", ex)
+                ApplicationManager.getApplication().invokeLater {
+                    statusBanner?.showError("Reconnect failed: ${ex.message ?: "unknown error"}")
+                }
+            }
+        }
     }
 
     private fun getModelMultiplier(modelId: String): String {
