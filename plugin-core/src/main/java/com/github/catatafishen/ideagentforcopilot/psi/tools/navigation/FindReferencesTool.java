@@ -74,24 +74,26 @@ public final class FindReferencesTool extends NavigationTool {
             GlobalSearchScope scope = GlobalSearchScope.projectScope(project);
 
             PsiElement definition = findDefinition(symbol, scope);
-
             if (definition != null) {
-                for (PsiReference ref : ReferencesSearch.search(definition, scope).findAll()) {
-                    if (results.size() >= 100) break;
-                    String entry = buildReferenceEntry(ref, filePattern, basePath);
-                    if (entry != null) results.add(entry);
-                }
+                collectDefinitionReferences(definition, scope, filePattern, basePath, results);
             }
-
             if (results.isEmpty()) {
                 collectWordReferences(symbol, scope, filePattern, basePath, results);
             }
-
             if (results.isEmpty()) return "No references found for '" + symbol + "'";
             return results.size() + " references found:\n" + String.join("\n", results);
         });
         showSearchFeedback("✓ Reference search complete: " + symbol);
         return result;
+    }
+
+    private void collectDefinitionReferences(PsiElement definition, GlobalSearchScope scope,
+                                             String filePattern, String basePath, List<String> results) {
+        for (PsiReference ref : ReferencesSearch.search(definition, scope).findAll()) {
+            if (results.size() >= 100) break;
+            String entry = buildReferenceEntry(ref, filePattern, basePath);
+            if (entry != null) results.add(entry);
+        }
     }
 
     private void collectWordReferences(String symbol, GlobalSearchScope scope,

@@ -80,51 +80,15 @@ public abstract class EditingTool extends Tool {
         return ApplicationManager.getApplication().runReadAction((Computable<SymbolLocation>) () -> {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return null;
-
             PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
             if (psiFile == null) return null;
-
             Document doc = FileDocumentManager.getInstance().getDocument(vf);
             if (doc == null) return null;
 
-            List<SymbolLocation> matches = new ArrayList<>();
-            psiFile.accept(new PsiRecursiveElementWalkingVisitor() {
-                @Override
-                public void visitElement(@NotNull PsiElement element) {
-                    if (element instanceof PsiNamedElement named) {
-                        String name = named.getName();
-                        if (symbolName.equals(name)) {
-                            String type = ToolUtils.classifyElement(element);
-                            if (type != null) {
-                                TextRange range = element.getTextRange();
-                                int startLine = doc.getLineNumber(range.getStartOffset()) + 1;
-                                int endLine = doc.getLineNumber(range.getEndOffset()) + 1;
-                                matches.add(new SymbolLocation(startLine, endLine, type, name));
-                            }
-                        }
-                    }
-                    super.visitElement(element);
-                }
-            });
-
+            List<SymbolLocation> matches = collectMatchingLocations(psiFile, doc, symbolName);
             if (matches.isEmpty()) return null;
             if (matches.size() == 1) return matches.getFirst();
-
-            if (lineHint != null) {
-                for (SymbolLocation loc : matches) {
-                    if (loc.startLine == lineHint) return loc;
-                }
-                SymbolLocation closest = matches.getFirst();
-                int minDist = Math.abs(closest.startLine - lineHint);
-                for (SymbolLocation loc : matches) {
-                    int dist = Math.abs(loc.startLine - lineHint);
-                    if (dist < minDist) {
-                        closest = loc;
-                        minDist = dist;
-                    }
-                }
-                return closest;
-            }
+            if (lineHint != null) return findClosestMatch(matches, lineHint);
             return matches.getFirst();
         });
     }
@@ -148,27 +112,70 @@ public abstract class EditingTool extends Tool {
             if (psiFile == null) return "";
             Document doc = FileDocumentManager.getInstance().getDocument(vf);
             if (doc == null) return "";
-
-            List<String> symbols = new ArrayList<>();
-            psiFile.accept(new PsiRecursiveElementWalkingVisitor() {
-                @Override
-                public void visitElement(@NotNull PsiElement element) {
-                    if (element instanceof PsiNamedElement named && named.getName() != null) {
-                        String type = ToolUtils.classifyElement(element);
-                        if (type != null) {
-                            int line = doc.getLineNumber(element.getTextOffset()) + 1;
-                            symbols.add(type + " " + named.getName() + " (line " + line + ")");
-                        }
-                    }
-                    super.visitElement(element);
-                }
-            });
-            if (symbols.isEmpty()) return "";
-            return "\nAvailable symbols: " + String.join(", ", symbols);
+            List<String> symbols = buildCandidateList(psiFile, doc);
+            return symbols.isEmpty() ? "" : "\nAvailable symbols: " + String.join(", ", symbols);
         });
 
         String msg = SYMBOL_PREFIX + symbolName + "' not found in " + pathStr;
         if (lineHint != null) msg += " (near line " + lineHint + ")";
         return msg + available;
+    }
+
+    private List<SymbolLocation> collectMatchingLocations(PsiFile psiFile, Document doc, String symbolName) {
+        List<SymbolLocation> matches = new ArrayList<>();
+        psiFile.accept(new PsiRecursiveElementWalkingVisitor() {
+            @Override
+            public void visitElement(@NotNull PsiElement element) {
+                if (element instanceof PsiNamedElement named) {
+                    String name = named.getName();
+                    if (symbolName.equals(name)) {
+                        String type = ToolUtils.classifyElement(element);
+                        if (type != null) {
+                            TextRange range = element.getTextRange();
+                            int startLine = doc.getLineNumber(range.getStartOffset()) + 1;
+                            int endLine = doc.getLineNumber(range.getEndOffset()) + 1;
+                            matches.add(new SymbolLocation(startLine, endLine, type, name));
+                        }
+                    }
+                }
+                super.visitElement(element);
+            }
+        });
+        return matches;
+    }
+
+    @NotNull
+    private SymbolLocation findClosestMatch(List<SymbolLocation> matches, int lineHint) {
+        for (SymbolLocation loc : matches) {
+            if (loc.startLine() == lineHint) return loc;
+        }
+        SymbolLocation closest = matches.getFirst();
+        int minDist = Math.abs(closest.startLine() - lineHint);
+        for (SymbolLocation loc : matches) {
+            int dist = Math.abs(loc.startLine() - lineHint);
+            if (dist < minDist) {
+                closest = loc;
+                minDist = dist;
+            }
+        }
+        return closest;
+    }
+
+    private List<String> buildCandidateList(PsiFile psiFile, Document doc) {
+        List<String> symbols = new ArrayList<>();
+        psiFile.accept(new PsiRecursiveElementWalkingVisitor() {
+            @Override
+            public void visitElement(@NotNull PsiElement element) {
+                if (element instanceof PsiNamedElement named && named.getName() != null) {
+                    String type = ToolUtils.classifyElement(element);
+                    if (type != null) {
+                        int line = doc.getLineNumber(element.getTextOffset()) + 1;
+                        symbols.add(type + " " + named.getName() + " (line " + line + ")");
+                    }
+                }
+                super.visitElement(element);
+            }
+        });
+        return symbols;
     }
 }

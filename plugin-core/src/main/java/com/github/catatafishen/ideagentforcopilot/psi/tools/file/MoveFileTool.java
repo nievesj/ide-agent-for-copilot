@@ -11,7 +11,6 @@ import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -20,6 +19,8 @@ import java.util.concurrent.TimeUnit;
  */
 @SuppressWarnings("java:S112")
 public final class MoveFileTool extends FileTool {
+
+    private static final String PARAM_DESTINATION = "destination";
 
     public MoveFileTool(Project project) {
         super(project);
@@ -49,20 +50,18 @@ public final class MoveFileTool extends FileTool {
     public @Nullable JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Path to the file to move (absolute or project-relative)"},
-            {"destination", TYPE_STRING, "Destination directory path (absolute or project-relative)"}
-        }, "path", "destination");
+            {PARAM_DESTINATION, TYPE_STRING, "Destination directory path (absolute or project-relative)"}
+        }, "path", PARAM_DESTINATION);
     }
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        if (!args.has("path") || !args.has("destination"))
+        if (!args.has("path") || !args.has(PARAM_DESTINATION))
             return ToolUtils.ERROR_PREFIX + "'path' and 'destination' parameters are required";
         String pathStr = args.get("path").getAsString();
-        String destStr = args.get("destination").getAsString();
+        String destStr = args.get(PARAM_DESTINATION).getAsString();
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
-        final MoveFileTool requestor = this;
-
         ReadAction.nonBlocking(() -> {
             try {
                 VirtualFile vf = resolveVirtualFile(pathStr);
@@ -75,28 +74,7 @@ public final class MoveFileTool extends FileTool {
                     resultFuture.complete(ToolUtils.ERROR_PREFIX + "Destination directory not found: " + destStr);
                     return null;
                 }
-                String oldPath = vf.getPath();
-                EdtUtil.invokeLater(() ->
-                    ApplicationManager.getApplication().runWriteAction(() -> {
-                        try {
-                            com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
-                                project,
-                                () -> {
-                                    try {
-                                        vf.move(requestor, destDir);
-                                    } catch (IOException e) {
-                                        throw new RuntimeException(e);
-                                    }
-                                },
-                                "Move File: " + vf.getName(),
-                                null
-                            );
-                            resultFuture.complete("Moved " + oldPath + " to " + destDir.getPath() + "/" + vf.getName());
-                        } catch (Exception e) {
-                            resultFuture.complete("Error moving file: " + e.getMessage());
-                        }
-                    })
-                );
+                performMoveOnEdt(vf, destDir, resultFuture);
                 return null;
             } catch (Exception e) {
                 resultFuture.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
@@ -105,5 +83,31 @@ public final class MoveFileTool extends FileTool {
         }).inSmartMode(project).submit(AppExecutorUtil.getAppExecutorService());
 
         return resultFuture.get(10, TimeUnit.SECONDS);
+    }
+
+    private void performMoveOnEdt(VirtualFile vf, VirtualFile destDir, CompletableFuture<String> resultFuture) {
+        String oldPath = vf.getPath();
+        MoveFileTool requestor = this;
+        EdtUtil.invokeLater(() ->
+            ApplicationManager.getApplication().runWriteAction(() -> {
+                try {
+                    com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
+                        project,
+                        () -> {
+                            try {
+                                vf.move(requestor, destDir);
+                            } catch (java.io.IOException e) {
+                                throw new RuntimeException(e);
+                            }
+                        },
+                        "Move File: " + vf.getName(),
+                        null
+                    );
+                    resultFuture.complete("Moved " + oldPath + " to " + destDir.getPath() + "/" + vf.getName());
+                } catch (Exception e) {
+                    resultFuture.complete("Error moving file: " + e.getMessage());
+                }
+            })
+        );
     }
 }
