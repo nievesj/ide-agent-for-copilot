@@ -60,10 +60,12 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     public void prepareForLaunch(@Nullable String projectBasePath) {
         String prependTarget = profile.getPrependInstructionsTo();
         if (prependTarget != null && !prependTarget.isEmpty()) {
-            InstructionsManager.ensureInstructions(projectBasePath, prependTarget);
+            InstructionsManager.ensureInstructions(projectBasePath, prependTarget,
+                profile.getAdditionalInstructions());
         }
-        if (profile.isEnsureCopilotAgents()) {
-            CopilotAgentsManager.ensureAgents(projectBasePath);
+        List<String> bundledAgents = profile.getBundledAgentFiles();
+        if (!bundledAgents.isEmpty()) {
+            CopilotAgentsManager.ensureAgents(projectBasePath, bundledAgents);
         }
     }
 

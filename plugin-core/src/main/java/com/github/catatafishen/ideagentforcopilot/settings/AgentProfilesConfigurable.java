@@ -34,6 +34,7 @@ import javax.swing.*;
 import javax.swing.event.ListSelectionEvent;
 import java.awt.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
@@ -62,7 +63,7 @@ public final class AgentProfilesConfigurable implements Configurable {
     // ── ACP & Launch tab ──
     private JBTextField acpArgsField;
     private JBTextField prependInstructionsToField;
-    private JBCheckBox ensureCopilotAgentsCb;
+    private JBTextField bundledAgentFilesField;
 
     // ── MCP tab ──
     private ComboBox<McpInjectionMethod> mcpMethodCombo;
@@ -205,7 +206,8 @@ public final class AgentProfilesConfigurable implements Configurable {
 
         prependInstructionsToField = new JBTextField();
         prependInstructionsToField.getEmptyText().setText("e.g. .copilot/copilot-instructions.md");
-        ensureCopilotAgentsCb = new JBCheckBox("Ensure Copilot agents config on launch");
+        bundledAgentFilesField = new JBTextField();
+        bundledAgentFilesField.getEmptyText().setText("e.g. ide-explore.md,ide-task.md");
 
         usePluginPermissionsCb = new JBCheckBox("Use plugin-level tool permissions");
         excludeAgentBuiltInToolsCb = new JBCheckBox("Exclude agent's built-in tools at session start");
@@ -264,7 +266,9 @@ public final class AgentProfilesConfigurable implements Configurable {
             .addLabeledComponent("Prepend instructions to (relative path):", prependInstructionsToField)
             .addTooltip("Relative path from project root to prepend plugin context to on launch "
                 + "(e.g. \".copilot/copilot-instructions.md\" or \"CLAUDE.md\"). Leave empty to skip.")
-            .addComponent(ensureCopilotAgentsCb)
+            .addLabeledComponent("Bundled agent files (comma-separated):", bundledAgentFilesField)
+            .addTooltip("Agent .md filenames to deploy to the agents directory on launch "
+                + "(e.g. ide-explore.md,ide-task.md). Leave empty to skip.")
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
     }
@@ -412,7 +416,7 @@ public final class AgentProfilesConfigurable implements Configurable {
             agentsDirectoryField.setText(p.getAgentsDirectory() != null ? p.getAgentsDirectory() : "");
             prependInstructionsToField.setText(
                 p.getPrependInstructionsTo() != null ? p.getPrependInstructionsTo() : "");
-            ensureCopilotAgentsCb.setSelected(p.isEnsureCopilotAgents());
+            bundledAgentFilesField.setText(String.join(",", p.getBundledAgentFiles()));
             usePluginPermissionsCb.setSelected(p.isUsePluginPermissions());
             excludeAgentBuiltInToolsCb.setSelected(p.isExcludeAgentBuiltInTools());
         } finally {
@@ -461,7 +465,9 @@ public final class AgentProfilesConfigurable implements Configurable {
         target.setAgentsDirectory(agentsDir.isEmpty() ? null : agentsDir);
         String prependTarget = prependInstructionsToField.getText().trim();
         target.setPrependInstructionsTo(prependTarget.isEmpty() ? null : prependTarget);
-        target.setEnsureCopilotAgents(ensureCopilotAgentsCb.isSelected());
+        String bundledRaw = bundledAgentFilesField.getText().trim();
+        target.setBundledAgentFiles(bundledRaw.isEmpty() ? List.of() :
+            Arrays.stream(bundledRaw.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList());
         target.setUsePluginPermissions(usePluginPermissionsCb.isSelected());
         target.setExcludeAgentBuiltInTools(excludeAgentBuiltInToolsCb.isSelected());
     }

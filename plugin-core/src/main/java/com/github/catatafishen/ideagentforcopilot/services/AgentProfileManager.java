@@ -155,7 +155,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         stored.setUsePluginPermissions(defaults.isUsePluginPermissions());
         stored.setPermissionInjectionMethod(defaults.getPermissionInjectionMethod());
         stored.setModelUsageField(defaults.getModelUsageField());
-        stored.setEnsureCopilotAgents(defaults.isEnsureCopilotAgents());
+        stored.setBundledAgentFiles(defaults.getBundledAgentFiles());
+        stored.setAdditionalInstructions(defaults.getAdditionalInstructions());
         // Only overwrite instructions target if not user-customized (null/empty means never set)
         if (stored.getPrependInstructionsTo() == null || stored.getPrependInstructionsTo().isEmpty()) {
             stored.setPrependInstructionsTo(defaults.getPrependInstructionsTo());
@@ -198,6 +199,14 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         return createClaudeCodeProfile();
     }
 
+    private static final String COPILOT_ADDITIONAL_INSTRUCTIONS =
+        "SUB-AGENT SELECTION:\n"
+            + "When spawning sub-agents via the `task` tool, ALWAYS prefer these IDE-aware custom agents \\\n"
+            + "over the equivalent built-in agents — they use IntelliJ MCP tools and live editor buffers \\\n"
+            + "instead of stale CLI tools:\n"
+            + "- Use `@ide-explore` instead of the built-in `explore` agent\n"
+            + "- Use `@ide-task` instead of the built-in `task` agent";
+
     @NotNull
     private static AgentProfile createCopilotProfile() {
         AgentProfile p = new AgentProfile();
@@ -219,7 +228,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setRequiresResourceDuplication(true);
         p.setModelUsageField("copilotUsage");
         p.setAgentsDirectory(".github/agents");
-        p.setEnsureCopilotAgents(true);
+        p.setBundledAgentFiles(List.of("ide-explore.md", "ide-task.md"));
+        p.setAdditionalInstructions(COPILOT_ADDITIONAL_INSTRUCTIONS);
         p.setPrependInstructionsTo(".copilot/copilot-instructions.md");
         p.setPermissionInjectionMethod(PermissionInjectionMethod.CLI_FLAGS);
         return p;
@@ -324,7 +334,9 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         private boolean requiresResourceDuplication;
         private String modelUsageField = "";
         private String agentsDirectory = "";
-        private boolean ensureCopilotAgents;
+        private boolean ensureCopilotAgents; // kept for backward-compat deserialization (ignored on write)
+        private String bundledAgentFiles = "";
+        private String additionalInstructions = "";
         private String prependInstructionsTo = "";
         private boolean usePluginPermissions = true;
         private boolean excludeAgentBuiltInTools;
@@ -490,6 +502,22 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             this.ensureCopilotAgents = ensureCopilotAgents;
         }
 
+        public String getBundledAgentFiles() {
+            return bundledAgentFiles;
+        }
+
+        public void setBundledAgentFiles(String bundledAgentFiles) {
+            this.bundledAgentFiles = bundledAgentFiles != null ? bundledAgentFiles : "";
+        }
+
+        public String getAdditionalInstructions() {
+            return additionalInstructions;
+        }
+
+        public void setAdditionalInstructions(String additionalInstructions) {
+            this.additionalInstructions = additionalInstructions != null ? additionalInstructions : "";
+        }
+
         public String getPrependInstructionsTo() {
             return prependInstructionsTo;
         }
@@ -544,7 +572,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             e.setRequiresResourceDuplication(p.isRequiresResourceDuplication());
             e.setModelUsageField(p.getModelUsageField() != null ? p.getModelUsageField() : "");
             e.setAgentsDirectory(p.getAgentsDirectory() != null ? p.getAgentsDirectory() : "");
-            e.setEnsureCopilotAgents(p.isEnsureCopilotAgents());
+            e.setBundledAgentFiles(String.join(",", p.getBundledAgentFiles()));
+            e.setAdditionalInstructions(p.getAdditionalInstructions());
             e.setPrependInstructionsTo(p.getPrependInstructionsTo() != null ? p.getPrependInstructionsTo() : "");
             e.setUsePluginPermissions(p.isUsePluginPermissions());
             e.setExcludeAgentBuiltInTools(p.isExcludeAgentBuiltInTools());
@@ -578,7 +607,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             p.setRequiresResourceDuplication(isRequiresResourceDuplication());
             p.setModelUsageField(getModelUsageField());
             p.setAgentsDirectory(getAgentsDirectory().isEmpty() ? null : getAgentsDirectory());
-            p.setEnsureCopilotAgents(isEnsureCopilotAgents());
+            p.setBundledAgentFiles(splitComma(getBundledAgentFiles()));
+            p.setAdditionalInstructions(getAdditionalInstructions());
             p.setPrependInstructionsTo(getPrependInstructionsTo().isEmpty() ? null : getPrependInstructionsTo());
             p.setUsePluginPermissions(isUsePluginPermissions());
             p.setExcludeAgentBuiltInTools(isExcludeAgentBuiltInTools());
