@@ -1,7 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.bridge.AnthropicKeyStore;
-import com.github.catatafishen.ideagentforcopilot.bridge.ClaudeCliCredentials;
 import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
@@ -498,10 +497,9 @@ public final class AgentProfilesConfigurable implements Configurable {
 
     private void updateClaudeCliStatus(boolean isCli) {
         if (isCli) {
-            ClaudeCliCredentials creds = ClaudeCliCredentials.read();
-            if (creds.isLoggedIn()) {
-                String name = creds.getDisplayName();
-                claudeCliStatusLabel.setText("✓ Logged in" + (name != null ? " as " + name : ""));
+            String loggedInAs = AgentProfileManager.getClaudeCliAuthStatus();
+            if (loggedInAs != null) {
+                claudeCliStatusLabel.setText(loggedInAs);
                 claudeCliStatusLabel.setForeground(new java.awt.Color(0, 128, 0));
             } else {
                 claudeCliStatusLabel.setText("✗ Not logged in. Run 'claude auth login' in a terminal.");

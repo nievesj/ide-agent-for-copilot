@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.services;
 
+import com.github.catatafishen.ideagentforcopilot.bridge.ClaudeCliCredentials;
 import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
@@ -42,6 +43,21 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     @NotNull
     public static AgentProfileManager getInstance() {
         return ApplicationManager.getApplication().getService(AgentProfileManager.class);
+    }
+
+    /**
+     * Returns a human-readable Claude CLI authentication status string for display in settings UI.
+     * Returns {@code null} if the credentials file cannot be read.
+     */
+    @Nullable
+    public static String getClaudeCliAuthStatus() {
+        ClaudeCliCredentials creds = ClaudeCliCredentials.read();
+        if (creds.isLoggedIn()) {
+            String name = creds.getDisplayName();
+            return "✓ Logged in" + (name != null ? " as " + name : "");
+        } else {
+            return null;
+        }
     }
 
     // ── CRUD ─────────────────────────────────────────────────────────────────
@@ -164,6 +180,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         stored.setModelUsageField(defaults.getModelUsageField());
         stored.setBundledAgentFiles(defaults.getBundledAgentFiles());
         stored.setAdditionalInstructions(defaults.getAdditionalInstructions());
+        stored.setInstallUrl(defaults.getInstallUrl());
+        stored.setSupportsOAuthSignIn(defaults.isSupportsOAuthSignIn());
         // Only overwrite instructions target if not user-customized (null/empty means never set)
         if (stored.getPrependInstructionsTo() == null || stored.getPrependInstructionsTo().isEmpty()) {
             stored.setPrependInstructionsTo(defaults.getPrependInstructionsTo());
@@ -208,7 +226,9 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setBuiltIn(true);
         p.setBinaryName(COPILOT_PROFILE_ID);
         p.setAlternateNames(List.of("copilot-cli"));
-        p.setInstallHint("Install with: npm install -g @anthropic-ai/copilot-cli");
+        p.setInstallHint("Install with: npm install -g @github/copilot-cli");
+        p.setInstallUrl("https://github.com/github/copilot-cli#installation");
+        p.setSupportsOAuthSignIn(true);
         p.setAcpArgs(List.of("--acp", "--stdio"));
         p.setMcpMethod(McpInjectionMethod.CONFIG_FLAG);
         p.setSupportsMcpConfigFlag(true);
@@ -273,6 +293,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setBinaryName("");
         p.setAlternateNames(List.of());
         p.setInstallHint("Set your Anthropic API key in the profile settings.");
+        p.setInstallUrl("");
+        p.setSupportsOAuthSignIn(false);
         p.setAcpArgs(List.of());
         p.setMcpMethod(McpInjectionMethod.NONE);
         p.setSupportsMcpConfigFlag(false);
@@ -301,6 +323,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setBinaryName("claude");
         p.setAlternateNames(List.of());
         p.setInstallHint("Install the Claude CLI from code.claude.com and run 'claude auth login'.");
+        p.setInstallUrl("https://code.claude.com");
+        p.setSupportsOAuthSignIn(false);
         p.setAcpArgs(List.of());
         p.setMcpMethod(McpInjectionMethod.CONFIG_FLAG);
         p.setSupportsMcpConfigFlag(true);

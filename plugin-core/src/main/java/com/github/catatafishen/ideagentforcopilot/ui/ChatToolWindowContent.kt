@@ -150,7 +150,7 @@ class ChatToolWindowContent(
             addSeparatorNow()
         }
         cardLayout.show(mainPanel, CARD_CHAT)
-        agentManager.isAcpConnected = true
+        agentManager.isConnected = true
         updatePromptPlaceholder()
     }
 
@@ -191,7 +191,7 @@ class ChatToolWindowContent(
         } catch (e: Exception) {
             LOG.warn("Error stopping agent", e)
         }
-        agentManager.isAcpConnected = false
+        agentManager.isConnected = false
         connectPanel.resetConnectButton()
         connectPanel.refreshMcpStatus()
         cardLayout.show(mainPanel, CARD_CONNECT)
@@ -313,15 +313,14 @@ class ChatToolWindowContent(
             diagnosticsFn = { authService.copilotSetupDiagnostics() },
             onFixed = onFixed,
         ) { diag ->
-            val isClaudeCli = agentManager.activeProfile.transportType ==
-                TransportType.CLAUDE_CLI
+            val profile = agentManager.activeProfile
             val isCLINotFound = "copilot cli not found" in diag.lowercase() ||
                 ("not found" in diag.lowercase() && ("copilot" in diag.lowercase() || "claude" in diag.lowercase()))
             when {
-                isCLINotFound && isClaudeCli -> {
-                    val installUrl = "https://code.claude.com"
+                isCLINotFound && profile.installUrl.isNotEmpty() -> {
+                    val url = profile.installUrl
                     updateState(
-                        "Claude CLI is not installed \u2014 install from $installUrl and run 'claude auth login'",
+                        "${profile.displayName} is not installed \u2014 install from $url",
                         showInstall = true,
                     )
                 }
@@ -332,23 +331,22 @@ class ChatToolWindowContent(
                     updateState("Copilot CLI is not installed \u2014 install with: $cmd", showInstall = true)
                 }
 
-                isClaudeCli && authService.isAuthenticationError(diag) ->
+                !profile.isSupportsOAuthSignIn && authService.isAuthenticationError(diag) ->
                     updateState(
-                        "Not signed in to Claude \u2014 run 'claude auth login' in a terminal, then click Retry.",
+                        "Not signed in to ${profile.displayName} \u2014 check credentials and click Retry.",
                         showSignIn = false,
                     )
 
                 authService.isAuthenticationError(diag) ->
                     updateState("Not signed in to Copilot \u2014 click Sign In, then click Retry.", showSignIn = true)
 
-                else -> updateState(if (isClaudeCli) "Claude CLI unavailable" else "Copilot CLI unavailable")
+                else -> updateState("${profile.displayName} unavailable")
             }
         }
         banner.installHandler = {
-            if (agentManager.activeProfile.transportType == TransportType.CLAUDE_CLI) {
-                com.intellij.ide.BrowserUtil.browse("https://code.claude.com")
-            } else {
-                com.intellij.ide.BrowserUtil.browse("https://github.com/github/copilot-cli#installation")
+            val url = agentManager.activeProfile.installUrl
+            if (url.isNotEmpty()) {
+                com.intellij.ide.BrowserUtil.browse(url)
             }
         }
         // Clear pending auth error on Retry so diagnostics re-verifies from scratch
@@ -1279,7 +1277,7 @@ class ChatToolWindowContent(
         private var cachedChildren: Array<AnAction> = EMPTY_ARRAY
 
         override fun getChildren(e: AnActionEvent?): Array<AnAction> {
-            if (!agentManager.isAcpConnected) return EMPTY_ARRAY
+            if (!agentManager.isConnected) return EMPTY_ARRAY
             val options = agentManager.client.listSessionOptions()
             if (options.isEmpty()) return EMPTY_ARRAY
             if (options != cachedOptions) {
@@ -2473,7 +2471,7 @@ class ChatToolWindowContent(
         modelsStatusText = "Unavailable"
         if (isCLINotFoundError(lastError)) {
             // Non-recoverable: return to connect panel with the error
-            agentManager.isAcpConnected = false
+            agentManager.isConnected = false
             connectPanel.showError(errorMsg)
             cardLayout.show(mainPanel, CARD_CONNECT)
         } else {

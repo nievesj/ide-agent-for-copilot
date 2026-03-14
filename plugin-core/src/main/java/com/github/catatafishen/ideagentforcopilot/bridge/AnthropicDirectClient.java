@@ -123,6 +123,12 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
     }
 
     @Override
+    public @org.jetbrains.annotations.Nullable String checkAuthentication() {
+        return AnthropicKeyStore.hasApiKey(profile.getId()) ? null
+            : "No Anthropic API key configured. Set it in Settings → Tools → IDE Agent → Agent Profiles.";
+    }
+
+    @Override
     public void close() {
         started = false;
         sessions.clear();

@@ -96,6 +96,13 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     }
 
     @Override
+    public @org.jetbrains.annotations.Nullable String checkAuthentication() {
+        ClaudeCliCredentials creds = ClaudeCliCredentials.read();
+        return creds.isLoggedIn() ? null
+            : "Not authenticated with Claude. Run 'claude auth login' in a terminal, then retry.";
+    }
+
+    @Override
     public void close() {
         started = false;
         activeProcesses.values().forEach(Process::destroyForcibly);

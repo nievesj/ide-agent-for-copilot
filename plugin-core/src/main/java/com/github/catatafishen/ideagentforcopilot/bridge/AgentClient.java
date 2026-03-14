@@ -164,6 +164,25 @@ public interface AgentClient extends Closeable {
     }
 
     /**
+     * Checks whether this agent is authenticated and ready to accept prompts.
+     *
+     * <p>The default implementation calls {@link #listModels()} as a connectivity/auth probe,
+     * which works for ACP-based transports. Implementations whose auth check differs
+     * (e.g. credential-file transports, API-key transports) should override this.</p>
+     *
+     * @return {@code null} if authenticated and ready, or a human-readable error message otherwise
+     */
+    @Nullable
+    default String checkAuthentication() {
+        try {
+            listModels();
+            return null;
+        } catch (AcpException e) {
+            return e.getMessage() != null ? e.getMessage() : "Failed to connect to agent";
+        }
+    }
+
+    /**
      * Closes and releases all resources.
      */
     @Override

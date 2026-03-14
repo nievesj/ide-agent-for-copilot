@@ -1,7 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.github.catatafishen.ideagentforcopilot.bridge.ClaudeCliCredentials
-import com.github.catatafishen.ideagentforcopilot.bridge.TransportType
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
@@ -52,20 +50,11 @@ internal class AuthLoginService(private val project: Project) {
 
         val agentManager = ActiveAgentManager.getInstance(project)
 
-        // For Claude CLI mode, check credentials directly — listModels() always succeeds
-        // (it falls back to built-in models), so it cannot be used as an auth check.
-        if (agentManager.activeProfile.transportType == TransportType.CLAUDE_CLI) {
-            val creds = ClaudeCliCredentials.read()
-            return if (creds.isLoggedIn) null
-            else "Not authenticated with Claude. Run 'claude auth login' in a terminal, then retry."
-        }
-
+        // Delegate auth check to the client — each transport knows its own credentials.
         return try {
-            val client = agentManager.client
-            client.listModels()
-            null
+            agentManager.client.checkAuthentication()
         } catch (e: Exception) {
-            e.message ?: "Failed to connect to Copilot CLI"
+            e.message ?: "Failed to connect to agent"
         }
     }
 

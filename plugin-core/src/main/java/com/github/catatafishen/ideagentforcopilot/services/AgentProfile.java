@@ -31,6 +31,19 @@ public final class AgentProfile {
 
     private TransportType transportType;
 
+    /**
+     * URL to open when the user clicks the "Install" button in the setup banner.
+     * Empty string means no install URL is available (install button hidden).
+     */
+    private String installUrl = "";
+
+    /**
+     * Whether this agent supports the plugin's inline OAuth sign-in flow.
+     * When {@code true}, a "Sign In" button is shown in the auth error banner.
+     * When {@code false}, the user must authenticate externally (e.g. run a CLI command).
+     */
+    private boolean supportsOAuthSignIn = false;
+
     // ── Binary Discovery ─────────────────────────────────────────────────────
 
     private String binaryName;
@@ -131,6 +144,8 @@ public final class AgentProfile {
         copy.experimental = false;
         copy.description = description;
         copy.transportType = transportType;
+        copy.installUrl = installUrl;
+        copy.supportsOAuthSignIn = supportsOAuthSignIn;
         copy.binaryName = binaryName;
         copy.alternateNames = new ArrayList<>(alternateNames);
         copy.installHint = installHint;
@@ -169,6 +184,8 @@ public final class AgentProfile {
         copy.experimental = this.experimental;
         copy.description = this.description;
         copy.transportType = this.transportType;
+        copy.installUrl = this.installUrl;
+        copy.supportsOAuthSignIn = this.supportsOAuthSignIn;
         copy.binaryName = binaryName;
         copy.alternateNames = new ArrayList<>(alternateNames);
         copy.installHint = installHint;
@@ -201,6 +218,8 @@ public final class AgentProfile {
         this.experimental = other.experimental;
         this.description = other.description;
         this.transportType = other.transportType;
+        this.installUrl = other.installUrl;
+        this.supportsOAuthSignIn = other.supportsOAuthSignIn;
         this.binaryName = other.binaryName;
         this.alternateNames = new ArrayList<>(other.alternateNames);
         this.installHint = other.installHint;
@@ -272,6 +291,23 @@ public final class AgentProfile {
     @NotNull
     public TransportType getTransportType() {
         return transportType != null ? transportType : TransportType.ACP;
+    }
+
+    @NotNull
+    public String getInstallUrl() {
+        return installUrl != null ? installUrl : "";
+    }
+
+    public void setInstallUrl(@NotNull String installUrl) {
+        this.installUrl = installUrl;
+    }
+
+    public boolean isSupportsOAuthSignIn() {
+        return supportsOAuthSignIn;
+    }
+
+    public void setSupportsOAuthSignIn(boolean supportsOAuthSignIn) {
+        this.supportsOAuthSignIn = supportsOAuthSignIn;
     }
 
     public void setTransportType(@NotNull TransportType transportType) {

@@ -314,11 +314,11 @@ public final class ActiveAgentManager implements Disposable {
 
     // ── ACP connection state ─────────────────────────────────────────────────
 
-    public boolean isAcpConnected() {
+    public boolean isConnected() {
         return acpConnected;
     }
 
-    public void setAcpConnected(boolean connected) {
+    public void setConnected(boolean connected) {
         this.acpConnected = connected;
     }
 
