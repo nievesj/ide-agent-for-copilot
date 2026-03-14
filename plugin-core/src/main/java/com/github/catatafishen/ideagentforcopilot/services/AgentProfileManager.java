@@ -31,6 +31,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     public static final String COPILOT_PROFILE_ID = "copilot";
     public static final String OPENCODE_PROFILE_ID = "opencode";
     public static final String CLAUDE_CODE_PROFILE_ID = "claude-code";
+    public static final String CLAUDE_CLI_PROFILE_ID = "claude-cli";
 
     private final Map<String, AgentProfile> profiles = new LinkedHashMap<>();
 
@@ -133,6 +134,11 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         } else {
             refreshBuiltInProfile(CLAUDE_CODE_PROFILE_ID);
         }
+        if (!profiles.containsKey(CLAUDE_CLI_PROFILE_ID)) {
+            profiles.put(CLAUDE_CLI_PROFILE_ID, createClaudeCliProfile());
+        } else {
+            refreshBuiltInProfile(CLAUDE_CLI_PROFILE_ID);
+        }
     }
 
     private void refreshBuiltInProfile(@NotNull String id) {
@@ -170,6 +176,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             case COPILOT_PROFILE_ID -> createCopilotProfile();
             case OPENCODE_PROFILE_ID -> createOpenCodeProfile();
             case CLAUDE_CODE_PROFILE_ID -> createClaudeCodeProfile();
+            case CLAUDE_CLI_PROFILE_ID -> createClaudeCliProfile();
             default -> null;
         };
     }
@@ -274,6 +281,34 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setRequiresResourceDuplication(false);
         p.setExcludeAgentBuiltInTools(false);
         p.setUsePluginPermissions(true);
+        p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
+        return p;
+    }
+
+    @NotNull
+    private static AgentProfile createClaudeCliProfile() {
+        AgentProfile p = new AgentProfile();
+        p.setId(CLAUDE_CLI_PROFILE_ID);
+        p.setDisplayName("Claude Code (CLI)");
+        p.setBuiltIn(true);
+        p.setExperimental(true);
+        p.setTransportType(TransportType.CLAUDE_CLI);
+        p.setDescription("""
+            Claude Code CLI profile. Drives the locally-installed \
+            'claude' binary in --print mode via subprocess. \
+            Uses your Claude subscription — no Anthropic API key required. \
+            Install the CLI from code.claude.com and run 'claude auth login' once to set up.""");
+        p.setBinaryName("claude");
+        p.setAlternateNames(List.of());
+        p.setInstallHint("Install the Claude CLI from code.claude.com and run 'claude auth login'.");
+        p.setAcpArgs(List.of());
+        p.setMcpMethod(McpInjectionMethod.NONE);
+        p.setSupportsMcpConfigFlag(false);
+        p.setSupportsModelFlag(true);
+        p.setSupportsConfigDir(false);
+        p.setRequiresResourceDuplication(false);
+        p.setExcludeAgentBuiltInTools(true);
+        p.setUsePluginPermissions(false);
         p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
         return p;
     }

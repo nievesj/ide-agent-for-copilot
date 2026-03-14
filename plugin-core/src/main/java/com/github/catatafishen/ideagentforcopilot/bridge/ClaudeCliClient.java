@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.bridge;
 
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -29,12 +30,18 @@ import java.util.function.Consumer;
 
 /**
  * {@link AgentClient} implementation that drives the {@code claude} CLI binary in
- * {@code --print --output-format stream-json} mode.
+ * bidirectional {@code --input-format stream-json --output-format stream-json} mode.
  *
  * <p>Authentication is handled entirely by the {@code claude} subprocess using the
  * OAuth credentials stored by {@code claude auth login} — no Anthropic API key is
  * required. Multi-turn conversations are maintained via {@code --resume <session-id>},
  * where the session ID is extracted from the CLI's {@code stream-json} output.</p>
+ *
+ * <p>The bidirectional protocol keeps stdin open after writing the user message as a JSON
+ * envelope ({@code {"type":"user","message":{...}}}). When the CLI sends a
+ * {@code control_request} event (e.g. a {@code can_use_tool} permission check), this client
+ * writes a {@code control_response} back to stdin to auto-approve. Stdin is closed once the
+ * {@code result} event arrives (or on cancellation).</p>
  *
  * <p>If an MCP port is provided ({@code > 0}), a temporary MCP config file is written
  * and passed via {@code --mcp-config} so the CLI can call IDE tools from the plugin's
@@ -249,15 +256,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     private List<String> buildCommand(@NotNull String sessionId, @NotNull String model) {
         List<String> cmd = new ArrayList<>();
         cmd.add(resolvedBinaryPath);
-        cmd.add("--print");
-        cmd.add("--verbose");  // required for --output-format stream-json in Claude Code CLI ≥2.x
+        cmd.add("--verbose");  // required for full assistant events (thinking blocks, tool events)
         cmd.add("--output-format");
         cmd.add("stream-json");
-        // The plugin drives the CLI in non-interactive mode — the user has no terminal access
-        // to respond to permission prompts, so we must bypass them automatically.
-        cmd.add("--dangerously-skip-permissions");
+        cmd.add("--input-format");
+        cmd.add("stream-json");  // bidirectional: enables control_request / control_response
 
-        // If profile is configured, pass it to the claude CLI
         String profileName = extractProfileName();
         if (profileName != null) {
             cmd.add(PROFILE_FLAG);
@@ -315,26 +319,14 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
             // Drain stderr on a background thread to prevent buffer deadlock
             StringBuilder stderrBuf = new StringBuilder();
-            Thread stderrThread = new Thread(() -> {
-                try (BufferedReader err = new BufferedReader(
-                    new InputStreamReader(proc.getErrorStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = err.readLine()) != null) {
-                        stderrBuf.append(line).append('\n');
-                    }
-                } catch (IOException ignored) {
-                    // Process may have exited; stderr is no longer readable
-                }
-            }, "claude-stderr-reader");
-            stderrThread.setDaemon(true);
-            stderrThread.start();
+            Thread stderrThread = startStderrDrainer(proc, stderrBuf);
 
-            // Write prompt to stdin and close it so the CLI knows input is complete
-            try (OutputStream stdin = proc.getOutputStream()) {
-                stdin.write(prompt.getBytes(StandardCharsets.UTF_8));
-            }
+            // Write JSON user message; stdin is kept open for bidirectional control_response exchange.
+            // parseStreamOutput closes stdin after the result event (or on cancellation).
+            OutputStream stdin = proc.getOutputStream();
+            writeJsonPromptToStdin(stdin, prompt);
 
-            String stopReason = parseStreamOutput(sessionId, proc, onChunk, onUpdate, cancelled);
+            String stopReason = parseStreamOutput(sessionId, proc, stdin, onChunk, onUpdate, cancelled);
             proc.waitFor();
             stderrThread.join(2000);
             activeProcesses.remove(sessionId);
@@ -362,6 +354,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     @NotNull
     private String parseStreamOutput(@NotNull String sessionId,
                                      @NotNull Process proc,
+                                     @NotNull OutputStream stdin,
                                      @Nullable Consumer<String> onChunk,
                                      @Nullable Consumer<JsonObject> onUpdate,
                                      @NotNull AtomicBoolean cancelled) throws IOException {
@@ -374,11 +367,13 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 if (line.isEmpty()) continue;
                 try {
                     JsonObject event = JsonParser.parseString(line).getAsJsonObject();
-                    stopReason = handleStreamEvent(sessionId, event, stopReason, onChunk, onUpdate);
+                    stopReason = handleStreamEvent(sessionId, event, stopReason, stdin, onChunk, onUpdate);
                 } catch (RuntimeException e) {
                     LOG.debug("Could not parse stream-json line: " + line, e);
                 }
             }
+        } finally {
+            closeQuietly(stdin);
         }
         if (cancelled.get()) stopReason = "cancelled";
         return stopReason;
@@ -388,6 +383,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     private String handleStreamEvent(@NotNull String sessionId,
                                      @NotNull JsonObject event,
                                      @NotNull String currentStopReason,
+                                     @NotNull OutputStream stdin,
                                      @Nullable Consumer<String> onChunk,
                                      @Nullable Consumer<JsonObject> onUpdate) {
         String type = event.has(FIELD_TYPE) ? event.get(FIELD_TYPE).getAsString() : "";
@@ -410,13 +406,17 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 emitToolCallEnd(event, onUpdate);
                 yield currentStopReason;
             }
+            case "control_request" -> {
+                respondToControlRequest(event, stdin);
+                yield currentStopReason;
+            }
             case "result" -> {
                 // Always capture session_id from the result event (most reliable location)
                 if (event.has(FIELD_SESSION_ID)) {
                     cliSessionIds.put(sessionId, event.get(FIELD_SESSION_ID).getAsString());
                 }
-                boolean isError = event.has("subtype")
-                    && SUBTYPE_ERROR.equals(event.get("subtype").getAsString());
+                boolean isError = event.has(FIELD_SUBTYPE)
+                    && SUBTYPE_ERROR.equals(event.get(FIELD_SUBTYPE).getAsString());
                 if (isError && onChunk != null && event.has(SUBTYPE_ERROR)) {
                     onChunk.accept("\n[Error: " + extractErrorText(event.get(SUBTYPE_ERROR)) + "]");
                 }
@@ -453,6 +453,8 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     }
 
     private static final String FIELD_MESSAGE = "message";
+    private static final String FIELD_SUBTYPE = "subtype";
+    private static final String FIELD_REQUEST_ID = "requestId";
     private static final String BLOCK_TYPE_TEXT = "text";
     private static final String BLOCK_TYPE_THINKING = "thinking";
 
@@ -506,6 +508,95 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             return sb.toString();
         }
         return el.toString();
+    }
+
+    // ── Bidirectional control protocol ───────────────────────────────────────
+
+    /**
+     * Responds to a {@code control_request} from the CLI by writing a {@code control_response}
+     * JSON message to stdin. All {@code can_use_tool} requests are auto-approved; only trusted
+     * MCP tools are exposed when {@code excludeAgentBuiltInTools} is enabled.
+     */
+    private static void respondToControlRequest(@NotNull JsonObject event, @NotNull OutputStream stdin) {
+        String subtype = event.has(FIELD_SUBTYPE) ? event.get(FIELD_SUBTYPE).getAsString() : "";
+        String requestId = event.has(FIELD_REQUEST_ID) ? event.get(FIELD_REQUEST_ID).getAsString() : "";
+
+        JsonObject response = new JsonObject();
+        response.addProperty("type", "control_response");
+        response.addProperty(FIELD_SUBTYPE, subtype);
+        response.addProperty(FIELD_REQUEST_ID, requestId);
+
+        if ("can_use_tool".equals(subtype)) {
+            JsonObject decision = new JsonObject();
+            decision.addProperty("decision", "allow");
+            response.add("response", decision);
+        }
+
+        try {
+            stdin.write(response.toString().getBytes(StandardCharsets.UTF_8));
+            stdin.write('\n');
+            stdin.flush();
+        } catch (IOException e) {
+            LOG.debug("Could not write control_response: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Builds the JSON user-message envelope required by {@code --input-format stream-json}.
+     * Format: {@code {"type":"user","message":{"role":"user","content":[{"type":"text","text":"..."}]}}}
+     */
+    @NotNull
+    private static String buildJsonUserMessage(@NotNull String prompt) {
+        JsonObject textBlock = new JsonObject();
+        textBlock.addProperty("type", "text");
+        textBlock.addProperty("text", prompt);
+        JsonArray content = new JsonArray();
+        content.add(textBlock);
+        JsonObject message = new JsonObject();
+        message.addProperty("role", "user");
+        message.add("content", content);
+        JsonObject userEvent = new JsonObject();
+        userEvent.addProperty("type", "user");
+        userEvent.add(FIELD_MESSAGE, message);
+        return userEvent.toString();
+    }
+
+    private static void closeQuietly(@NotNull OutputStream stream) {
+        try {
+            stream.close();
+        } catch (IOException e) {
+            LOG.debug("Could not close stdin stream: " + e.getMessage());
+        }
+    }
+
+    @NotNull
+    private static Thread startStderrDrainer(@NotNull Process proc, @NotNull StringBuilder stderrBuf) {
+        Thread stderrThread = new Thread(() -> {
+            try (BufferedReader err = new BufferedReader(
+                new InputStreamReader(proc.getErrorStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = err.readLine()) != null) {
+                    stderrBuf.append(line).append('\n');
+                }
+            } catch (IOException ignored) {
+                // Process may have exited; stderr is no longer readable
+            }
+        }, "claude-stderr-reader");
+        stderrThread.setDaemon(true);
+        stderrThread.start();
+        return stderrThread;
+    }
+
+    private static void writeJsonPromptToStdin(@NotNull OutputStream stdin, @NotNull String prompt)
+        throws AcpException {
+        try {
+            stdin.write(buildJsonUserMessage(prompt).getBytes(StandardCharsets.UTF_8));
+            stdin.write('\n');
+            stdin.flush();
+        } catch (IOException e) {
+            closeQuietly(stdin);
+            throw new AcpException("Failed to write prompt to claude process: " + e.getMessage(), e, true);
+        }
     }
 
     // ── MCP injection ────────────────────────────────────────────────────────
