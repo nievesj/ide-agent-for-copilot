@@ -231,6 +231,20 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         }
     }
 
+    /**
+     * All Claude Code CLI built-in tool names. Used with {@code --disallowed-tools} when
+     * {@link AgentProfile#isExcludeAgentBuiltInTools()} is set, so only MCP tools remain active.
+     */
+    private static final List<String> CLAUDE_BUILT_IN_TOOLS = List.of(
+        "Bash", "BashOutput", "KillShell",
+        "Edit", "MultiEdit", "Read", "Write",
+        "Glob", "Grep",
+        "WebFetch", "WebSearch",
+        "TodoWrite", "Task",
+        "ExitPlanMode", "EnterPlanMode",
+        "AskUserQuestion", "NotebookEdit"
+    );
+
     @NotNull
     private List<String> buildCommand(@NotNull String sessionId, @NotNull String model) {
         List<String> cmd = new ArrayList<>();
@@ -239,6 +253,9 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         cmd.add("--verbose");  // required for --output-format stream-json in Claude Code CLI ≥2.x
         cmd.add("--output-format");
         cmd.add("stream-json");
+        // The plugin drives the CLI in non-interactive mode — the user has no terminal access
+        // to respond to permission prompts, so we must bypass them automatically.
+        cmd.add("--dangerously-skip-permissions");
 
         // If profile is configured, pass it to the claude CLI
         String profileName = extractProfileName();
@@ -249,6 +266,14 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
         cmd.add("--model");
         cmd.add(model);
+
+        // Disable all Claude built-in tools when the profile requests it, leaving only MCP tools.
+        if (profile.isExcludeAgentBuiltInTools()) {
+            for (String tool : CLAUDE_BUILT_IN_TOOLS) {
+                cmd.add("--disallowed-tools");
+                cmd.add(tool);
+            }
+        }
 
         String cliSessionId = cliSessionIds.get(sessionId);
         if (cliSessionId != null) {
@@ -402,8 +427,8 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     }
 
     private void streamAssistantMessage(@NotNull JsonObject event,
-                                         @Nullable Consumer<String> onChunk,
-                                         @Nullable Consumer<JsonObject> onUpdate) {
+                                        @Nullable Consumer<String> onChunk,
+                                        @Nullable Consumer<JsonObject> onUpdate) {
         if (!event.has(FIELD_MESSAGE)) return;
         JsonObject message = event.getAsJsonObject(FIELD_MESSAGE);
         if (!message.has(FIELD_CONTENT)) return;
@@ -415,8 +440,8 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     }
 
     private void streamContentBlock(@NotNull JsonObject block,
-                                     @Nullable Consumer<String> onChunk,
-                                     @Nullable Consumer<JsonObject> onUpdate) {
+                                    @Nullable Consumer<String> onChunk,
+                                    @Nullable Consumer<JsonObject> onUpdate) {
         String blockType = block.has(FIELD_TYPE) ? block.get(FIELD_TYPE).getAsString() : "";
         if (BLOCK_TYPE_TEXT.equals(blockType) && block.has(BLOCK_TYPE_TEXT) && onChunk != null) {
             String text = block.get(BLOCK_TYPE_TEXT).getAsString();
