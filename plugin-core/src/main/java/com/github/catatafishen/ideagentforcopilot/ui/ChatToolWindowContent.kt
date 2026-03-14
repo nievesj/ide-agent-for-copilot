@@ -11,21 +11,18 @@ import com.intellij.openapi.actionSystem.ex.CustomComponentAction
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.ui.Messages
 import com.intellij.ui.EditorTextField
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
-import com.intellij.util.ui.AsyncProcessIcon
 import com.intellij.util.ui.JBUI
 import java.awt.*
 import javax.swing.*
 
 /**
  * Main content for the IDE Agent for Copilot tool window.
- * Uses Kotlin UI DSL for cleaner, more maintainable UI code.
  */
 class ChatToolWindowContent(
     private val project: Project,
@@ -40,8 +37,6 @@ class ChatToolWindowContent(
         const val AGENT_WORK_DIR = ".agent-work"
         const val CARD_CONNECT = "connect"
         const val CARD_CHAT = "chat"
-
-
     }
 
     private val cardLayout = CardLayout()
@@ -53,17 +48,15 @@ class ChatToolWindowContent(
     // Shared model list (populated from ACP)
     private var loadedModels: List<Model> = emptyList()
 
-    // Current conversation session — reused for multi-turn
-    private var currentSessionId: String? = null
-
-    // Prompt tab fields (promoted from local variables for footer layout)
+    // Prompt tab fields
     private var selectedModelIndex = -1
     private var modelsStatusText: String? = MSG_LOADING
     private lateinit var controlsToolbar: ActionToolbar
     private lateinit var promptTextArea: EditorTextField
-    private var currentPromptThread: Thread? = null
     private var isSending = false
     private lateinit var processingTimerPanel: ProcessingTimerPanel
+    private lateinit var promptOrchestrator: PromptOrchestrator
+    private lateinit var pasteToScratchHandler: PasteToScratchHandler
 
     // Plans tree (populated from ACP plan updates)
     private lateinit var planTreeModel: javax.swing.tree.DefaultTreeModel
@@ -71,7 +64,7 @@ class ChatToolWindowContent(
     private lateinit var planDetailsArea: JBTextArea
     private lateinit var sessionInfoLabel: JBLabel
 
-    // Billing/usage management (extracted to BillingManager)
+    // Billing/usage management
     private val billing = BillingManager()
     private val authService = AuthLoginService(project)
     private lateinit var consolePanel: ChatPanelApi
@@ -84,20 +77,12 @@ class ChatToolWindowContent(
     private val conversationStore = ConversationStore()
     private val conversationReplayer = ConversationReplayer()
 
-    // Per-turn tracking
-    private var turnToolCallCount = 0
-    private var turnModelId = ""
-    private var turnInputTokens = 0
-    private var turnOutputTokens = 0
-    private var turnCostUsd = 0.0
-
     // Throttled incremental save during streaming (avoid data loss on crash)
     private val saveIntervalMs = 30_000L
 
     @Volatile
     private var lastIncrementalSaveMs = 0L
 
-    private var conversationSummaryInjected = false
     private lateinit var contextManager: PromptContextManager
 
     init {
@@ -105,16 +90,13 @@ class ChatToolWindowContent(
     }
 
     private fun setupUI() {
-        // Title bar actions (always visible regardless of ACP connection)
         setupTitleBarActions()
 
-        // Connect panel — always created
         connectPanel = AcpConnectPanel(project) { profileId, customCommand ->
             connectToAgent(profileId, customCommand)
         }
         mainPanel.add(connectPanel, CARD_CONNECT)
 
-        // Chat panel — created lazily on first connect
         if (agentManager.isAutoConnect) {
             buildAndShowChatPanel()
             loadModelsAsync { models ->
@@ -147,7 +129,6 @@ class ChatToolWindowContent(
             val panel = createPromptTab()
             chatPanel = panel
             mainPanel.add(panel, CARD_CHAT)
-            // Archive the previous session on first connect so each IDE launch gets its own entry.
             archiveConversation()
             restoreConversation(onComplete = addSeparatorNow)
         } else {
@@ -171,7 +152,6 @@ class ChatToolWindowContent(
         }
         buildAndShowChatPanel()
 
-        // Load models — on success show the chat; on failure return to connect panel
         loadModelsAsync { models ->
             loadedModels = models
             restoreModelSelection(models)
@@ -204,7 +184,7 @@ class ChatToolWindowContent(
     private fun updateSessionInfo() {
         ApplicationManager.getApplication().invokeLater {
             if (!::sessionInfoLabel.isInitialized) return@invokeLater
-            val sid = currentSessionId
+            val sid = if (::promptOrchestrator.isInitialized) promptOrchestrator.currentSessionId else null
             if (sid != null) {
                 val shortId = sid.take(8) + "..."
                 val cwd = project.basePath ?: "unknown"
@@ -219,13 +199,6 @@ class ChatToolWindowContent(
 
     // Track tool calls for Session tab file correlation
     private val toolCallFiles = mutableMapOf<String, String>() // toolCallId -> file path
-    private val toolCallTitles = mutableMapOf<String, String>() // toolCallId -> display title
-    private var activeSubAgentId: String? = null // non-null while a sub-agent is running
-
-    /** Non-null when an agent banner with {@code clearOn="next_success"} is pending re-display. */
-    private data class PendingBanner(val message: String, val level: SessionUpdate.BannerLevel)
-
-    private var pendingBanner: PendingBanner? = null
 
     private fun handleClientUpdate(update: SessionUpdate) {
         when (update) {
@@ -341,11 +314,9 @@ class ChatToolWindowContent(
                 com.intellij.ide.BrowserUtil.browse(url)
             }
         }
-        // Clear pending auth error on Retry so diagnostics re-verifies from scratch
         banner.retryHandler = { authService.clearPendingAuthError() }
         banner.signInHandler = {
             banner.showSignInPending()
-            // Try inline auth first (captures device code from CLI stdout)
             inlineAuthProcess?.destroy()
             inlineAuthProcess = authService.startInlineAuth(
                 onDeviceCode = { info ->
@@ -358,7 +329,6 @@ class ChatToolWindowContent(
                     banner.triggerCheck()
                 },
                 onFallback = {
-                    // Inline auth failed to parse — open terminal as fallback
                     banner.hideDeviceCode()
                     inlineAuthProcess = null
                     authService.startCopilotLogin()
@@ -403,7 +373,6 @@ class ChatToolWindowContent(
     private fun createPromptTab(): JComponent {
         val panel = JBPanel<JBPanel<*>>(BorderLayout())
 
-        // Response/chat history area (top of splitter)
         val responsePanel = createResponsePanel()
         responsePanelContainer = JBPanel<JBPanel<*>>(BorderLayout())
         responsePanelContainer.add(responsePanel, BorderLayout.CENTER)
@@ -411,15 +380,13 @@ class ChatToolWindowContent(
         val northStack = JBPanel<JBPanel<*>>()
         northStack.layout = BoxLayout(northStack, BoxLayout.Y_AXIS)
 
-        // Load models
         fun loadModels() {
             loadModelsAsync { models -> loadedModels = models }
         }
 
-        // Setup banners: Copilot CLI / auth, GH CLI / auth
         copilotBanner = createCopilotSetupBanner {
             authService.pendingAuthError = null
-            currentSessionId = null
+            promptOrchestrator.currentSessionId = null
             loadModels()
         }
         val cb = copilotBanner!!
@@ -432,7 +399,6 @@ class ChatToolWindowContent(
         statusBanner = sb
         northStack.add(sb)
 
-        // Toggle a top border on responsePanelContainer: grey when no banners, none when a banner is showing
         val allBanners = listOf(cb, ghBanner, gitBanner, sb)
         val greyBorder = JBUI.Borders.customLine(JBColor.border(), 1, 0, 0, 0)
         val updateContainerBorder = java.beans.PropertyChangeListener {
@@ -451,15 +417,12 @@ class ChatToolWindowContent(
         topPanel.add(northStack, BorderLayout.NORTH)
         topPanel.add(responsePanelContainer, BorderLayout.CENTER)
 
-        // Splitter between chat area (top) and resizable input box (bottom).
-        // OnePixelSplitter gives the thin, IDE-native 1px divider; proportion is persisted.
         val inputRow = createInputRow()
         val splitter = com.intellij.ui.OnePixelSplitter(true, "IdeAgent.InputSplitter", 0.78f)
         splitter.firstComponent = topPanel
         splitter.secondComponent = inputRow
         panel.add(splitter, BorderLayout.CENTER)
 
-        // Fixed footer (toolbar) always stays at the very bottom
         val fixedFooter = createFixedFooter()
         panel.add(fixedFooter, BorderLayout.SOUTH)
 
@@ -475,12 +438,9 @@ class ChatToolWindowContent(
             com.intellij.ui.SideBorder(JBColor.border(), com.intellij.ui.SideBorder.TOP),
             JBUI.Borders.empty(0, 0, 2, 0)
         )
-
-        // Single row: controls + usage (wraps on narrow windows)
         val controlsRow = createControlsRow()
         controlsRow.alignmentX = Component.LEFT_ALIGNMENT
         footer.add(controlsRow)
-
         return footer
     }
 
@@ -488,8 +448,6 @@ class ChatToolWindowContent(
         val row = JBPanel<JBPanel<*>>(BorderLayout())
         val minHeight = JBUI.scale(48)
         row.minimumSize = JBUI.size(100, minHeight)
-        // No maximumSize — the OnePixelSplitter controls the height
-        // Use EditorTextFieldProvider for PsiFile-backed document (enables spell checking)
         val editorCustomizations = mutableListOf<com.intellij.ui.EditorCustomization>()
         try {
             val spellCheck = com.intellij.openapi.editor.SpellCheckingEditorCustomizationProvider
@@ -500,21 +458,37 @@ class ChatToolWindowContent(
         }
         promptTextArea = com.intellij.ui.EditorTextFieldProvider.getInstance()
             .getEditorField(com.intellij.openapi.fileTypes.PlainTextLanguage.INSTANCE, project, editorCustomizations)
-        // Property access forbidden: isOneLineMode getter is protected in EditorTextField
-        @Suppress("UsePropertyAccessSyntax")
+        @Suppress("UsePropertyAccessSyntax") // isOneLineMode getter is protected in EditorTextField
         promptTextArea.setOneLineMode(false)
         promptTextArea.border = null
         contextManager = PromptContextManager(project, promptTextArea) { text -> appendResponse(text) }
 
-        // Drag-drop works on the EditorTextField wrapper (no editor needed)
+        pasteToScratchHandler = PasteToScratchHandler(project, promptTextArea, contextManager)
+        promptOrchestrator = PromptOrchestrator(
+            project, agentManager, billing, contextManager, authService,
+            { consolePanel }, { copilotBanner }, { statusBanner },
+            PromptOrchestratorCallbacks(
+                onSendingStateChanged = ::setSendingState,
+                saveConversation = ::saveConversation,
+                saveConversationThrottled = ::saveConversationThrottled,
+                notifyIfUnfocused = ::notifyIfUnfocused,
+                saveTurnStatistics = ::saveTurnStatistics,
+                updateSessionInfo = ::updateSessionInfo,
+                requestFocusAfterTurn = { promptTextArea.requestFocusInWindow() },
+                onTimerIncrementToolCalls = {
+                    if (::processingTimerPanel.isInitialized) processingTimerPanel.incrementToolCalls()
+                },
+                onTimerRecordUsage = { i, o, c ->
+                    if (::processingTimerPanel.isInitialized) processingTimerPanel.recordUsage(i, o, c)
+                },
+                onClientUpdate = ::handleClientUpdate,
+            )
+        )
+
         setupPromptDragDrop(promptTextArea)
-        // Key bindings and context menu need the editor's content component.
-        // addSettingsProvider runs when the editor is actually created,
-        // unlike invokeLater which may fire before the editor exists.
         promptTextArea.addSettingsProvider { editor ->
             setupPromptKeyBindings(editor)
             setupPromptContextMenu(editor)
-            // Use EditorEx built-in placeholder (visual-only, doesn't set actual text)
             editor.setPlaceholder(promptPlaceholder())
             editor.setShowPlaceholderWhenFocused(true)
             editor.settings.isUseSoftWraps = true
@@ -522,10 +496,8 @@ class ChatToolWindowContent(
             editor.setBorder(null)
 
             // Auto-scroll the outer JBScrollPane to keep the caret visible while typing.
-            // EditorTextField has an internal JViewport that swallows scrollRectToVisible calls
-            // made on editor.contentComponent — they never reach the outer scroll pane.
-            // Fix: convert the caret rect to promptTextArea coordinates so the call is handled
-            // by the outer JViewport (promptTextArea is its direct view child).
+            // EditorTextField's internal JViewport swallows scrollRectToVisible — convert to
+            // promptTextArea coords so the outer JViewport handles it.
             editor.caretModel.addCaretListener(object : com.intellij.openapi.editor.event.CaretListener {
                 override fun caretPositionChanged(event: com.intellij.openapi.editor.event.CaretEvent) {
                     ApplicationManager.getApplication().invokeLater {
@@ -543,7 +515,6 @@ class ChatToolWindowContent(
             })
         }
 
-        // Auto-revalidate on document changes
         promptTextArea.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
             override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
                 ApplicationManager.getApplication().invokeLater { promptTextArea.revalidate() }
@@ -562,34 +533,30 @@ class ChatToolWindowContent(
 
     private fun onSendStopClicked() {
         if (isSending) {
-            handleStopRequest(currentPromptThread)
+            promptOrchestrator.stop()
             setSendingState(false)
-        } else {
-            val rawText = promptTextArea.text.trim()
-            if (rawText.isEmpty()) return
-            consolePanel.disableQuickReplies()
-            statusBanner?.dismissCurrent()
-            setSendingState(true)
+            return
+        }
+        val rawText = promptTextArea.text.trim()
+        if (rawText.isEmpty()) return
+        consolePanel.disableQuickReplies()
+        statusBanner?.dismissCurrent()
+        setSendingState(true)
 
-            // Collect context items from inline inlays BEFORE clearing the editor
-            val contextItems = contextManager.collectInlineContextItems()
-            // Agent sees inline text refs: "refactor `AuthLoginService.kt:116-170` please"
-            val prompt = contextManager.replaceOrcsWithTextRefs(rawText, contextItems)
-            val ctxFiles = if (contextItems.isNotEmpty()) {
-                contextItems.map { item ->
-                    Triple(item.name, item.path, if (item.isSelection) item.startLine else 0)
-                }
-            } else null
-            // Chat bubble gets HTML with inline chip links at ORC positions
-            val bubbleHtml = buildBubbleHtml(rawText, contextItems)
-            consolePanel.addPromptEntry(prompt, ctxFiles, bubbleHtml)
-            promptTextArea.text = ""
-
-            ApplicationManager.getApplication().executeOnPooledThread {
-                currentPromptThread = Thread.currentThread()
-                executePrompt(prompt, contextItems)
-                currentPromptThread = null
+        val contextItems = contextManager.collectInlineContextItems()
+        val prompt = contextManager.replaceOrcsWithTextRefs(rawText, contextItems)
+        val ctxFiles = if (contextItems.isNotEmpty()) {
+            contextItems.map { item ->
+                Triple(item.name, item.path, if (item.isSelection) item.startLine else 0)
             }
+        } else null
+        val bubbleHtml = buildBubbleHtml(rawText, contextItems)
+        consolePanel.addPromptEntry(prompt, ctxFiles, bubbleHtml)
+        promptTextArea.text = ""
+
+        val selectedModelId = loadedModels.getOrNull(selectedModelIndex)?.id ?: ""
+        ApplicationManager.getApplication().executeOnPooledThread {
+            promptOrchestrator.execute(prompt, contextItems, selectedModelId)
         }
     }
 
@@ -675,217 +642,23 @@ class ChatToolWindowContent(
         return row
     }
 
-    /** Toolbar action showing a native processing timer while the agent works */
+    /** Toolbar action showing a native processing timer while the agent works. */
     private inner class ProcessingIndicatorAction : AnAction("Processing"), CustomComponentAction {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
-        override fun actionPerformed(e: AnActionEvent) { /* No action needed — UI-only toolbar widget */
+        override fun actionPerformed(e: AnActionEvent) { /* UI-only toolbar widget */
         }
 
         override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
-            processingTimerPanel = ProcessingTimerPanel()
+            processingTimerPanel = ProcessingTimerPanel(
+                supportsMultiplier = { agentManager.client.supportsMultiplier() },
+                localSessionRequests = { billing.localSessionRequests }
+            )
             com.intellij.openapi.util.Disposer.register(project, processingTimerPanel)
             return processingTimerPanel
         }
     }
 
-    private inner class ProcessingTimerPanel : JBPanel<ProcessingTimerPanel>(), com.intellij.openapi.Disposable {
-        private val spinner = AsyncProcessIcon("AgentProcessing")
-        private val doneIcon = JBLabel(AllIcons.Actions.Checked)
-        private val timerLabel = JBLabel("")
-        private val toolsLabel = JBLabel("")
-        private val requestsLabel = JBLabel("")
-        private var startedAt = 0L
-        private var toolCallCount = 0
-        private val ticker = Timer(1000) { refreshDisplay() }
-
-        // Session-wide accumulators
-        private var sessionTotalTimeMs = 0L
-        private var sessionTotalToolCalls = 0
-        private var sessionTurnCount = 0
-        private var isRunning = false
-
-        // Per-turn and session-aggregate token/cost (Claude CLI only)
-        private var turnInputTokens = 0
-        private var turnOutputTokens = 0
-        private var turnCostUsd = 0.0
-        private var sessionTotalInputTokens = 0L
-        private var sessionTotalOutputTokens = 0L
-        private var sessionTotalCostUsd = 0.0
-
-        private val modeTurn = 0
-        private val modeSession = 1
-        private var displayMode = modeTurn
-
-        init {
-            layout = BoxLayout(this, BoxLayout.X_AXIS)
-            isOpaque = false
-            border = JBUI.Borders.emptyRight(6)
-            val smallGray = JBUI.Fonts.smallFont()
-            spinner.isVisible = false
-            doneIcon.isVisible = false
-            doneIcon.font = smallGray
-            timerLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground(); timerLabel.font =
-                smallGray; timerLabel.isVisible = false
-            toolsLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground(); toolsLabel.font =
-                smallGray; toolsLabel.isVisible = false
-            requestsLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground(); requestsLabel.font =
-                smallGray; requestsLabel.isVisible = false
-            add(spinner)
-            add(Box.createHorizontalStrut(JBUI.scale(4)))
-            add(doneIcon)
-            add(Box.createHorizontalStrut(JBUI.scale(4)))
-            add(timerLabel)
-            add(Box.createHorizontalStrut(JBUI.scale(4)))
-            add(toolsLabel)
-            add(Box.createHorizontalStrut(JBUI.scale(4)))
-            add(requestsLabel)
-            isVisible = false
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            toolTipText = "Click to toggle turn/session stats"
-            addMouseListener(object : java.awt.event.MouseAdapter() {
-                override fun mouseClicked(e: java.awt.event.MouseEvent) {
-                    displayMode = if (displayMode == modeTurn) modeSession else modeTurn
-                    refreshDisplay()
-                }
-            })
-        }
-
-        fun start() {
-            startedAt = System.currentTimeMillis()
-            toolCallCount = 0
-            turnInputTokens = 0
-            turnOutputTokens = 0
-            turnCostUsd = 0.0
-            isRunning = true
-            displayMode = modeTurn
-            timerLabel.text = "0s"
-            toolsLabel.text = ""
-            requestsLabel.text = ""
-            spinner.isVisible = true
-            spinner.resume()
-            doneIcon.isVisible = false
-            timerLabel.isVisible = true
-            toolsLabel.isVisible = false
-            requestsLabel.isVisible = false
-            isVisible = true
-            ticker.start()
-            revalidate(); repaint()
-        }
-
-        fun stop() {
-            ticker.stop()
-            isRunning = false
-            // Accumulate into session totals
-            sessionTotalTimeMs += System.currentTimeMillis() - startedAt
-            sessionTotalToolCalls += toolCallCount
-            sessionTurnCount++
-            refreshDisplay()
-            spinner.suspend()
-            spinner.isVisible = false
-            doneIcon.isVisible = true
-            revalidate(); repaint()
-        }
-
-        /**
-         * Records token/cost usage for the completed turn (Claude CLI only).
-         * Must be called after [stop] so session accumulators are correct.
-         */
-        fun recordUsage(inputTokens: Int, outputTokens: Int, costUsd: Double) {
-            turnInputTokens = inputTokens
-            turnOutputTokens = outputTokens
-            turnCostUsd = costUsd
-            sessionTotalInputTokens += inputTokens
-            sessionTotalOutputTokens += outputTokens
-            sessionTotalCostUsd += costUsd
-            refreshDisplay()
-        }
-
-        fun resetSession() {
-            sessionTotalTimeMs = 0L
-            sessionTotalToolCalls = 0
-            sessionTurnCount = 0
-            sessionTotalInputTokens = 0L
-            sessionTotalOutputTokens = 0L
-            sessionTotalCostUsd = 0.0
-            displayMode = modeTurn
-        }
-
-        override fun dispose() {
-            ticker.stop()
-            com.intellij.openapi.util.Disposer.dispose(spinner)
-        }
-
-        fun incrementToolCalls() {
-            toolCallCount++
-            refreshDisplay()
-        }
-
-        private fun refreshDisplay() {
-            when (displayMode) {
-                modeTurn -> refreshTurnMode()
-                modeSession -> refreshSessionMode()
-            }
-            revalidate(); repaint()
-        }
-
-        private fun refreshTurnMode() {
-            toolTipText = "Turn stats · Click for session"
-            updateLabel()
-            toolsLabel.text = if (toolCallCount > 0) "\u2022 $toolCallCount tools" else ""
-            toolsLabel.isVisible = toolCallCount > 0
-            // Show per-turn token/cost for Claude when available
-            if (!isRunning && turnCostUsd > 0.0 || (turnInputTokens + turnOutputTokens) > 0) {
-                requestsLabel.text = "\u2022 ${formatUsageChip(turnInputTokens, turnOutputTokens, turnCostUsd)}"
-                requestsLabel.isVisible = requestsLabel.text.length > 2
-            } else {
-                requestsLabel.isVisible = false
-            }
-            if (!isRunning) {
-                doneIcon.icon = AllIcons.Actions.Checked; doneIcon.text = null
-            }
-        }
-
-        private fun refreshSessionMode() {
-            val totalMs =
-                sessionTotalTimeMs + if (isRunning) (System.currentTimeMillis() - startedAt) else 0
-            val totalSec = totalMs / 1000
-            timerLabel.text = if (totalSec < 60) "${totalSec}s" else "${totalSec / 60}m ${totalSec % 60}s"
-            val totalTools = sessionTotalToolCalls + if (isRunning) toolCallCount else 0
-            toolsLabel.text = if (totalTools > 0) "\u2022 $totalTools tools" else ""
-            toolsLabel.isVisible = totalTools > 0
-            toolTipText = "Session totals · Click for turn"
-            doneIcon.icon = null; doneIcon.text = "\u2211"
-
-            if (agentManager.client.supportsMultiplier()) {
-                // Copilot: show premium request count
-                val sessionReqs = billing.localSessionRequests
-                requestsLabel.text = if (sessionReqs > 0) "\u2022 $sessionReqs req" else "\u2022 0 req"
-                requestsLabel.isVisible = true
-            } else {
-                // Claude: show cumulative session token/cost
-                val totalTok = sessionTotalInputTokens + sessionTotalOutputTokens
-                if (totalTok > 0 || sessionTotalCostUsd > 0.0) {
-                    requestsLabel.text = "\u2022 ${
-                        formatUsageChip(
-                            sessionTotalInputTokens.toInt(),
-                            sessionTotalOutputTokens.toInt(),
-                            sessionTotalCostUsd
-                        )
-                    }"
-                    requestsLabel.isVisible = requestsLabel.text.length > 2
-                } else {
-                    requestsLabel.isVisible = false
-                }
-            }
-        }
-
-        private fun updateLabel() {
-            val elapsed = (System.currentTimeMillis() - startedAt) / 1000
-            timerLabel.text = if (elapsed < 60) "${elapsed}s" else "${elapsed / 60}m ${elapsed % 60}s"
-        }
-    }
-
-    // Send/Stop toggle action for the toolbar
+    /** Send/Stop toggle action for the toolbar. */
     private inner class SendStopAction : AnAction(
         "Send", "Send prompt (Enter)", AllIcons.Actions.Execute
     ) {
@@ -911,7 +684,7 @@ class ChatToolWindowContent(
         }
     }
 
-    // Unified attach dropdown: current file, selection, or search project files
+    /** Unified attach dropdown: current file, selection, or search project files. */
     private inner class AttachContextDropdownAction : AnAction(
         "Attach Context", "Attach file, selection, or search project files",
         AllIcons.General.Add
@@ -953,11 +726,10 @@ class ChatToolWindowContent(
                 AllIcons.FileTypes.Text
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
-                override fun actionPerformed(ev: AnActionEvent) = handleCreateScratch()
+                override fun actionPerformed(ev: AnActionEvent) = pasteToScratchHandler.handleCreateScratch()
             })
             group.addSeparator()
 
-            // Trigger character sub-menu
             val triggerGroup = DefaultActionGroup("File Search Trigger", true)
             triggerGroup.templatePresentation.icon = AllIcons.General.Settings
             for ((label, value) in listOf(
@@ -1049,10 +821,9 @@ class ChatToolWindowContent(
         override fun setSelected(e: AnActionEvent, state: Boolean) {
             ActiveAgentManager.setFollowAgentFiles(project, state)
         }
-
     }
 
-    /** Open a project-root file in the editor if it exists */
+    /** Open a project-root file in the editor if it exists. */
     private fun openProjectFile(fileName: String) {
         val base = project.basePath ?: return
         val vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
@@ -1060,7 +831,7 @@ class ChatToolWindowContent(
         com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(vf, true)
     }
 
-    /** Dropdown action for project configuration files: Instructions, project todo file, Agent Definitions, MCP Instructions */
+    /** Dropdown action for project configuration files: Instructions, task file, Agent Definitions, MCP Instructions. */
     private inner class ProjectFilesDropdownAction : AnAction(
         "Project Files", "Open project configuration files",
         AllIcons.Nodes.Folder
@@ -1076,7 +847,6 @@ class ChatToolWindowContent(
             val group = DefaultActionGroup()
             val base = project.basePath
 
-            // Build menu from configured project file entries
             val entries = ProjectFilesSettings.getInstance().entries
             for (entry in entries) {
                 if (entry.isGlob) {
@@ -1153,7 +923,7 @@ class ChatToolWindowContent(
         }
     }
 
-    // ComboBoxAction for model selection — matches Run panel dropdown style
+    /** ComboBoxAction for model selection — matches Run panel dropdown style. */
     private inner class ModelSelectorAction : ComboBoxAction() {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
@@ -1175,9 +945,8 @@ class ChatToolWindowContent(
                         ApplicationManager.getApplication().executeOnPooledThread {
                             try {
                                 val client = agentManager.client
-                                val sessionId = currentSessionId
+                                val sessionId = promptOrchestrator.currentSessionId
                                 if (sessionId != null) {
-                                    // Switch model on current session (no restart needed)
                                     client.setModel(sessionId, model.id)
                                     LOG.info("Model switched to ${model.id} on session $sessionId")
                                 } else {
@@ -1293,7 +1062,7 @@ class ChatToolWindowContent(
                 group.add(object : AnAction(label) {
                     override fun actionPerformed(e: AnActionEvent) {
                         agentManager.settings.setSessionOptionValue(option.key, value)
-                        val sessionId = currentSessionId ?: return
+                        val sessionId = promptOrchestrator.currentSessionId ?: return
                         ApplicationManager.getApplication().executeOnPooledThread {
                             try {
                                 agentManager.client.setSessionOption(sessionId, option.key, value)
@@ -1320,9 +1089,7 @@ class ChatToolWindowContent(
         consolePanel = chatConsolePanel
         chatConsolePanel.onLoadMoreRequested = ::onLoadMoreHistory
         consolePanel.onQuickReply = { text -> ApplicationManager.getApplication().invokeLater { sendQuickReply(text) } }
-        // Register for proper JCEF browser disposal
         com.intellij.openapi.util.Disposer.register(project, consolePanel)
-        // Placeholder only shown if no conversation is restored (set after restore check)
         return consolePanel.component
     }
 
@@ -1338,8 +1105,7 @@ class ChatToolWindowContent(
         registerTriggerCharDetection(editor)
     }
 
-    // Use IntelliJ's action system (not Swing InputMap) so the shortcut takes priority
-    // over the editor's built-in Enter handler (ACTION_EDITOR_ENTER).
+    // Use IntelliJ's action system so the shortcut takes priority over the editor's built-in Enter handler.
     private fun registerEnterSend(contentComponent: JComponent) {
         object : AnAction() {
             override fun actionPerformed(e: AnActionEvent) {
@@ -1373,65 +1139,52 @@ class ChatToolWindowContent(
         )
     }
 
+    private fun handlePastePreprocess(
+        event: java.util.EventObject,
+        editor: EditorEx,
+        contentComponent: JComponent,
+        pasteStrokes: Set<KeyStroke>
+    ): Boolean {
+        if (event !is java.awt.event.KeyEvent) return false
+        if (editor.isDisposed) return false
+        if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return false
+        if (KeyStroke.getKeyStrokeForEvent(event) !in pasteStrokes) return false
+        val focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
+        if (!SwingUtilities.isDescendingFrom(focused, contentComponent)) return false
+
+        val clipText = contextManager.getClipboardText()
+        if (clipText == null || (clipText.lines().size <= 3 && clipText.length <= 500)) return false
+
+        val projectSource = contextManager.findClipboardSourceInProject(clipText)
+        event.consume()
+        ApplicationManager.getApplication().invokeLater {
+            if (editor.isDisposed) return@invokeLater
+            if (projectSource != null) {
+                contextManager.insertInlineChip(editor, projectSource)
+            } else {
+                pasteToScratchHandler.handlePasteToScratch(clipText)
+            }
+        }
+        return true
+    }
+
     private fun registerPasteIntercept(editor: EditorEx, contentComponent: JComponent) {
         val pasteStrokes = setOf(
             KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.CTRL_DOWN_MASK),
             KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.META_DOWN_MASK),
             KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_INSERT, java.awt.event.InputEvent.SHIFT_DOWN_MASK)
         )
-
         // Use IdeEventQueue preprocessor (runs before IdeKeyEventDispatcher) so we consume the
         // event before any other handler sees it — avoiding the double-paste that occurred when
-        // popup.cancel() restored focus to contentComponent mid-dispatch and IdeKeyEventDispatcher
-        // fired our shortcut again for the now-focused component.
+        // popup.cancel() restored focus to contentComponent mid-dispatch.
         com.intellij.ide.IdeEventQueue.getInstance().addPreprocessor(
-            com.intellij.ide.IdeEventQueue.EventDispatcher { event ->
-                if (event !is java.awt.event.KeyEvent) return@EventDispatcher false
-                if (editor.isDisposed) return@EventDispatcher false
-                if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return@EventDispatcher false
-                if (KeyStroke.getKeyStrokeForEvent(event) !in pasteStrokes) return@EventDispatcher false
-                // Only intercept when our prompt editor is in the focus hierarchy
-                val focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
-                if (!SwingUtilities.isDescendingFrom(
-                        focused,
-                        contentComponent
-                    )
-                ) return@EventDispatcher false
-
-                val clipText = contextManager.getClipboardText()
-                if (clipText != null && (clipText.lines().size > 3 || clipText.length > 500)) {
-                    val projectSource = contextManager.findClipboardSourceInProject(clipText)
-                    // Defer the action to the next EDT cycle so the preprocessor returns `true`
-                    // (consuming Ctrl+V) before any UI mutation happens. Without this deferral:
-                    //  • insertInlineChip's WriteCommandAction runs while Ctrl+V is still
-                    //    in-flight, allowing the editor's own paste handler to also fire (chip
-                    //    + raw text both appear).
-                    //  • showCenteredInCurrentWindow opens the popup synchronously while Ctrl+V
-                    //    is still being dispatched, so the popup's search field receives the
-                    //    in-flight paste event (text ends up in search field instead of editor).
-                    event.consume()
-                    ApplicationManager.getApplication().invokeLater {
-                        if (editor.isDisposed) return@invokeLater
-                        if (projectSource != null) {
-                            contextManager.insertInlineChip(editor, projectSource)
-                        } else {
-                            handlePasteToScratch(clipText)
-                        }
-                    }
-                    true
-                } else {
-                    // Small text: let the editor's own paste handler run normally.
-                    // Manually calling handler.execute here would double-paste because the
-                    // event still reaches the editor's InputMap on some IntelliJ versions.
-                    false
-                }
+            { event ->
+                handlePastePreprocess(event, editor, contentComponent, pasteStrokes)
             },
             project
         )
     }
 
-    // Trigger character detection: when the configured char (# or @) is typed,
-    // remove it and open the file search popup instead
     private fun registerTriggerCharDetection(editor: EditorEx) {
         editor.document.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
             override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
@@ -1457,9 +1210,7 @@ class ChatToolWindowContent(
     }
 
     private fun setupPromptContextMenu(editor: EditorEx) {
-        // Build a combined action group: native editor menu + our custom items
         val group = DefaultActionGroup().apply {
-            // Include the standard editor popup menu (Cut, Copy, Paste, Select All, etc.)
             val editorPopup = ActionManager.getInstance().getAction("EditorPopupMenu")
             if (editorPopup != null) {
                 add(editorPopup)
@@ -1467,7 +1218,6 @@ class ChatToolWindowContent(
 
             addSeparator()
 
-            // Attach actions
             add(object : AnAction("Attach Current File", null, AllIcons.Actions.AddFile) {
                 override fun actionPerformed(e: AnActionEvent) = contextManager.handleAddCurrentFile()
             })
@@ -1486,10 +1236,9 @@ class ChatToolWindowContent(
 
             addSeparator()
 
-            // Conversation actions
             add(object : AnAction("New Conversation", null, AllIcons.General.Add) {
                 override fun actionPerformed(e: AnActionEvent) {
-                    currentSessionId = null
+                    promptOrchestrator.currentSessionId = null
                     consolePanel.addSessionSeparator(
                         java.time.Instant.now().toString(),
                         agentManager.activeProfile.displayName
@@ -1499,7 +1248,6 @@ class ChatToolWindowContent(
             })
         }
 
-        // Install via the IntelliJ editor popup handler (replaces the default EditorPopupMenu with our combined group)
         editor.installPopupHandler(
             com.intellij.openapi.editor.impl.ContextMenuPopupHandler.Simple(group)
         )
@@ -1551,540 +1299,6 @@ class ChatToolWindowContent(
         }
     }
 
-    private fun handleStopRequest(promptThread: Thread?) {
-        val sessionId = currentSessionId
-        if (sessionId != null) {
-            try {
-                agentManager.client.cancelSession(sessionId)
-            } catch (_: Exception) {
-                // Best-effort cancellation
-            }
-        }
-        promptThread?.interrupt()
-        consolePanel.cancelAllRunning()
-        consolePanel.addErrorEntry("Stopped by user")
-    }
-
-    private fun ensureSessionCreated(client: AgentClient): String {
-        if (currentSessionId == null) {
-            currentSessionId = client.createSession(project.basePath)
-            updateSessionInfo()
-            val savedModel = agentManager.settings.selectedModel
-            if (!savedModel.isNullOrEmpty()) {
-                try {
-                    client.setModel(currentSessionId!!, savedModel)
-                } catch (ex: Exception) {
-                    LOG.warn("Failed to set model $savedModel on new session", ex)
-                }
-            }
-            for (option in client.listSessionOptions()) {
-                val savedValue = agentManager.settings.getSessionOptionValue(option.key)
-                if (savedValue.isNotEmpty()) {
-                    try {
-                        client.setSessionOption(currentSessionId!!, option.key, savedValue)
-                    } catch (ex: Exception) {
-                        LOG.warn("Failed to restore session option ${option.key}=$savedValue", ex)
-                    }
-                }
-            }
-        }
-        return currentSessionId!!
-    }
-
-    private fun buildEffectivePrompt(prompt: String): String {
-        var effective = prompt
-
-        val selectedAgent = agentManager.settings.selectedAgent
-        if (selectedAgent.isNotEmpty()) {
-            effective = "@$selectedAgent $effective"
-        }
-
-        if (!conversationSummaryInjected) {
-            conversationSummaryInjected = true
-            val summary = consolePanel.getCompressedSummary()
-            if (summary.isNotEmpty()) {
-                effective = "$summary\n\n$effective"
-            }
-        }
-        return effective
-    }
-
-    /**
-     * Build the prompt sent to the agent, optionally including referenced file content inline.
-     *
-     * <p>ACP {@code ResourceReference} objects are always sent as structured content blocks
-     * in the prompt array. However, some agents (e.g., GitHub Copilot) surface them only as
-     * metadata (path + line count) without inlining the actual content for the model. For
-     * those agents, the referenced file content is also appended as plain text so the model
-     * sees it. This behaviour is controlled by
-     * {@link com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig#requiresResourceContentDuplication()}.</p>
-     */
-    private fun buildEffectivePromptWithContent(
-        client: AgentClient,
-        prompt: String,
-        references: List<ResourceReference>,
-        contextItems: List<ContextItemData>
-    ): String {
-        val base = buildEffectivePrompt(prompt)
-        if (references.isEmpty() || !client.requiresResourceContentDuplication()) return base
-
-        val contentBlocks = references.mapIndexed { i, ref ->
-            val label = contextItems.getOrNull(i)?.name ?: ref.uri().substringAfterLast("/")
-            "--- $label ---\n${ref.text()}"
-        }
-        return "$base\n\n${contentBlocks.joinToString("\n\n")}"
-    }
-
-    private fun handlePromptCompletion(prompt: String) {
-        com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).flushPendingAutoFormat()
-        com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).clearFileAccessTracking()
-
-        // A successful turn means the rate limit was not blocking — clear any cached warning.
-        pendingBanner = null
-
-        val client = agentManager.client
-        if (client.supportsMultiplier()) {
-            val multiplier = getModelMultiplier(turnModelId)
-            consolePanel.finishResponse(turnToolCallCount, turnModelId, multiplier)
-            billing.recordTurnCompleted(multiplier)
-            if (::processingTimerPanel.isInitialized) processingTimerPanel.recordUsage(0, 0, 0.0)
-        } else {
-            // Claude: show token/cost stats on the prompt chip, record usage in toolbar panel
-            consolePanel.finishResponse(turnToolCallCount, turnModelId, "")
-            val usageChip = formatUsageChip(turnInputTokens, turnOutputTokens, turnCostUsd)
-            if (usageChip.isNotEmpty()) {
-                ApplicationManager.getApplication().invokeLater {
-                    consolePanel.setPromptStats(turnModelId, usageChip)
-                }
-            }
-            if (::processingTimerPanel.isInitialized) {
-                processingTimerPanel.recordUsage(turnInputTokens, turnOutputTokens, turnCostUsd)
-            }
-        }
-
-        notifyIfUnfocused(turnToolCallCount)
-        saveTurnStatistics(prompt, turnToolCallCount, turnModelId)
-        saveConversation()
-
-        val lastResponse = consolePanel.getLastResponseText()
-        val quickReplies = detectQuickReplies(lastResponse)
-        if (quickReplies.isNotEmpty()) {
-            ApplicationManager.getApplication().invokeLater { consolePanel.showQuickReplies(quickReplies) }
-        }
-
-        // Force Swing repaint so the JCEF panel reflects final state
-        ApplicationManager.getApplication().invokeLater {
-            consolePanel.component.revalidate()
-            consolePanel.component.repaint()
-            if (ActiveAgentManager.getFollowAgentFiles(project)) {
-                promptTextArea.requestFocusInWindow()
-            }
-        }
-    }
-
-    private fun executePrompt(prompt: String, contextItems: List<ContextItemData> = emptyList()) {
-        try {
-            if (isBlockedByAuth()) return
-
-            val pending = pendingBanner
-            if (pending != null) {
-                ApplicationManager.getApplication().invokeLater {
-                    if (pending.level == SessionUpdate.BannerLevel.ERROR) statusBanner?.showError(pending.message)
-                    else statusBanner?.showWarning(pending.message)
-                }
-            }
-
-            val client = agentManager.client
-            val sessionId = ensureSessionCreated(client)
-            wirePermissionListener(client)
-
-            val modelId = prepareModelAndTurnState()
-
-            val references = contextManager.buildContextReferences(contextItems.ifEmpty { null })
-            val effectivePrompt = buildEffectivePromptWithContent(client, prompt, references, contextItems)
-            addContextEntries(references, contextItems)
-
-            dispatchPromptWithRetry(client, sessionId, effectivePrompt, modelId, references)
-
-            handlePromptCompletion(prompt)
-        } catch (e: Exception) {
-            handlePromptError(e)
-        } finally {
-            setSendingState(false)
-        }
-    }
-
-    private fun dispatchPromptWithRetry(
-        client: AgentClient,
-        initialSessionId: String,
-        effectivePrompt: String,
-        modelId: String,
-        references: List<ResourceReference>
-    ) {
-        val refs = references.ifEmpty { null }
-        val onChunk = createStreamingChunkHandler()
-        val onUpdate = java.util.function.Consumer<SessionUpdate> { update ->
-            handlePromptStreamingUpdate(update)
-        }
-        val sendPromptCall: (String) -> Unit = { sid ->
-            client.sendPrompt(sid, effectivePrompt, modelId, refs, onChunk, onUpdate, null)
-        }
-        sendWithSessionRetry(client, initialSessionId, sendPromptCall) {}
-    }
-
-    private fun isBlockedByAuth(): Boolean {
-        if (authService.pendingAuthError == null) return false
-        ApplicationManager.getApplication().invokeLater {
-            consolePanel.addErrorEntry("Not signed in. Use the Sign In button in the banner above.")
-            copilotBanner?.triggerCheck()
-        }
-        return true
-    }
-
-    private fun wirePermissionListener(client: AgentClient) {
-        client.setPermissionRequestListener { req: PermissionRequest ->
-            ApplicationManager.getApplication().invokeLater {
-                consolePanel.showPermissionRequest(
-                    req.reqId.toString(), req.displayName, req.description
-                ) { response -> req.respond(response) }
-                notifyPermissionRequestIfUnfocused(req.displayName)
-            }
-        }
-    }
-
-    private fun prepareModelAndTurnState(): String {
-        val selectedModelObj =
-            if (selectedModelIndex >= 0 && selectedModelIndex < loadedModels.size) loadedModels[selectedModelIndex] else null
-        val modelId = selectedModelObj?.id ?: ""
-        turnToolCallCount = 0
-        turnInputTokens = 0
-        turnOutputTokens = 0
-        turnCostUsd = 0.0
-        activeSubAgentId = null
-        turnModelId = modelId
-        ApplicationManager.getApplication().invokeLater {
-            consolePanel.setCurrentProfile(agentManager.activeProfileId)
-            consolePanel.setCurrentModel(modelId)
-            // Multiplier chip shown upfront only for Copilot (which has fixed per-model pricing).
-            // For Claude, token/cost stats are shown at turn completion instead.
-            if (agentManager.client.supportsMultiplier()) {
-                consolePanel.setPromptStats(modelId, getModelMultiplier(modelId))
-            }
-        }
-        return modelId
-    }
-
-    private fun addContextEntries(references: List<ResourceReference>, contextItems: List<ContextItemData>) {
-        if (references.isNotEmpty() && contextItems.isNotEmpty()) {
-            val contextFiles = contextItems.map { Pair(it.name, it.path) }
-            consolePanel.addContextFilesEntry(contextFiles)
-        }
-    }
-
-    private fun createStreamingChunkHandler(): java.util.function.Consumer<String> {
-        return java.util.function.Consumer { chunk -> appendResponse(chunk) }
-    }
-
-    /**
-     * Attempts to call [sendCall] with [initialSessionId]. If it fails with a "not found" session error,
-     * invalidates the current session, creates a fresh one, resets state via [onRetry],
-     * and retries once with the new session ID. Returns the (possibly new) session ID.
-     */
-    private fun sendWithSessionRetry(
-        client: AgentClient,
-        initialSessionId: String,
-        sendCall: (String) -> Unit,
-        onRetry: () -> Unit
-    ): String {
-        try {
-            sendCall(initialSessionId)
-            return initialSessionId
-        } catch (e: AcpException) {
-            if (e.message != null && e.message!!.contains("not found", ignoreCase = true)) {
-                LOG.info("Session expired ('not found'), creating new session and retrying")
-                currentSessionId = null
-                val newSessionId = ensureSessionCreated(client)
-                onRetry()
-                sendCall(newSessionId)
-                return newSessionId
-            }
-            throw e
-        }
-    }
-
-    /** Send a quick-reply directly without touching the user's input field. */
-    private fun sendQuickReply(text: String) {
-        if (isSending) return
-        consolePanel.disableQuickReplies()
-        sendPromptDirectly(text)
-    }
-
-    /** Send a prompt string directly, bypassing the text area (used for quick-replies). */
-    private fun sendPromptDirectly(prompt: String) {
-        val trimmed = prompt.trim()
-        if (trimmed.isEmpty()) return
-        statusBanner?.dismissCurrent()
-        setSendingState(true)
-
-        // Quick-replies don't carry context items
-        consolePanel.addPromptEntry(trimmed, null)
-
-        ApplicationManager.getApplication().executeOnPooledThread {
-            currentPromptThread = Thread.currentThread()
-            executePrompt(trimmed)
-            currentPromptThread = null
-        }
-    }
-
-    /**
-     * Extract quick-reply options from `[quick-reply: A | B | C]` tags in the response.
-     */
-    private fun detectQuickReplies(responseText: String): List<String> {
-        val match = QUICK_REPLY_TAG_REGEX.findAll(responseText).lastOrNull() ?: return emptyList()
-        return match.groupValues[1].split("|").map { it.trim() }.filter { it.isNotEmpty() }
-    }
-
-    private fun handlePromptStreamingUpdate(update: SessionUpdate) {
-        when (update) {
-            is SessionUpdate.ToolCall -> {
-                handleStreamingToolCall(update)
-                handleClientUpdate(update)
-            }
-
-            is SessionUpdate.ToolCallUpdate -> {
-                handleStreamingToolCallUpdate(update)
-                handleClientUpdate(update)
-            }
-
-            is SessionUpdate.AgentThought -> handleStreamingAgentThought(update)
-            is SessionUpdate.TurnUsage -> handleStreamingTurnUsage(update)
-            is SessionUpdate.Banner -> handleStreamingBanner(update)
-            is SessionUpdate.Plan -> handleClientUpdate(update)
-        }
-    }
-
-    private fun handleStreamingTurnUsage(usage: SessionUpdate.TurnUsage) {
-        turnInputTokens = usage.inputTokens()
-        turnOutputTokens = usage.outputTokens()
-        turnCostUsd = usage.costUsd()
-    }
-
-    private fun handleStreamingBanner(banner: SessionUpdate.Banner) {
-        val msg = banner.message()
-        if (banner.clearOn() == SessionUpdate.ClearOn.NEXT_SUCCESS) {
-            pendingBanner = PendingBanner(msg, banner.level())
-        }
-        ApplicationManager.getApplication().invokeLater {
-            if (banner.level() == SessionUpdate.BannerLevel.ERROR) statusBanner?.showError(msg)
-            else statusBanner?.showWarning(msg)
-        }
-    }
-
-    private fun handleStreamingToolCall(toolCall: SessionUpdate.ToolCall) {
-        val title = toolCall.title()
-        val toolCallId = toolCall.toolCallId()
-        val kind = toolCall.kind().value()
-        val arguments = toolCall.arguments()
-        if (toolCallId.isEmpty()) return
-        if (toolCall.isSubAgent) {
-            val agentType = toolCall.agentType()!!
-            turnToolCallCount++
-            if (::processingTimerPanel.isInitialized) processingTimerPanel.incrementToolCalls()
-            toolCallTitles[toolCallId] = "task"
-            activeSubAgentId = toolCallId
-            agentManager.client.setSubAgentActive(true)
-            agentManager.settings.setActiveAgentLabel(agentType)
-            val description =
-                toolCall.subAgentDescription()?.takeIf { it.isNotBlank() } ?: title.ifBlank { "Sub-agent task" }
-            consolePanel.addSubAgentEntry(toolCallId, agentType, description, toolCall.subAgentPrompt())
-        } else if (activeSubAgentId != null) {
-            turnToolCallCount++
-            if (::processingTimerPanel.isInitialized) processingTimerPanel.incrementToolCalls()
-            toolCallTitles[toolCallId] = "subagent_internal"
-            consolePanel.addSubAgentToolCall(activeSubAgentId!!, toolCallId, title, arguments, kind)
-        } else {
-            turnToolCallCount++
-            if (::processingTimerPanel.isInitialized) processingTimerPanel.incrementToolCalls()
-            toolCallTitles[toolCallId] = title
-            consolePanel.addToolCallEntry(toolCallId, title, arguments, kind)
-        }
-    }
-
-    private fun handleStreamingToolCallUpdate(update: SessionUpdate.ToolCallUpdate) {
-        val status = update.status()
-        val toolCallId = update.toolCallId()
-        val result = update.result()
-        val callType = toolCallTitles[toolCallId]
-        val isSubAgent = callType == "task"
-        val isInternal = callType == "subagent_internal"
-        if (status == SessionUpdate.ToolCallStatus.COMPLETED) {
-            if (isSubAgent) {
-                activeSubAgentId = null
-                agentManager.client.setSubAgentActive(false)
-                agentManager.settings.setActiveAgentLabel(null)
-                consolePanel.updateSubAgentResult(toolCallId, "completed", result)
-            } else if (isInternal) {
-                consolePanel.updateSubAgentToolCall(toolCallId, "completed", result)
-            } else {
-                consolePanel.updateToolCall(toolCallId, "completed", result)
-            }
-        } else if (status == SessionUpdate.ToolCallStatus.FAILED) {
-            val error = update.error() ?: result ?: "Unknown error"
-            if (isSubAgent) {
-                activeSubAgentId = null
-                agentManager.client.setSubAgentActive(false)
-                agentManager.settings.setActiveAgentLabel(null)
-                consolePanel.updateSubAgentResult(toolCallId, "failed", error)
-            } else if (isInternal) {
-                consolePanel.updateSubAgentToolCall(toolCallId, "failed", error)
-            } else {
-                consolePanel.updateToolCall(toolCallId, "failed", error)
-            }
-        }
-        if (status == SessionUpdate.ToolCallStatus.COMPLETED || status == SessionUpdate.ToolCallStatus.FAILED) {
-            saveConversationThrottled()
-        }
-    }
-
-    private fun handleStreamingAgentThought(thought: SessionUpdate.AgentThought) {
-        consolePanel.appendThinkingText(thought.text())
-    }
-
-    private fun handlePromptError(e: Exception) {
-        val isCancelled = e is InterruptedException || e.cause is InterruptedException
-        val msg = if (isCancelled) "Request cancelled" else e.message ?: MSG_UNKNOWN_ERROR
-
-        // Persist whatever was collected so far — partial turns survive disconnects and crashes.
-        saveConversation()
-
-        // Show the auth banner immediately when an auth error is detected
-        if (authService.isAuthenticationError(msg)) {
-            authService.markAuthError(msg)
-            copilotBanner?.triggerCheck()
-            consolePanel.addErrorEntry("Error: $msg")
-            e.printStackTrace()
-            return
-        }
-
-        val isRecoverable = isCancelled || (e is AcpException && e.isRecoverable)
-        if (!isRecoverable) {
-            currentSessionId = null
-            updateSessionInfo()
-        }
-
-        // ACP/stream errors may leave the JCEF panel unresponsive, so show the error in the
-        // always-visible Swing status banner with a Reconnect action. Also add an entry in the
-        // chat panel so it is visible in the conversation history if the browser is alive.
-        consolePanel.addErrorEntry("Error: $msg")
-        if (!isCancelled) {
-            statusBanner?.showError(msg, "Reconnect") { reconnectAfterError() }
-        }
-
-        e.printStackTrace()
-    }
-
-    private fun reconnectAfterError() {
-        ApplicationManager.getApplication().executeOnPooledThread {
-            try {
-                agentManager.restart()
-                ApplicationManager.getApplication().invokeLater {
-                    statusBanner?.showInfo("Reconnected — ready for a new message.")
-                }
-            } catch (ex: Exception) {
-                LOG.warn("Reconnect failed", ex)
-                ApplicationManager.getApplication().invokeLater {
-                    statusBanner?.showError("Reconnect failed: ${ex.message ?: "unknown error"}")
-                }
-            }
-        }
-    }
-
-    private fun getModelMultiplier(modelId: String): String {
-        return try {
-            agentManager.client.getModelMultiplier(modelId)
-        } catch (_: Exception) {
-            "1x"
-        }
-    }
-
-    /**
-     * Formats token counts and cost for the prompt stats chip shown next to each Claude message.
-     * Returns an empty string if no usage data is available.
-     * Examples: "1.2k tok · $0.004",  "850 tok · $0.001"
-     */
-    private fun formatUsageChip(inputTokens: Int, outputTokens: Int, costUsd: Double): String {
-        if (inputTokens == 0 && outputTokens == 0 && costUsd == 0.0) return ""
-        val totalTokens = inputTokens + outputTokens
-        val tokStr = if (totalTokens >= 1000) "${totalTokens / 1000}.${(totalTokens % 1000) / 100}k tok"
-        else "$totalTokens tok"
-        return if (costUsd > 0.0) "$tokStr · $${String.format("%.4f", costUsd).trimEnd('0').trimEnd('.')}"
-        else tokStr
-    }
-
-    private fun saveTurnStatistics(prompt: String, toolCalls: Int, modelId: String) {
-        ApplicationManager.getApplication().executeOnPooledThread {
-            try {
-                val statsDir = java.io.File(project.basePath ?: return@executeOnPooledThread, AGENT_WORK_DIR)
-                statsDir.mkdirs()
-                val statsFile = java.io.File(statsDir, "usage-stats.jsonl")
-                val entry = com.google.gson.JsonObject().apply {
-                    addProperty("timestamp", java.time.Instant.now().toString())
-                    addProperty("prompt", prompt.take(200))
-                    addProperty("model", modelId)
-                    if (agentManager.client.supportsMultiplier()) {
-                        addProperty("multiplier", getModelMultiplier(modelId))
-                    } else {
-                        addProperty("inputTokens", turnInputTokens)
-                        addProperty("outputTokens", turnOutputTokens)
-                        addProperty("costUsd", turnCostUsd)
-                    }
-                    addProperty("toolCalls", toolCalls)
-                }
-                statsFile.appendText(entry.toString() + "\n")
-            } catch (_: Exception) { /* best-effort */
-            }
-        }
-    }
-
-    private fun archiveConversation() {
-        conversationStore.archive(project.basePath)
-    }
-
-    private fun notifyIfUnfocused(toolCallCount: Int) {
-        val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project) ?: return
-        if (frame.isActive) return
-        val title = "Copilot Response Ready"
-        val content =
-            if (toolCallCount > 0) "Turn completed with $toolCallCount tool call${if (toolCallCount != 1) "s" else ""}"
-            else "Turn completed"
-        // Balloon attached to the Copilot tool window tab (same style as build/test notifications)
-        com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
-            .notifyByBalloon(
-                "AgentBridge",
-                com.intellij.openapi.ui.MessageType.INFO,
-                "<b>$title</b><br>$content"
-            )
-        // OS-native notification with sound
-        com.intellij.ui.SystemNotifications.getInstance().notify("AgentBridge Notifications", title, content)
-        // Flash the taskbar icon
-        com.intellij.ui.AppIcon.getInstance().requestAttention(project, false)
-    }
-
-    private fun notifyPermissionRequestIfUnfocused(toolName: String) {
-        val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project) ?: return
-        if (frame.isActive) return
-        val title = "Agent Needs Approval"
-        val content = "Permission requested for: $toolName"
-        com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
-            .notifyByBalloon(
-                "AgentBridge",
-                com.intellij.openapi.ui.MessageType.WARNING,
-                "<b>$title</b><br>$content"
-            )
-        com.intellij.ui.SystemNotifications.getInstance().notify("AgentBridge Notifications", title, content)
-        com.intellij.ui.AppIcon.getInstance().requestAttention(project, true)
-    }
-
     private fun saveConversation() {
         lastIncrementalSaveMs = System.currentTimeMillis()
         conversationStore.saveAsync(project.basePath, ConversationSerializer.serialize(chatConsolePanel.getEntries()))
@@ -2117,6 +1331,26 @@ class ChatToolWindowContent(
         }
     }
 
+    /** Send a quick-reply directly without touching the user's input field. */
+    private fun sendQuickReply(text: String) {
+        if (isSending) return
+        consolePanel.disableQuickReplies()
+        sendPromptDirectly(text)
+    }
+
+    /** Send a prompt string directly, bypassing the text area (used for quick-replies). */
+    private fun sendPromptDirectly(prompt: String) {
+        val trimmed = prompt.trim()
+        if (trimmed.isEmpty()) return
+        statusBanner?.dismissCurrent()
+        setSendingState(true)
+        consolePanel.addPromptEntry(trimmed, null)
+        val selectedModelId = loadedModels.getOrNull(selectedModelIndex)?.id ?: ""
+        ApplicationManager.getApplication().executeOnPooledThread {
+            promptOrchestrator.execute(trimmed, emptyList(), selectedModelId)
+        }
+    }
+
     private fun onLoadMoreHistory() {
         val batch = conversationReplayer.loadNextBatch()
         if (batch.isNotEmpty()) chatConsolePanel.prependEntries(batch)
@@ -2125,207 +1359,19 @@ class ChatToolWindowContent(
         else chatConsolePanel.hideLoadMore()
     }
 
-    private fun handlePasteToScratch(text: String) {
-        val settings = com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings.getInstance()
-        val enabledLanguages = settings.enabledLanguages
-
-        if (enabledLanguages.isEmpty()) {
-            Messages.showInfoMessage(
-                project,
-                "No languages are enabled. Configure them in Settings → Tools → Scratch File Types.",
-                "No Scratch Languages"
-            )
-            return
-        }
-
-        // Build ordered list: detected language first, then Plain Text, then the rest
-        val detected = com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat
-            .detectLanguageFromContent(text)
-        val detectedMatch = if (detected != null) enabledLanguages.find { it.id == detected.id } else null
-        val plainText = enabledLanguages.find { it.id == com.intellij.openapi.fileTypes.PlainTextLanguage.INSTANCE.id }
-
-        val orderedLanguages = buildList {
-            if (detectedMatch != null) add(detectedMatch)
-            if (plainText != null && plainText != detectedMatch) add(plainText)
-            for (lang in enabledLanguages) {
-                if (lang != detectedMatch && lang != plainText) add(lang)
-            }
-        }
-
-        val popup = com.intellij.ide.scratch.LRUPopupBuilder
-            .languagePopupBuilder(project, "Paste as Scratch File (Paste Again to Skip)") { lang ->
-                lang.associatedFileType?.icon ?: AllIcons.FileTypes.Any_type
-            }
-            .forValues(orderedLanguages)
-            .onChosen { lang ->
-                val ext = lang.associatedFileType?.defaultExtension ?: return@onChosen
-                createAndAttachScratch(ext, text)
-            }
-            .buildPopup()
-
-        registerPasteToSkip(popup, text)
-
-        popup.showCenteredInCurrentWindow(project)
-    }
-
-    private fun registerPasteToSkip(popup: com.intellij.openapi.ui.popup.JBPopup, text: String) {
-        val pasteStrokes = setOf(
-            KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.CTRL_DOWN_MASK),
-            KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.META_DOWN_MASK),
-            KeyStroke.getKeyStroke(
-                java.awt.event.KeyEvent.VK_INSERT, java.awt.event.InputEvent.SHIFT_DOWN_MASK
-            )
-        )
-
-        var swallowFollowUp = false
-        var pasteIntercepted = false
-
-        val disposable = com.intellij.openapi.util.Disposer.newDisposable("pasteToSkip")
-        com.intellij.ide.IdeEventQueue.getInstance().addPreprocessor(
-            com.intellij.ide.IdeEventQueue.EventDispatcher { event ->
-                if (event !is java.awt.event.KeyEvent) return@EventDispatcher false
-                if (swallowFollowUp) {
-                    return@EventDispatcher handleFollowUpEvent(event, disposable) { swallowFollowUp = false }
-                }
-                if (!popup.isVisible) return@EventDispatcher false
-                if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return@EventDispatcher false
-                if (KeyStroke.getKeyStrokeForEvent(event) !in pasteStrokes) return@EventDispatcher false
-                swallowFollowUp = true
-                pasteIntercepted = true
-                executePasteFromPopup(popup, text)
-                true
-            },
-            disposable
-        )
-
-        popup.addListener(object : com.intellij.openapi.ui.popup.JBPopupListener {
-            override fun onClosed(event: com.intellij.openapi.ui.popup.LightweightWindowEvent) {
-                if (!pasteIntercepted) {
-                    com.intellij.openapi.util.Disposer.dispose(disposable)
-                }
-            }
-        })
-    }
-
-    /**
-     * Handles KEY_TYPED and KEY_RELEASED follow-up events after a paste stroke was consumed.
-     * Returns true to swallow the event. Self-disposes on KEY_RELEASED via [clearSwallow].
-     */
-    private fun handleFollowUpEvent(
-        event: java.awt.event.KeyEvent,
-        disposable: com.intellij.openapi.Disposable,
-        clearSwallow: () -> Unit
-    ): Boolean {
-        if (event.id == java.awt.event.KeyEvent.KEY_RELEASED) {
-            clearSwallow()
-            ApplicationManager.getApplication().invokeLater {
-                com.intellij.openapi.util.Disposer.dispose(disposable)
-            }
-        }
-        return true
-    }
-
-    private fun executePasteFromPopup(popup: com.intellij.openapi.ui.popup.JBPopup, text: String) {
-        popup.cancel()
-        com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
-            val editor = promptTextArea.editor ?: return@runWriteCommandAction
-            val offset = editor.caretModel.offset
-            editor.document.insertString(offset, text)
-            editor.caretModel.moveToOffset(offset + text.length)
-        }
-        // Return focus to prompt so user can keep typing
-        ApplicationManager.getApplication().invokeLater {
-            promptTextArea.editor?.contentComponent?.requestFocusInWindow()
-        }
-    }
-
-    private fun handleCreateScratch() {
-        val settings = com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings.getInstance()
-        val enabledLanguages = settings.enabledLanguages
-
-        if (enabledLanguages.isEmpty()) {
-            Messages.showInfoMessage(
-                project,
-                "No languages are enabled. Configure them in Settings → Tools → Scratch File Types.",
-                "No Scratch Languages"
-            )
-            return
-        }
-
-        com.intellij.ide.scratch.LRUPopupBuilder
-            .languagePopupBuilder(project, "New Scratch File") { lang ->
-                lang.associatedFileType?.icon ?: AllIcons.FileTypes.Any_type
-            }
-            .forValues(enabledLanguages)
-            .onChosen { lang ->
-                val ext = lang.associatedFileType?.defaultExtension ?: return@onChosen
-                createAndAttachScratch(ext)
-            }
-            .buildPopup()
-            .showCenteredInCurrentWindow(project)
-    }
-
-    private fun createAndAttachScratch(ext: String, initialContent: String? = null) {
-        ApplicationManager.getApplication().invokeLater {
-            try {
-                val scratchService = com.intellij.ide.scratch.ScratchFileService.getInstance()
-                val scratchRoot = com.intellij.ide.scratch.ScratchRootType.getInstance()
-                val name = "scratch.$ext"
-
-                @Suppress("RedundantCast") // Explicit Computable needed: runWriteAction is overloaded
-                val file = ApplicationManager.getApplication().runWriteAction(
-                    com.intellij.openapi.util.Computable<com.intellij.openapi.vfs.VirtualFile?> {
-                        try {
-                            val vf = scratchService.findFile(
-                                scratchRoot, name,
-                                com.intellij.ide.scratch.ScratchFileService.Option.create_new_always
-                            )
-                            if (vf != null && !initialContent.isNullOrEmpty()) {
-                                vf.setBinaryContent(initialContent.toByteArray(Charsets.UTF_8))
-                            }
-                            vf
-                        } catch (e: java.io.IOException) {
-                            LOG.warn("Failed to create scratch file", e)
-                            null
-                        }
-                    }
-                )
-
-                if (file != null) {
-                    com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
-                        .openFile(file, true)
-                    val promptEditor = promptTextArea.editor as? EditorEx
-                    if (promptEditor != null) {
-                        contextManager.insertInlineChip(
-                            promptEditor,
-                            ContextItemData(
-                                path = file.path, name = file.name,
-                                startLine = 1, endLine = 0,
-                                fileTypeName = file.fileType.name, isSelection = false
-                            )
-                        )
-                    }
-                    // openFile(focus=true) steals focus; schedule a second invokeLater so
-                    // this runs after the file editor has finished grabbing focus.
-                    ApplicationManager.getApplication().invokeLater {
-                        promptTextArea.editor?.contentComponent?.requestFocusInWindow()
-                    }
-                }
-            } catch (e: Exception) {
-                LOG.warn("Failed to create scratch file from attach menu", e)
-            }
-        }
-    }
-
     fun getComponent(): JComponent = mainPanel
 
-    fun resetSession() {
-        currentSessionId = null
-        conversationSummaryInjected = false
+    private fun resetSessionState() {
+        promptOrchestrator.currentSessionId = null
+        promptOrchestrator.conversationSummaryInjected = false
         billing.billingCycleStartUsed = -1
         billing.resetLocalCounter()
         if (::processingTimerPanel.isInitialized) processingTimerPanel.resetSession()
         com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).clearSessionAllowedTools()
+    }
+
+    fun resetSession() {
+        resetSessionState()
         consolePanel.clear()
         consolePanel.showPlaceholder("New conversation started.")
         updateSessionInfo()
@@ -2340,15 +1386,64 @@ class ChatToolWindowContent(
         }
     }
 
-    /** Restart the agent session but keep the conversation history visible in the chat panel. */
     fun resetSessionKeepingHistory() {
-        currentSessionId = null
-        conversationSummaryInjected = false  // allow summary re-injection on next prompt
-        billing.billingCycleStartUsed = -1
-        billing.resetLocalCounter()
-        if (::processingTimerPanel.isInitialized) processingTimerPanel.resetSession()
-        com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project).clearSessionAllowedTools()
+        resetSessionState()
         updateSessionInfo()
+    }
+
+    private fun notifyIfUnfocused(toolCallCount: Int) {
+        val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project) ?: return
+        if (frame.isActive) return
+        val title = "Copilot Response Ready"
+        val content =
+            if (toolCallCount > 0) "Turn completed with $toolCallCount tool call${if (toolCallCount != 1) "s" else ""}"
+            else "Turn completed"
+        com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+            .notifyByBalloon(
+                "AgentBridge",
+                com.intellij.openapi.ui.MessageType.INFO,
+                "<b>$title</b><br>$content"
+            )
+        com.intellij.ui.SystemNotifications.getInstance().notify("AgentBridge Notifications", title, content)
+        com.intellij.ui.AppIcon.getInstance().requestAttention(project, false)
+    }
+
+    private fun saveTurnStatistics(prompt: String, toolCalls: Int, modelId: String) {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val statsDir = java.io.File(project.basePath ?: return@executeOnPooledThread, AGENT_WORK_DIR)
+                statsDir.mkdirs()
+                val statsFile = java.io.File(statsDir, "usage-stats.jsonl")
+                val entry = com.google.gson.JsonObject().apply {
+                    addProperty("timestamp", java.time.Instant.now().toString())
+                    addProperty("prompt", prompt.take(200))
+                    addProperty("model", modelId)
+                    if (agentManager.client.supportsMultiplier()) {
+                        val multiplier = try {
+                            agentManager.client.getModelMultiplier(modelId)
+                        } catch (_: Exception) {
+                            "1x"
+                        }
+                        addProperty("multiplier", multiplier)
+                    }
+                    addProperty("toolCalls", toolCalls)
+                }
+                statsFile.appendText(entry.toString() + "\n")
+            } catch (_: Exception) { /* best-effort */
+            }
+        }
+    }
+
+    private fun archiveConversation() {
+        conversationStore.archive(project.basePath)
+    }
+
+    private fun getModelMultiplier(modelId: String): String {
+        return try {
+            agentManager.client.getModelMultiplier(modelId)
+        } catch (_: Exception) {
+            "1x"
+        }
     }
 
     private fun restoreModelSelection(models: List<Model>) {
@@ -2405,7 +1500,6 @@ class ChatToolWindowContent(
         val errorMsg = lastError.message ?: MSG_UNKNOWN_ERROR
         modelsStatusText = "Unavailable"
         if (isCLINotFoundError(lastError)) {
-            // Non-recoverable: return to connect panel with the error
             agentManager.isConnected = false
             connectPanel.showError(errorMsg)
             cardLayout.show(mainPanel, CARD_CONNECT)

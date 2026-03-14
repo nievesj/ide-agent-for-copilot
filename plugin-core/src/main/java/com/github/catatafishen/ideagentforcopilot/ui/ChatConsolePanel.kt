@@ -4,13 +4,8 @@ import com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ArgumentAwareRenderer
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
-import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.psi.search.FilenameIndex
-import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
@@ -18,13 +13,9 @@ import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefJSQuery
-import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
-import java.awt.Color
-import java.io.File
 import java.util.*
 import javax.swing.JComponent
-import javax.swing.UIManager
 
 /**
  * Chat panel — web-component-based implementation.
@@ -47,6 +38,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private val toolCallNames = mutableMapOf<String, String>() // domId → tool baseName
     private val toolCallEntries = mutableMapOf<String, EntryData.ToolCall>() // domId → entry
     private val toolRegistry = com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getInstance(project)
+
+    private val fileNavigator = FileNavigator(project)
 
     // ── JCEF ───────────────────────────────────────────────────────
     private val browser: JBCefBrowser?
@@ -76,7 +69,6 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private val fallbackArea: JBTextArea?
 
     companion object {
-        private const val SA_COLOR_COUNT = 8
         private val QUICK_REPLY_TAG_REGEX = Regex("\\[quick-reply:\\s*([^]]+)]")
 
         /** Active panels keyed by project — used by MCP tool to retrieve page HTML. */
@@ -85,31 +77,6 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         fun getInstance(project: Project): ChatConsolePanel? = instances[project]
 
         private const val FAILED_SPAN = "<span style='color:var(--error)'>✖ Failed</span>"
-
-        private const val LINK_COLOR_KEY = "Link.activeForeground"
-        private val USER_COLOR = JBColor(Color(0x28, 0x6B, 0xC0), Color(86, 156, 214))
-        private val AGENT_COLOR = JBColor(Color(0x2A, 0x80, 0x2A), Color(150, 200, 150))
-        private val TOOL_COLOR = JBColor(Color(0x6A, 0x4C, 0xB0), Color(180, 160, 220))
-        private val THINK_COLOR = JBColor(Color(0x68, 0x68, 0x68), Color(176, 176, 176))
-        private val ERROR_COLOR = JBColor(Color(0xC7, 0x22, 0x22), Color(199, 34, 34))
-        private val SA_COLORS = arrayOf(
-            JBColor(Color(0x1E, 0x88, 0x7E), Color(38, 166, 154)),
-            JBColor(Color(0xC8, 0x8E, 0x32), Color(240, 173, 78)),
-            JBColor(Color(0x7B, 0x5D, 0xAE), Color(156, 120, 216)),
-            JBColor(Color(0xB8, 0x58, 0x78), Color(216, 112, 147)),
-            JBColor(Color(0x3B, 0x9F, 0xB8), Color(91, 192, 222)),
-            JBColor(Color(0x68, 0x9F, 0x30), Color(139, 195, 74)),
-            JBColor(Color(0xC6, 0x50, 0x50), Color(229, 115, 115)),
-            JBColor(Color(0x28, 0x6B, 0xC0), Color(86, 156, 214)),
-        )
-
-        // Tool kind chip colors — semantic categories
-        private val KIND_READ_COLOR = JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185))
-        private val KIND_EDIT_COLOR = JBColor(Color(0xA0, 0x7A, 0x3A), Color(205, 155, 95))
-        private val KIND_EXECUTE_COLOR = JBColor(Color(0x4A, 0x90, 0x4A), Color(130, 190, 130))
-        private val KIND_SEARCH_COLOR = JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185))
-        private val KIND_THINK_COLOR = JBColor(Color(0x7A, 0x70, 0xA8), Color(170, 155, 210))
-        private val KIND_OTHER_COLOR = JBColor(Color(0x78, 0x7C, 0x80), Color(160, 165, 170))
     }
 
     // ── Init ───────────────────────────────────────────────────────
@@ -358,7 +325,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     ) {
         maybeStartNewSegment()
         finalizeCurrentText()
-        val colorIndex = nextSubAgentColor++ % SA_COLOR_COUNT
+        val colorIndex = nextSubAgentColor++ % ChatTheme.SA_COLOR_COUNT
         val entry =
             EntryData.SubAgent(agentType, description, prompt, colorIndex = colorIndex, callId = id)
         if (initialResult != null) {
@@ -735,143 +702,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         }
     }
 
-    private fun handleFileLink(href: String) {
-        if (href.startsWith("gitshow://")) {
-            handleGitShowLink(href.removePrefix("gitshow://"))
-            return
-        }
-        val pathAndLine = href.removePrefix("openfile://")
-        val (filePath, line) = parsePathAndLine(pathAndLine)
-        val normalizedPath = filePath.replace('\\', '/')
-        val vf = LocalFileSystem.getInstance().findFileByPath(normalizedPath) ?: return
-        ApplicationManager.getApplication().invokeLater {
-            OpenFileDescriptor(project, vf, maxOf(0, line - 1), 0).navigate(true)
-        }
-    }
+    private fun handleFileLink(href: String) = fileNavigator.handleFileLink(href)
 
-    /** Splits a path-and-optional-line string, handling Windows drive letters (e.g. C:\...:42). */
-    private fun parsePathAndLine(pathAndLine: String): Pair<String, Int> {
-        val lastColon = pathAndLine.lastIndexOf(':')
-        if (lastColon > 0) {
-            val afterColon = pathAndLine.substring(lastColon + 1)
-            val lineNum = afterColon.toIntOrNull()
-            if (lineNum != null) return Pair(pathAndLine.substring(0, lastColon), lineNum)
-        }
-        return Pair(pathAndLine, 0)
-    }
-
-    private fun handleGitShowLink(hash: String) {
-        val log = com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
-        ApplicationManager.getApplication().invokeLater {
-            try {
-                val repos = git4idea.repo.GitRepositoryManager.getInstance(project).repositories.toList()
-                val root = repos.firstOrNull()?.root
-                if (root == null) {
-                    log.warn("No VCS root found for git commit link $hash")
-                    return@invokeLater
-                }
-                val fullHash = resolveFullHash(hash) ?: hash
-                val hashObj = com.intellij.vcs.log.impl.HashImpl.build(fullHash)
-
-                // Refresh VCS log to pick up recent commits
-                val vcsLog = com.intellij.vcs.log.impl.VcsProjectLog.getInstance(project)
-                val dataManager = vcsLog.dataManager
-                dataManager?.refresh(listOf(root))
-
-                // Poll until the commit appears in the VCS log storage, then navigate
-                showRevisionWhenIndexed(root, hashObj, attemptsLeft = 25, delayMs = 200)
-            } catch (e: Exception) {
-                log.warn("Failed to open git commit $hash", e)
-            }
-        }
-    }
-
-    private fun showRevisionWhenIndexed(
-        root: com.intellij.openapi.vfs.VirtualFile,
-        hash: com.intellij.vcs.log.Hash,
-        attemptsLeft: Int,
-        delayMs: Long,
-    ) {
-        val dm = com.intellij.vcs.log.impl.VcsProjectLog.getInstance(project).dataManager
-        val commitId = com.intellij.vcs.log.CommitId(hash, root)
-        val indexed = dm != null && dm.storage.containsCommit(commitId)
-
-        if (indexed || attemptsLeft <= 0) {
-            ApplicationManager.getApplication().invokeLater {
-                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, root, hash)
-            }
-            return
-        }
-
-        // Commit not yet indexed — retry after delay (total budget ~5 seconds)
-        com.intellij.util.concurrency.AppExecutorUtil.getAppScheduledExecutorService().schedule({
-            showRevisionWhenIndexed(root, hash, attemptsLeft - 1, delayMs)
-        }, delayMs, java.util.concurrent.TimeUnit.MILLISECONDS)
-    }
-
-    private fun resolveFullHash(shortHash: String): String? {
-        val basePath = project.basePath ?: return null
-        return try {
-            val process = ProcessBuilder("git", "rev-parse", shortHash)
-                .directory(File(basePath))
-                .redirectErrorStream(true)
-                .start()
-            val exited = process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
-            if (exited && process.exitValue() == 0) {
-                process.inputStream.bufferedReader().readLine()?.trim()
-            } else null
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun markdownToHtml(text: String): String =
-        MarkdownRenderer.markdownToHtml(text, ::resolveFileReference, ::resolveFilePath, ::isGitCommit)
-
-    private fun isGitCommit(sha: String): Boolean {
-        val basePath = project.basePath ?: return false
-        return try {
-            val process = ProcessBuilder("git", "cat-file", "-t", sha)
-                .directory(File(basePath))
-                .redirectErrorStream(true)
-                .start()
-            val exited = process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
-            exited && process.exitValue() == 0
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private fun resolveFileReference(ref: String): Pair<String, Int?>? {
-        val colonIdx = ref.indexOf(':')
-        val (name, lineNum) = if (colonIdx > 0) {
-            val afterColon = ref.substring(colonIdx + 1)
-            val num = afterColon.split(",", " ").firstOrNull()?.toIntOrNull()
-            if (num != null) ref.substring(0, colonIdx) to num else ref to null
-        } else ref to null
-        val path = resolveFilePath(name)
-            ?: if (!name.contains("/") && name.contains(".")) findProjectFileByName(name) else null
-        return if (path != null) Pair(path, lineNum) else null
-    }
-
-    private fun resolveFilePath(path: String): String? {
-        val f = File(path)
-        if (f.isAbsolute) return if (f.exists()) f.absolutePath else null
-        val base = project.basePath ?: return null
-        val rel = File(base, path)
-        return if (rel.exists()) rel.absolutePath else null
-    }
-
-    private fun findProjectFileByName(name: String): String? = try {
-        var result: String? = null
-        ApplicationManager.getApplication().runReadAction {
-            val files = FilenameIndex.getVirtualFilesByName(name, GlobalSearchScope.projectScope(project)).toList()
-            if (files.size == 1) result = files.first().path
-        }
-        result
-    } catch (_: Exception) {
-        null
-    }
+    private fun markdownToHtml(text: String): String = fileNavigator.markdownToHtml(text)
 
     // ── Tool result panel rendering ─────────────────────────────
 
@@ -935,130 +768,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     private fun domId(id: String) = id.replace(Regex("[^a-zA-Z0-9_-]"), "_")
-    private fun rgb(c: Color) = "rgb(${c.red},${c.green},${c.blue})"
-    private fun rgba(c: Color, a: Double) = "rgba(${c.red},${c.green},${c.blue},$a)"
 
     // ── Theme ──────────────────────────────────────────────────────
 
-    private fun buildCssVars(): String {
-        val font = UIUtil.getLabelFont()
-        val fg = UIUtil.getLabelForeground()
-        val bg = com.intellij.util.ui.JBUI.CurrentTheme.ToolWindow.background()
-        val codeBg =
-            UIManager.getColor("Editor.backgroundColor") ?: JBColor(Color(0xF0, 0xF0, 0xF0), Color(0x2B, 0x2D, 0x30))
-        val tblBorder =
-            UIManager.getColor("TableCell.borderColor") ?: JBColor(Color(0xD0, 0xD0, 0xD0), Color(0x45, 0x48, 0x4A))
-        val thBg =
-            UIManager.getColor("TableHeader.background") ?: JBColor(Color(0xE8, 0xE8, 0xE8), Color(0x35, 0x38, 0x3B))
-        val spinBg = UIManager.getColor("Panel.background") ?: JBColor(Color(0xDD, 0xDD, 0xDD), Color(0x55, 0x55, 0x55))
-        val linkColor = UIManager.getColor(LINK_COLOR_KEY) ?: JBColor(Color(0x28, 0x7B, 0xDE), Color(0x58, 0x9D, 0xF6))
-        val tooltipBg =
-            UIManager.getColor("ToolTip.background") ?: JBColor(Color(0xF7, 0xF7, 0xF7), Color(0x3C, 0x3F, 0x41))
-        val sb = StringBuilder()
-        sb.append("--font-family:'${font.family}';--font-size:${font.size - 2}pt;--code-font-size:${font.size - 3}pt;--code-font:'JetBrains Mono','${font.family}',monospace;")
-        sb.append(
-            "--fg:${rgb(fg)};--fg-a05:${rgba(fg, 0.05)};--fg-a08:${rgba(fg, 0.08)};--fg-a16:${
-                rgba(
-                    fg,
-                    0.16
-                )
-            };--fg-muted:${rgba(fg, 0.55)};--bg:${rgb(bg)};"
-        )
-        sb.append(
-            "--user:${rgb(USER_COLOR)};--user-a06:${rgba(USER_COLOR, 0.06)};--user-a08:${
-                rgba(
-                    USER_COLOR,
-                    0.08
-                )
-            };"
-        )
-        sb.append(
-            "--user-a12:${rgba(USER_COLOR, 0.12)};--user-a15:${rgba(USER_COLOR, 0.15)};--user-a16:${
-                rgba(
-                    USER_COLOR,
-                    0.16
-                )
-            };"
-        )
-        sb.append("--user-a18:${rgba(USER_COLOR, 0.18)};--user-a25:${rgba(USER_COLOR, 0.25)};")
-        sb.append(
-            "--agent:${rgb(AGENT_COLOR)};--agent-a06:${rgba(AGENT_COLOR, 0.06)};--agent-a08:${
-                rgba(
-                    AGENT_COLOR,
-                    0.08
-                )
-            };"
-        )
-        sb.append("--agent-a10:${rgba(AGENT_COLOR, 0.10)};--agent-a16:${rgba(AGENT_COLOR, 0.16)};")
-        sb.append(
-            "--think:${rgb(THINK_COLOR)};--think-a04:${rgba(THINK_COLOR, 0.04)};--think-a06:${
-                rgba(
-                    THINK_COLOR,
-                    0.06
-                )
-            };"
-        )
-        sb.append(
-            "--think-a08:${rgba(THINK_COLOR, 0.08)};--think-a10:${rgba(THINK_COLOR, 0.10)};--think-a16:${
-                rgba(
-                    THINK_COLOR,
-                    0.16
-                )
-            };"
-        )
-        sb.append(
-            "--think-a25:${rgba(THINK_COLOR, 0.25)};--think-a30:${rgba(THINK_COLOR, 0.30)};--think-a35:${
-                rgba(
-                    THINK_COLOR,
-                    0.35
-                )
-            };"
-        )
-        sb.append("--think-a40:${rgba(THINK_COLOR, 0.40)};--think-a55:${rgba(THINK_COLOR, 0.55)};")
-        sb.append(
-            "--tool:${rgb(TOOL_COLOR)};--tool-a08:${rgba(TOOL_COLOR, 0.08)};--tool-a16:${
-                rgba(
-                    TOOL_COLOR,
-                    0.16
-                )
-            };--tool-a40:${rgba(TOOL_COLOR, 0.40)};"
-        )
-        sb.append("--spin-bg:${rgb(spinBg)};--code-bg:${rgb(codeBg)};--tbl-border:${rgb(tblBorder)};--th-bg:${rgb(thBg)};")
-        sb.append("--link:${rgb(linkColor)};--tooltip-bg:${rgb(tooltipBg)};")
-        sb.append(
-            "--error:${rgb(ERROR_COLOR)};--error-a05:${rgba(ERROR_COLOR, 0.05)};--error-a06:${
-                rgba(
-                    ERROR_COLOR,
-                    0.06
-                )
-            };"
-        )
-        sb.append("--error-a12:${rgba(ERROR_COLOR, 0.12)};--error-a16:${rgba(ERROR_COLOR, 0.16)};")
-        val bannerInfoBg = com.intellij.util.ui.JBUI.CurrentTheme.Banner.INFO_BACKGROUND
-        val bannerInfoBorder = com.intellij.util.ui.JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR
-        val bannerErrorBg = com.intellij.util.ui.JBUI.CurrentTheme.Banner.ERROR_BACKGROUND
-        val bannerErrorBorder = com.intellij.util.ui.JBUI.CurrentTheme.Banner.ERROR_BORDER_COLOR
-        val bannerFg = com.intellij.util.ui.JBUI.CurrentTheme.Banner.FOREGROUND
-        sb.append("--banner-info-bg:${rgb(bannerInfoBg)};--banner-info-border:${rgb(bannerInfoBorder)};")
-        sb.append("--banner-error-bg:${rgb(bannerErrorBg)};--banner-error-border:${rgb(bannerErrorBorder)};")
-        sb.append("--banner-fg:${rgb(bannerFg)};")
-        sb.append("--shadow:${rgba(THINK_COLOR, 0.25)};")
-        for (i in SA_COLORS.indices) {
-            val c = SA_COLORS[i]
-            sb.append(
-                "--sa-c$i:${rgb(c)};--sa-c$i-a06:${rgba(c, 0.06)};--sa-c$i-a10:${
-                    rgba(
-                        c,
-                        0.10
-                    )
-                };--sa-c$i-a15:${rgba(c, 0.15)};"
-            )
-        }
-        sb.append("--kind-read:${rgb(KIND_READ_COLOR)};--kind-edit:${rgb(KIND_EDIT_COLOR)};")
-        sb.append("--kind-execute:${rgb(KIND_EXECUTE_COLOR)};--kind-search:${rgb(KIND_SEARCH_COLOR)};")
-        sb.append("--kind-think:${rgb(KIND_THINK_COLOR)};--kind-other:${rgb(KIND_OTHER_COLOR)};")
-        return sb.toString()
-    }
+    private fun buildCssVars(): String = ChatTheme.buildCssVars()
 
     private fun updateThemeColors() {
         val vars = buildCssVars().replace("'", "\\'")

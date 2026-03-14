@@ -67,7 +67,7 @@ internal class BillingManager {
 
     internal val client = CopilotBillingClient()
 
-    private companion object {
+    companion object {
         private val LOG = Logger.getInstance(BillingManager::class.java)
         private val ERROR_COLOR: Color
             get() = JBUI.CurrentTheme.Label.errorForeground()
@@ -78,6 +78,20 @@ internal class BillingManager {
         }
 
         private const val OVERAGE_COST_PER_REQ = 0.04
+
+        /**
+         * Formats token counts and cost for display in usage chips and toolbar stats.
+         * Returns an empty string if no usage data is available.
+         * Examples: "1.2k tok · $0.004", "850 tok · $0.001"
+         */
+        fun formatUsageChip(inputTokens: Int, outputTokens: Int, costUsd: Double): String {
+            if (inputTokens == 0 && outputTokens == 0 && costUsd == 0.0) return ""
+            val totalTokens = inputTokens + outputTokens
+            val tokStr = if (totalTokens >= 1000) "${totalTokens / 1000}.${(totalTokens % 1000) / 100}k tok"
+            else "$totalTokens tok"
+            return if (costUsd > 0.0) "$tokStr · \$${String.format("%.4f", costUsd).trimEnd('0').trimEnd('.')}"
+            else tokStr
+        }
     }
 
     /**
