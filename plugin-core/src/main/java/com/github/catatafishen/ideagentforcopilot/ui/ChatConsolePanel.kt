@@ -738,23 +738,49 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     private fun appendAgentTurn(entries: List<com.google.gson.JsonObject>, startI: Int, sb: StringBuilder): Int {
         var i = startI
-        sb.append("<chat-message type='agent'>")
-        val metaChips = StringBuilder()
-        val detailsContent = StringBuilder()
-        val afterDetails = StringBuilder()
+        var segmentMetaChips = StringBuilder()
+        var segmentDetailsContent = StringBuilder()
+        var segmentAfterDetails = StringBuilder()
+        var segmentStarted = false
+        // True once the current segment contains at least one tool or subagent chip.
+        // When the next text/thinking entry arrives, we close this segment and begin a new
+        // one — mirroring what ChatController.newSegment() does in the live session.
+        var hadToolOrSubagent = false
+
+        fun flushSegment() {
+            sb.append("<chat-message type='agent'>")
+            if (segmentMetaChips.isNotEmpty()) {
+                sb.append("<message-meta class='show'>$segmentMetaChips</message-meta>")
+            }
+            sb.append("<turn-details>$segmentDetailsContent</turn-details>")
+            sb.append(segmentAfterDetails)
+            sb.append("</chat-message>")
+            segmentMetaChips = StringBuilder()
+            segmentDetailsContent = StringBuilder()
+            segmentAfterDetails = StringBuilder()
+            hadToolOrSubagent = false
+        }
+
         while (i < entries.size) {
             val e = entries[i]
             val t = e["type"]?.asString
             if (t == "prompt" || t == "separator" || t == "status") break
-            appendAgentEntry(e, metaChips, detailsContent, afterDetails)
+            // context entries carry no visual content in restored HTML
+            if (t == "context") {
+                i++
+                continue
+            }
+            // After a tool/subagent, the next text or thinking block starts a fresh
+            // chat-message (equivalent to ChatController.newSegment in the live path).
+            if (hadToolOrSubagent && (t == "text" || t == "thinking")) {
+                flushSegment()
+            }
+            appendAgentEntry(e, segmentMetaChips, segmentDetailsContent, segmentAfterDetails)
+            if (t == "tool" || t == "subagent") hadToolOrSubagent = true
+            segmentStarted = true
             i++
         }
-        if (metaChips.isNotEmpty()) {
-            sb.append("<message-meta class='show'>$metaChips</message-meta>")
-        }
-        sb.append("<turn-details>$detailsContent</turn-details>")
-        sb.append(afterDetails)
-        sb.append("</chat-message>")
+        if (segmentStarted) flushSegment()
         return i
     }
 
