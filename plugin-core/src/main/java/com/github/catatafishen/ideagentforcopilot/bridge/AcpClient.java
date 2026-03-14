@@ -15,7 +15,6 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
-import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -39,7 +38,7 @@ import java.util.function.Consumer;
  * Agent-specific concerns (binary discovery, auth, model parsing) are delegated
  * to the {@link AgentConfig} strategy provided at construction time.
  */
-public class AcpClient implements AgentClient, Closeable {
+public class AcpClient implements AgentClient {
     private static final Logger LOG = Logger.getInstance(AcpClient.class);
     private static final long REQUEST_TIMEOUT_SECONDS = 30;
     private static final long INITIALIZE_TIMEOUT_SECONDS = 90;

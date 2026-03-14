@@ -26,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -74,9 +75,6 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
     private static final String FIELD_DELTA = "delta";
     private static final String FIELD_ERROR = "error";
     private static final String FIELD_INDEX = "index";
-
-    // sessionUpdate event types specific to the direct client
-    private static final String SESSION_UPDATE_THOUGHT = "agent_thought_chunk";
 
     private final AgentProfile profile;
     @Nullable
@@ -310,8 +308,8 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
             @Nullable Consumer<String> onChunk,
             @Nullable Consumer<JsonObject> onUpdate) {
             return new SseStreamState(
-                new ConcurrentHashMap<>(), new ConcurrentHashMap<>(),
-                new ConcurrentHashMap<>(), new ConcurrentHashMap<>(),
+                new HashMap<>(), new HashMap<>(),
+                new HashMap<>(), new HashMap<>(),
                 contentBlocks, stopReason, onChunk, onUpdate);
         }
     }
@@ -440,14 +438,7 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
         if (thinking.isEmpty()) return;
         StringBuilder buf = thinkingBuffers.get(index);
         if (buf != null) buf.append(thinking);
-        if (onUpdate != null) {
-            JsonObject update = new JsonObject();
-            update.addProperty(FIELD_SESSION_UPDATE, SESSION_UPDATE_THOUGHT);
-            JsonObject content = new JsonObject();
-            content.addProperty(TYPE_TEXT, thinking);
-            update.add(FIELD_CONTENT, content);
-            onUpdate.accept(update);
-        }
+        emitThought(thinking, onUpdate);
     }
 
     private void handleBlockStop(@NotNull JsonObject event,

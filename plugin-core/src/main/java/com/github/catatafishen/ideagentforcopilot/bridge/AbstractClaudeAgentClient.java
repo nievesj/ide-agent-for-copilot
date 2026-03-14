@@ -68,33 +68,6 @@ abstract class AbstractClaudeAgentClient implements AgentClient {
         LOG.info("Model set to " + modelId + " for session " + sessionId);
     }
 
-    @Override
-    public boolean requiresResourceContentDuplication() {
-        return false;
-    }
-
-    @Override
-    public void setPermissionRequestListener(@Nullable Consumer<PermissionRequest> listener) {
-        // Claude-based clients manage permissions outside the plugin.
-    }
-
-    @Override
-    public void setSubAgentActive(boolean active) {
-        // Not applicable — Claude manages its own sub-agent lifecycle.
-    }
-
-    @Override
-    @NotNull
-    public String getModelMultiplier(@NotNull String modelId) {
-        return "1x";
-    }
-
-    @Override
-    @Nullable
-    public AuthMethod getAuthMethod() {
-        return null;
-    }
-
     // ── Shared utilities ─────────────────────────────────────────────────────
 
     /**

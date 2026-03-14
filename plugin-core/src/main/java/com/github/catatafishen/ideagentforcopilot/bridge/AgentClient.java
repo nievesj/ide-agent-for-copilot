@@ -82,32 +82,45 @@ public interface AgentClient extends Closeable {
     /**
      * Whether file/selection resource references need their content duplicated as plain text
      * in the prompt (some agents don't inline resource content natively).
+     * Default: {@code false} — override for agents that require it (e.g. GitHub Copilot CLI).
      */
-    boolean requiresResourceContentDuplication();
+    default boolean requiresResourceContentDuplication() {
+        return false;
+    }
 
     /**
      * Register a listener that is called when a tool requires user permission.
+     * Default: no-op — override for agents that support interactive permission prompts.
      */
-    void setPermissionRequestListener(@Nullable Consumer<PermissionRequest> listener);
+    default void setPermissionRequestListener(@Nullable Consumer<PermissionRequest> listener) {
+        // no-op
+    }
 
     /**
      * Notify the client that a sub-agent (Task tool call) is active or has ended.
-     * While active, built-in git/file write tools are blocked.
+     * Default: no-op — override for clients that gate tool calls during sub-agent execution.
      */
-    void setSubAgentActive(boolean active);
+    default void setSubAgentActive(boolean active) {
+        // no-op
+    }
 
     /**
      * Returns the authentication method info for this agent, or null if not applicable.
+     * Default: {@code null}.
      */
     @Nullable
-    AuthMethod getAuthMethod();
+    default AuthMethod getAuthMethod() {
+        return null;
+    }
 
     /**
-     * Returns the pricing multiplier label for the given model ID (e.g. "1x", "2x"),
-     * or "1x" if not available.
+     * Returns the pricing multiplier label for the given model ID (e.g. "1x", "2x").
+     * Default: {@code "1x"} — override for agents with tiered model pricing.
      */
     @NotNull
-    String getModelMultiplier(@NotNull String modelId);
+    default String getModelMultiplier(@NotNull String modelId) {
+        return "1x";
+    }
 
     /**
      * Closes and releases all resources.

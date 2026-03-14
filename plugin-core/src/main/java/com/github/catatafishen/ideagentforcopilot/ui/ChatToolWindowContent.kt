@@ -215,8 +215,8 @@ class ChatToolWindowContent(
     private val toolCallTitles = mutableMapOf<String, String>() // toolCallId -> display title
     private var activeSubAgentId: String? = null // non-null while a sub-agent is running
 
-    /** Handle ACP session/update notifications — routes to timeline and session tab. */
-    private fun handleAcpUpdate(update: com.google.gson.JsonObject) {
+    /** Handle session/update notifications — routes to timeline and session tab. */
+    private fun handleClientUpdate(update: com.google.gson.JsonObject) {
         val updateType = update["sessionUpdate"]?.asString ?: return
 
         when (updateType) {
@@ -1579,7 +1579,7 @@ class ChatToolWindowContent(
     private fun isBlockedByAuth(): Boolean {
         if (authService.pendingAuthError == null) return false
         ApplicationManager.getApplication().invokeLater {
-            consolePanel.addErrorEntry("Not signed in to Copilot. Use the Sign In button in the banner above.")
+            consolePanel.addErrorEntry("Not signed in. Use the Sign In button in the banner above.")
             copilotBanner?.triggerCheck()
         }
         return true
@@ -1688,7 +1688,7 @@ class ChatToolWindowContent(
             "tool_call_update" -> handleStreamingToolCallUpdate(update)
             "agent_thought_chunk" -> handleStreamingAgentThought(update)
         }
-        handleAcpUpdate(update)
+        handleClientUpdate(update)
     }
 
     private fun extractJsonElementText(element: com.google.gson.JsonElement): String? {
