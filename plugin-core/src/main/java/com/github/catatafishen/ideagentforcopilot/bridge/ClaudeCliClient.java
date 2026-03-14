@@ -16,7 +16,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,11 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -130,100 +125,39 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     // ── Model listing ────────────────────────────────────────────────────────
 
+    /**
+     * Known Claude models for the CLI client.
+     *
+     * <p>The Claude CLI has no stable {@code models} subcommand — {@code claude models}
+     * is treated as a user prompt, which makes an API call and returns an
+     * LLM-generated response that can change format at any time. We therefore
+     * use a curated hardcoded list (the same approach used by other Claude CLI
+     * wrappers such as claude-code-plus). The list should be updated when
+     * Anthropic releases new model families.</p>
+     */
+    private static final List<Model> KNOWN_MODELS = buildKnownModels();
+
+    private static List<Model> buildKnownModels() {
+        Object[][] rows = {
+            // { id, displayName }
+            { "claude-opus-4-6",           "Claude Opus 4.6"   },
+            { "claude-sonnet-4-6",         "Claude Sonnet 4.6" },
+            { "claude-haiku-4-5-20251001", "Claude Haiku 4.5"  },
+        };
+        List<Model> list = new ArrayList<>(rows.length);
+        for (Object[] row : rows) {
+            Model m = new Model();
+            m.setId((String) row[0]);
+            m.setName((String) row[1]);
+            list.add(m);
+        }
+        return java.util.Collections.unmodifiableList(list);
+    }
+
     @Override
     public @NotNull List<Model> listModels() throws AcpException {
         ensureStarted();
-        return fetchModelsFromCli();
-    }
-
-    @NotNull
-    private List<Model> fetchModelsFromCli() throws AcpException {
-        try {
-            List<String> cmd = new ArrayList<>();
-            cmd.add(resolvedBinaryPath);
-            cmd.add("models");
-            cmd.add("--output-format");
-            cmd.add("json");
-
-            String profileName = extractProfileName();
-            if (profileName != null) {
-                cmd.add(PROFILE_FLAG);
-                cmd.add(profileName);
-            }
-
-            ProcessBuilder pb = new ProcessBuilder(cmd);
-            pb.redirectErrorStream(true);
-            // Run from home dir to minimise trust prompts; stdin is piped so we can
-            // send a newline to auto-accept the "do you trust this folder?" dialog in
-            // case the home directory hasn't been trusted yet.
-            pb.directory(new java.io.File(System.getProperty("user.home")));
-            Process proc = pb.start();
-
-            // Immediately write a newline to stdin so the trust prompt (if shown)
-            // auto-accepts (Enter = "Yes, I trust this folder").  Close stdin right
-            // after so the CLI doesn't wait for more input.
-            try (OutputStream stdin = proc.getOutputStream()) {
-                stdin.write('\n');
-            }
-
-            // Read stdout concurrently — if we call waitFor() first, the process can
-            // deadlock when the OS pipe buffer fills up (it blocks writing, we block waiting).
-            CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(
-                () -> {
-                    try {
-                        return new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
-                    } catch (IOException ex) {
-                        throw new UncheckedIOException(ex);
-                    }
-                }
-            );
-
-            if (!proc.waitFor(10, TimeUnit.SECONDS)) {
-                proc.destroyForcibly();
-                throw new AcpException("'claude models' timed out — check your network connection or CLI installation");
-            }
-
-            String output = outputFuture.get(5, TimeUnit.SECONDS);
-
-            // `claude models --output-format json` returns a conversation result object,
-            // not a JSON array. Extract model IDs from the markdown table in the result field.
-            String resultText;
-            if (output.startsWith("{")) {
-                JsonObject root = JsonParser.parseString(output).getAsJsonObject();
-                if (root.has("is_error") && root.get("is_error").getAsBoolean()) {
-                    throw new AcpException("Claude CLI models error: " + root.get("result").getAsString());
-                }
-                resultText = root.has("result") ? root.get("result").getAsString() : "";
-            } else {
-                throw new AcpException("Failed to fetch models from Claude CLI: unexpected output: " + output);
-            }
-
-            // Parse rows from the markdown table: | Name | `id` |
-            List<Model> models = new ArrayList<>();
-            java.util.regex.Matcher matcher = java.util.regex.Pattern
-                .compile("\\|\\s*(.+?)\\s*\\|\\s*`(claude-[a-zA-Z0-9.:-]+)`\\s*\\|")
-                .matcher(resultText);
-            while (matcher.find()) {
-                String name = matcher.group(1).trim();
-                String id = matcher.group(2).trim();
-                if (id.isEmpty()) continue;
-                Model model = new Model();
-                model.setId(id);
-                model.setName(name.isEmpty() ? id : name);
-                models.add(model);
-            }
-            if (models.isEmpty()) {
-                throw new AcpException("Claude CLI returned an empty model list");
-            }
-            return models;
-        } catch (IOException e) {
-            throw new AcpException("Failed to run 'claude models': " + e.getMessage(), e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new AcpException("Interrupted while fetching models from Claude CLI", e);
-        } catch (ExecutionException | TimeoutException e) {
-            throw new AcpException("Failed to read 'claude models' output: " + e.getMessage(), e);
-        }
+        return KNOWN_MODELS;
     }
 
     // ── Prompt execution ─────────────────────────────────────────────────────
