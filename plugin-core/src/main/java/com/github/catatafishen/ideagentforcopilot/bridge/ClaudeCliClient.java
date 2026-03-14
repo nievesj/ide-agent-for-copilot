@@ -46,6 +46,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     private static final String FIELD_SESSION_ID = "session_id";
     private static final String SUBTYPE_ERROR = "error";
+    private static final String STOP_REASON_END_TURN = "end_turn";
     private static final String PROFILE_FLAG = "--profile";
 
     private final AgentProfile profile;
@@ -178,9 +179,9 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     @NotNull
     private static List<Model> builtInModels() {
         return List.of(
-            makeModel(DEFAULT_MODEL, "Claude Opus 4.5"),
-            makeModel("claude-sonnet-4-5-20251101", "Claude Sonnet 4.5"),
-            makeModel("claude-haiku-4-5-20251101", "Claude Haiku 4.5")
+            makeModel("claude-opus-4-5", "Claude Opus 4.5"),
+            makeModel(DEFAULT_MODEL, "Claude Sonnet 4.6"),
+            makeModel("claude-haiku-4-5", "Claude Haiku 4.5")
         );
     }
 
@@ -235,6 +236,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         List<String> cmd = new ArrayList<>();
         cmd.add(resolvedBinaryPath);
         cmd.add("--print");
+        cmd.add("--verbose");  // required for --output-format stream-json in Claude Code CLI ≥2.x
         cmd.add("--output-format");
         cmd.add("stream-json");
 
@@ -286,6 +288,22 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             Process proc = pb.start();
             activeProcesses.put(sessionId, proc);
 
+            // Drain stderr on a background thread to prevent buffer deadlock
+            StringBuilder stderrBuf = new StringBuilder();
+            Thread stderrThread = new Thread(() -> {
+                try (BufferedReader err = new BufferedReader(
+                    new InputStreamReader(proc.getErrorStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = err.readLine()) != null) {
+                        stderrBuf.append(line).append('\n');
+                    }
+                } catch (IOException ignored) {
+                    // Process may have exited; stderr is no longer readable
+                }
+            }, "claude-stderr-reader");
+            stderrThread.setDaemon(true);
+            stderrThread.start();
+
             // Write prompt to stdin and close it so the CLI knows input is complete
             try (OutputStream stdin = proc.getOutputStream()) {
                 stdin.write(prompt.getBytes(StandardCharsets.UTF_8));
@@ -293,7 +311,18 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
             String stopReason = parseStreamOutput(sessionId, proc, onChunk, onUpdate, cancelled);
             proc.waitFor();
+            stderrThread.join(2000);
             activeProcesses.remove(sessionId);
+
+            String stderr = stderrBuf.toString().trim();
+            if (!stderr.isEmpty()) {
+                LOG.warn("claude CLI stderr: " + stderr);
+                if (stopReason.equals(STOP_REASON_END_TURN) && onChunk != null) {
+                    // No output was produced; surface the CLI error to the user
+                    onChunk.accept("\n[Claude CLI error: " + stderr + "]");
+                }
+            }
+
             return stopReason;
         } catch (IOException e) {
             throw new AcpException("Failed to start claude process: " + e.getMessage(), e, true);
@@ -311,7 +340,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                                      @Nullable Consumer<String> onChunk,
                                      @Nullable Consumer<JsonObject> onUpdate,
                                      @NotNull AtomicBoolean cancelled) throws IOException {
-        String stopReason = "end_turn";
+        String stopReason = STOP_REASON_END_TURN;
         try (BufferedReader reader = new BufferedReader(
             new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
@@ -364,17 +393,17 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 boolean isError = event.has("subtype")
                     && SUBTYPE_ERROR.equals(event.get("subtype").getAsString());
                 if (isError && onChunk != null && event.has(SUBTYPE_ERROR)) {
-                    onChunk.accept("\n[Error: " + event.get(SUBTYPE_ERROR).getAsString() + "]");
+                    onChunk.accept("\n[Error: " + extractErrorText(event.get(SUBTYPE_ERROR)) + "]");
                 }
-                yield isError ? SUBTYPE_ERROR : "end_turn";
+                yield isError ? SUBTYPE_ERROR : STOP_REASON_END_TURN;
             }
             default -> currentStopReason;
         };
     }
 
     private void streamAssistantText(@NotNull JsonObject event, @Nullable Consumer<String> onChunk) {
-        if (onChunk == null || !event.has("message")) return;
-        JsonObject message = event.getAsJsonObject("message");
+        if (onChunk == null || !event.has(FIELD_MESSAGE)) return;
+        JsonObject message = event.getAsJsonObject(FIELD_MESSAGE);
         if (!message.has(FIELD_CONTENT)) return;
         for (JsonElement block : message.getAsJsonArray(FIELD_CONTENT)) {
             if (!block.isJsonObject()) continue;
@@ -385,6 +414,21 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 if (!text.isEmpty()) onChunk.accept(text);
             }
         }
+    }
+
+    private static final String FIELD_MESSAGE = "message";
+
+    /**
+     * Extracts a human-readable string from a Claude CLI error element (string or object).
+     */
+    @NotNull
+    private static String extractErrorText(@NotNull JsonElement el) {
+        if (el.isJsonPrimitive()) return el.getAsString();
+        if (el.isJsonObject()) {
+            JsonObject obj = el.getAsJsonObject();
+            if (obj.has(FIELD_MESSAGE)) return obj.get(FIELD_MESSAGE).getAsString();
+        }
+        return el.toString();
     }
 
     private void emitToolCallStart(@NotNull JsonObject event, @Nullable Consumer<JsonObject> onUpdate) {
