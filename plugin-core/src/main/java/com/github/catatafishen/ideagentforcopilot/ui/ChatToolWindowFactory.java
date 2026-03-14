@@ -8,7 +8,7 @@ import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
 import org.jetbrains.annotations.NotNull;
 
-public final class AgenticCopilotToolWindowFactory implements ToolWindowFactory, DumbAware {
+public final class ChatToolWindowFactory implements ToolWindowFactory, DumbAware {
 
     @Override
     public boolean shouldBeAvailable(@NotNull Project project) {
@@ -17,7 +17,7 @@ public final class AgenticCopilotToolWindowFactory implements ToolWindowFactory,
 
     @Override
     public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
-        AgenticCopilotToolWindowContent content = new AgenticCopilotToolWindowContent(project, toolWindow);
+        ChatToolWindowContent content = new ChatToolWindowContent(project, toolWindow);
         Content toolWindowContent = ContentFactory.getInstance().createContent(
             content.getComponent(), "", false
         );

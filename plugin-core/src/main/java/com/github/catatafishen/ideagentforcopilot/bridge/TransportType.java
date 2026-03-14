@@ -16,5 +16,13 @@ public enum TransportType {
      * Used for Claude Code accounts that have a direct Anthropic API key.
      * No local CLI binary required.
      */
-    ANTHROPIC_DIRECT
+    ANTHROPIC_DIRECT,
+
+    /**
+     * Subprocess calls to the {@code claude} CLI binary in {@code --print} mode with
+     * {@code --output-format stream-json}. Uses the Claude subscription stored by the CLI
+     * ({@code ~/.claude/.credentials.json}) — no Anthropic API key required.
+     * Requires {@code claude} to be installed and logged in ({@code claude auth login}).
+     */
+    CLAUDE_CLI
 }

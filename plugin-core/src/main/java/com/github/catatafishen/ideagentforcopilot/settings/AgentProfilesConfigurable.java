@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.bridge.AnthropicKeyStore;
+import com.github.catatafishen.ideagentforcopilot.bridge.ClaudeCliCredentials;
 import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
@@ -86,6 +87,10 @@ public final class AgentProfilesConfigurable implements Configurable {
     // ── Claude Code (direct API) ──
     private JPasswordField anthropicApiKeyField;
     private JPanel anthropicApiKeySection;
+
+    // ── Claude Code (CLI) ──
+    private JLabel claudeCliStatusLabel;
+    private JPanel claudeCliStatusSection;
 
     private List<AgentProfile> workingCopies;
     private int currentIndex = -1;
@@ -220,6 +225,9 @@ public final class AgentProfilesConfigurable implements Configurable {
         anthropicApiKeyField = new JPasswordField();
         anthropicApiKeyField.setEchoChar('•');
 
+        claudeCliStatusLabel = new JLabel();
+        claudeCliStatusLabel.setFont(UIUtil.getLabelFont());
+
         editorCards = new CardLayout();
         editorPanel = new JBPanel<>(editorCards);
 
@@ -252,13 +260,20 @@ public final class AgentProfilesConfigurable implements Configurable {
         anthropicApiKeySection = FormBuilder.createFormBuilder()
             .addComponent(new TitledSeparator("Claude Code API"))
             .addLabeledComponent("Anthropic API key:", anthropicApiKeyField)
-            .addTooltip("Your Anthropic API key (sk-ant-...). Stored securely in the IDE keystore.")
+            .addTooltip("Your Anthropic API key (sk-ant-...). Get one at console.anthropic.com/settings/keys. Stored securely in the IDE keystore.")
+            .getPanel();
+
+        claudeCliStatusSection = FormBuilder.createFormBuilder()
+            .addComponent(new TitledSeparator("Claude CLI Auth"))
+            .addComponent(claudeCliStatusLabel)
+            .addTooltip("Run 'claude auth login' in a terminal to log in.")
             .getPanel();
 
         FormBuilder builder = FormBuilder.createFormBuilder()
             .addLabeledComponent("Display name:", nameField);
         builder.addLabeledComponent("Notes:", new JBScrollPane(descriptionArea));
         builder.addComponent(anthropicApiKeySection);
+        builder.addComponent(claudeCliStatusSection);
         builder.addComponent(new TitledSeparator("Binary Discovery"))
             .addLabeledComponent("Binary name:", binaryNameField)
             .addTooltip("Primary executable name to search for (e.g., \"copilot\", \"opencode\")")
@@ -412,14 +427,19 @@ public final class AgentProfilesConfigurable implements Configurable {
         loading = true;
         try {
             boolean isDirect = p.getTransportType() == TransportType.ANTHROPIC_DIRECT;
+            boolean isCli = p.getTransportType() == TransportType.CLAUDE_CLI;
             nameField.setText(p.getDisplayName());
             descriptionArea.setText(p.getDescription() != null ? p.getDescription() : "");
             descriptionArea.setEditable(!p.isBuiltIn());
             descriptionArea.setCaretPosition(0);
-            binaryNameField.setText(p.getBinaryName());
-            alternateNamesField.setText(String.join(", ", p.getAlternateNames()));
-            installHintField.setText(p.getInstallHint());
-            customBinaryPathField.setText(p.getCustomBinaryPath());
+            binaryNameField.setText(isDirect ? "" : p.getBinaryName());
+            binaryNameField.setEnabled(!isDirect);
+            alternateNamesField.setText(isDirect ? "" : String.join(", ", p.getAlternateNames()));
+            alternateNamesField.setEnabled(!isDirect);
+            installHintField.setText(isDirect ? "" : p.getInstallHint());
+            installHintField.setEnabled(!isDirect);
+            customBinaryPathField.setText(isDirect ? "" : p.getCustomBinaryPath());
+            customBinaryPathField.setEnabled(!isDirect);
             acpArgsField.setText(String.join(" ", p.getAcpArgs()));
             mcpMethodCombo.setSelectedItem(p.getMcpMethod());
             mcpConfigTemplateArea.setText(p.getMcpConfigTemplate());
@@ -435,17 +455,36 @@ public final class AgentProfilesConfigurable implements Configurable {
             bundledAgentFilesField.setText(String.join(",", p.getBundledAgentFiles()));
             usePluginPermissionsCb.setSelected(p.isUsePluginPermissions());
             excludeAgentBuiltInToolsCb.setSelected(p.isExcludeAgentBuiltInTools());
-
-            if (isDirect) {
-                String stored = AnthropicKeyStore.getApiKey(p.getId());
-                anthropicApiKeyField.setText(stored != null ? stored : "");
-            } else {
-                anthropicApiKeyField.setText("");
-            }
-            anthropicApiKeySection.setVisible(isDirect);
+            loadTransportSections(p, isDirect, isCli);
         } finally {
             loading = false;
         }
+    }
+
+    private void loadTransportSections(@NotNull AgentProfile p, boolean isDirect, boolean isCli) {
+        if (isDirect) {
+            String stored = AnthropicKeyStore.getApiKey(p.getId());
+            anthropicApiKeyField.setText(stored != null ? stored : "");
+        } else {
+            anthropicApiKeyField.setText("");
+        }
+        anthropicApiKeySection.setVisible(isDirect);
+        updateClaudeCliStatus(isCli);
+    }
+
+    private void updateClaudeCliStatus(boolean isCli) {
+        if (isCli) {
+            ClaudeCliCredentials creds = ClaudeCliCredentials.read();
+            if (creds.isLoggedIn()) {
+                String name = creds.getDisplayName();
+                claudeCliStatusLabel.setText("✓ Logged in" + (name != null ? " as " + name : ""));
+                claudeCliStatusLabel.setForeground(new java.awt.Color(0, 128, 0));
+            } else {
+                claudeCliStatusLabel.setText("✗ Not logged in. Run 'claude auth login' in a terminal.");
+                claudeCliStatusLabel.setForeground(java.awt.Color.RED);
+            }
+        }
+        claudeCliStatusSection.setVisible(isCli);
     }
 
     private void saveCurrentToWorking() {

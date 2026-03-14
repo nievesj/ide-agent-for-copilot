@@ -15,6 +15,7 @@ import java.util.function.Consumer;
  * <ul>
  *   <li>{@link AcpClient} — JSON-RPC over stdio to a CLI subprocess (Copilot, OpenCode, etc.)</li>
  *   <li>{@link AnthropicDirectClient} — direct HTTPS to api.anthropic.com (Claude Code)</li>
+ *   <li>{@link ClaudeCliClient} — subprocess via {@code claude --print --output-format stream-json} (Claude subscription)</li>
  * </ul>
  */
 public interface AgentClient extends Closeable {

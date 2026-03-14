@@ -16,6 +16,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,8 +24,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -129,13 +133,11 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     @Override
     public @NotNull List<Model> listModels() throws AcpException {
         ensureStarted();
-        List<Model> dynamic = fetchModelsFromCli();
-        if (!dynamic.isEmpty()) return dynamic;
-        return builtInModels();
+        return fetchModelsFromCli();
     }
 
     @NotNull
-    private List<Model> fetchModelsFromCli() {
+    private List<Model> fetchModelsFromCli() throws AcpException {
         try {
             List<String> cmd = new ArrayList<>();
             cmd.add(resolvedBinaryPath);
@@ -143,7 +145,6 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             cmd.add("--output-format");
             cmd.add("json");
 
-            // If profile is configured in acpArgs, pass it to the models command
             String profileName = extractProfileName();
             if (profileName != null) {
                 cmd.add(PROFILE_FLAG);
@@ -152,52 +153,68 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.redirectErrorStream(true);
+            // Run from home dir so Claude doesn't prompt "do you trust this folder?"
+            pb.directory(new java.io.File(System.getProperty("user.home")));
             Process proc = pb.start();
 
-            // Read output with a timeout: if 'claude models' hangs (e.g. waiting for network),
-            // fall back to built-in models rather than blocking the model-loading thread forever.
+            // Read stdout concurrently — if we call waitFor() first, the process can
+            // deadlock when the OS pipe buffer fills up (it blocks writing, we block waiting).
+            CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(
+                () -> {
+                    try {
+                        return new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+                    } catch (IOException ex) {
+                        throw new UncheckedIOException(ex);
+                    }
+                }
+            );
+
             if (!proc.waitFor(10, TimeUnit.SECONDS)) {
                 proc.destroyForcibly();
-                LOG.info("'claude models' timed out — using built-in model list");
-                return List.of();
+                throw new AcpException("'claude models' timed out — check your network connection or CLI installation");
             }
 
-            String output = new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
-            if (!output.startsWith("[")) return List.of();
+            String output = outputFuture.get(5, TimeUnit.SECONDS);
+
+            // `claude models --output-format json` returns a conversation result object,
+            // not a JSON array. Extract model IDs from the markdown table in the result field.
+            String resultText;
+            if (output.startsWith("{")) {
+                JsonObject root = JsonParser.parseString(output).getAsJsonObject();
+                if (root.has("is_error") && root.get("is_error").getAsBoolean()) {
+                    throw new AcpException("Claude CLI models error: " + root.get("result").getAsString());
+                }
+                resultText = root.has("result") ? root.get("result").getAsString() : "";
+            } else {
+                throw new AcpException("Failed to fetch models from Claude CLI: unexpected output: " + output);
+            }
+
+            // Parse rows from the markdown table: | Name | `id` |
             List<Model> models = new ArrayList<>();
-            for (JsonElement el : JsonParser.parseString(output).getAsJsonArray()) {
-                JsonObject m = el.getAsJsonObject();
-                String id = m.has("id") ? m.get("id").getAsString() : null;
-                if (id == null || id.isEmpty()) continue;
-                String name = m.has("name") ? m.get("name").getAsString() : id;
+            java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("\\|\\s*(.+?)\\s*\\|\\s*`(claude-[a-zA-Z0-9.:-]+)`\\s*\\|")
+                .matcher(resultText);
+            while (matcher.find()) {
+                String name = matcher.group(1).trim();
+                String id = matcher.group(2).trim();
+                if (id.isEmpty()) continue;
                 Model model = new Model();
                 model.setId(id);
-                model.setName(name);
+                model.setName(name.isEmpty() ? id : name);
                 models.add(model);
             }
+            if (models.isEmpty()) {
+                throw new AcpException("Claude CLI returned an empty model list");
+            }
             return models;
-        } catch (IOException | InterruptedException | RuntimeException e) {
-            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            LOG.debug("Could not fetch models from Claude CLI: " + e.getMessage());
-            return List.of();
+        } catch (IOException e) {
+            throw new AcpException("Failed to run 'claude models': " + e.getMessage(), e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AcpException("Interrupted while fetching models from Claude CLI", e);
+        } catch (ExecutionException | TimeoutException e) {
+            throw new AcpException("Failed to read 'claude models' output: " + e.getMessage(), e);
         }
-    }
-
-    @NotNull
-    private static List<Model> builtInModels() {
-        return List.of(
-            makeModel("claude-opus-4-5", "Claude Opus 4.5"),
-            makeModel(DEFAULT_MODEL, "Claude Sonnet 4.6"),
-            makeModel("claude-haiku-4-5", "Claude Haiku 4.5")
-        );
-    }
-
-    @NotNull
-    private static Model makeModel(@NotNull String id, @NotNull String name) {
-        Model m = new Model();
-        m.setId(id);
-        m.setName(name);
-        return m;
     }
 
     // ── Prompt execution ─────────────────────────────────────────────────────
@@ -261,6 +278,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         cmd.add("stream-json");
         cmd.add("--input-format");
         cmd.add("stream-json");  // bidirectional: enables control_request / control_response
+
+        // Suppress interactive terminal permission prompts. The control_request / control_response
+        // protocol handles tool approval instead, so Claude must not open a TTY dialog.
+        if (profile.isUsePluginPermissions()) {
+            cmd.add("--dangerously-skip-permissions");
+        }
 
         String profileName = extractProfileName();
         if (profileName != null) {
@@ -404,7 +427,29 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 yield currentStopReason;
             }
             case "tool_result" -> {
+                // Fallback: some CLI versions may emit tool_result as a top-level event.
                 emitToolCallEnd(event, onUpdate);
+                yield currentStopReason;
+            }
+            case "user" -> {
+                // In stream-json format, tool results arrive as a "user" message event with
+                // tool_result content blocks. Process each block to emit tool_call_update events,
+                // which sets toolJustCompleted in the UI and creates a new message segment before
+                // the next assistant response.
+                if (event.has(FIELD_MESSAGE)) {
+                    JsonObject msg = event.getAsJsonObject(FIELD_MESSAGE);
+                    if (msg.has(FIELD_CONTENT) && msg.get(FIELD_CONTENT).isJsonArray()) {
+                        for (JsonElement el : msg.getAsJsonArray(FIELD_CONTENT)) {
+                            if (el.isJsonObject()) {
+                                JsonObject block = el.getAsJsonObject();
+                                String blockType = block.has(FIELD_TYPE) ? block.get(FIELD_TYPE).getAsString() : "";
+                                if ("tool_result".equals(blockType)) {
+                                    emitToolCallEnd(block, onUpdate);
+                                }
+                            }
+                        }
+                    }
+                }
                 yield currentStopReason;
             }
             case "control_request" -> {
@@ -453,6 +498,10 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         } else if (BLOCK_TYPE_THINKING.equals(blockType) && block.has(BLOCK_TYPE_THINKING)) {
             String thinking = block.get(BLOCK_TYPE_THINKING).getAsString();
             emitThought(thinking, onUpdate);
+        } else if ("tool_use".equals(blockType)) {
+            // Tool-use blocks are embedded in the assistant message content in stream-json format.
+            // Emit a tool_call start so the UI registers the tool call entry.
+            emitToolCallStart(block, onUpdate);
         }
     }
 

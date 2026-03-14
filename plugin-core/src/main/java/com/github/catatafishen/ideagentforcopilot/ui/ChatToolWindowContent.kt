@@ -27,14 +27,14 @@ import javax.swing.*
  * Main content for the IDE Agent for Copilot tool window.
  * Uses Kotlin UI DSL for cleaner, more maintainable UI code.
  */
-class AgenticCopilotToolWindowContent(
+class ChatToolWindowContent(
     private val project: Project,
     private val toolWindow: com.intellij.openapi.wm.ToolWindow
 ) {
 
     private companion object {
         private val LOG =
-            com.intellij.openapi.diagnostic.Logger.getInstance(AgenticCopilotToolWindowContent::class.java)
+            com.intellij.openapi.diagnostic.Logger.getInstance(ChatToolWindowContent::class.java)
         const val MSG_LOADING = "Loading..."
         const val MSG_UNKNOWN_ERROR = "Unknown error"
         const val AGENT_WORK_DIR = ".agent-work"

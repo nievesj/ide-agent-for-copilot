@@ -44,7 +44,7 @@ import java.util.function.Consumer;
  * <p>Sessions are conversation threads identified by UUIDs. Message history
  * is kept in memory per session.</p>
  */
-public final class AnthropicDirectClient implements AgentClient {
+public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
 
     private static final Logger LOG = Logger.getInstance(AnthropicDirectClient.class);
 
@@ -57,7 +57,6 @@ public final class AnthropicDirectClient implements AgentClient {
     private static final String BETA_HEADER = "anthropic-beta";
     private static final String INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14";
 
-    private static final String DEFAULT_MODEL = "claude-opus-4-5-20251101";
     private static final int MAX_TOOL_ITERATIONS = 50;
     private static final int MAX_TOKENS = 16384;
 
@@ -71,21 +70,13 @@ public final class AnthropicDirectClient implements AgentClient {
     private static final String STOP_REASON_TOOL_USE = "tool_use";
     private static final String STOP_REASON_END_TURN = "end_turn";
 
-    // JSON field names referenced in multiple methods
+    // JSON field names specific to the Anthropic SSE stream
     private static final String FIELD_DELTA = "delta";
     private static final String FIELD_ERROR = "error";
     private static final String FIELD_INDEX = "index";
-    private static final String FIELD_CONTENT = "content";
-    private static final String FIELD_INPUT = "input";
-    private static final String FIELD_SESSION_UPDATE = "sessionUpdate";
-    private static final String FIELD_TYPE = "type";
 
-    // sessionUpdate event types
-    private static final String SESSION_UPDATE_TOOL_CALL = "tool_call";
-    private static final String SESSION_UPDATE_TOOL_CALL_UPDATE = "tool_call_update";
+    // sessionUpdate event types specific to the direct client
     private static final String SESSION_UPDATE_THOUGHT = "agent_thought_chunk";
-    private static final String STATUS_COMPLETED = "completed";
-    private static final String STATUS_FAILED = "failed";
 
     private final AgentProfile profile;
     @Nullable
@@ -100,16 +91,6 @@ public final class AnthropicDirectClient implements AgentClient {
      * Active conversations: session ID → ordered message history.
      */
     private final Map<String, List<JsonObject>> sessions = new ConcurrentHashMap<>();
-    /**
-     * Default model per session (may be overridden via setModel).
-     */
-    private final Map<String, String> sessionModels = new ConcurrentHashMap<>();
-    /**
-     * Cancellation flag per session.
-     */
-    private final Map<String, AtomicBoolean> sessionCancelled = new ConcurrentHashMap<>();
-
-    private volatile boolean started = false;
 
     public AnthropicDirectClient(@NotNull AgentProfile profile,
                                  @Nullable ToolRegistry registry,
@@ -129,8 +110,9 @@ public final class AnthropicDirectClient implements AgentClient {
         String apiKey = AnthropicKeyStore.getApiKey(profile.getId());
         if (apiKey == null || apiKey.isEmpty()) {
             throw new AcpException(
-                "No Anthropic API key configured for Claude Code. "
-                    + "Set your API key in Settings → Tools → IDE Agent → Agent Profiles → Claude Code.",
+                "No Anthropic API key configured. "
+                    + "Get your key at console.anthropic.com/settings/keys, "
+                    + "then set it in Settings → Tools → IDE Agent → Agent Profiles → Claude Code.",
                 null, false);
         }
         started = true;
@@ -163,12 +145,6 @@ public final class AnthropicDirectClient implements AgentClient {
         }
         LOG.info("Created Anthropic session: " + sessionId);
         return sessionId;
-    }
-
-    @Override
-    public void setModel(@NotNull String sessionId, @NotNull String modelId) {
-        sessionModels.put(sessionId, modelId);
-        LOG.info("Model set to " + modelId + " for session " + sessionId);
     }
 
     @Override
@@ -554,30 +530,6 @@ public final class AnthropicDirectClient implements AgentClient {
         return PsiBridgeService.getInstance(project).callTool(toolName, input);
     }
 
-    private void emitToolCallStart(@NotNull String toolUseId, @NotNull String toolName,
-                                   @NotNull JsonObject input, @Nullable Consumer<JsonObject> onUpdate) {
-        if (onUpdate == null) return;
-        JsonObject update = new JsonObject();
-        update.addProperty(FIELD_SESSION_UPDATE, SESSION_UPDATE_TOOL_CALL);
-        update.addProperty("toolCallId", toolUseId);
-        update.addProperty("title", toolName);
-        update.addProperty("status", "in_progress");
-        update.addProperty("kind", "other");
-        update.add(FIELD_INPUT, input);
-        onUpdate.accept(update);
-    }
-
-    private void emitToolCallEnd(@NotNull String toolUseId, @Nullable String result,
-                                 boolean success, @Nullable Consumer<JsonObject> onUpdate) {
-        if (onUpdate == null) return;
-        JsonObject update = new JsonObject();
-        update.addProperty(FIELD_SESSION_UPDATE, SESSION_UPDATE_TOOL_CALL_UPDATE);
-        update.addProperty("toolCallId", toolUseId);
-        update.addProperty("status", success ? STATUS_COMPLETED : STATUS_FAILED);
-        if (result != null) update.addProperty("result", result);
-        onUpdate.accept(update);
-    }
-
     // ── Request building ─────────────────────────────────────────────────────
 
     @NotNull
@@ -725,13 +677,6 @@ public final class AnthropicDirectClient implements AgentClient {
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     @NotNull
-    private String resolveModel(@NotNull String sessionId, @Nullable String model) {
-        if (model != null && !model.isEmpty()) return model;
-        String stored = sessionModels.get(sessionId);
-        return (stored != null && !stored.isEmpty()) ? stored : DEFAULT_MODEL;
-    }
-
-    @NotNull
     private String getApiKey() throws AcpException {
         String key = AnthropicKeyStore.getApiKey(profile.getId());
         if (key == null || key.isEmpty()) {
@@ -739,38 +684,5 @@ public final class AnthropicDirectClient implements AgentClient {
                 "Anthropic API key not set. Configure it in Agent Profiles settings.", null, false);
         }
         return key;
-    }
-
-    private void ensureStarted() throws AcpException {
-        if (!started) throw new AcpException("AnthropicDirectClient not started", null, false);
-    }
-
-    // ── AgentClient — compatibility / no-op implementations ─────────────────
-
-    @Override
-    public boolean requiresResourceContentDuplication() {
-        return false;
-    }
-
-    @Override
-    public void setPermissionRequestListener(@Nullable Consumer<PermissionRequest> listener) {
-        // PsiBridgeService handles permission dialogs internally via checkPluginToolPermission.
-    }
-
-    @Override
-    public void setSubAgentActive(boolean active) {
-        // Sub-agent support not yet implemented for the direct client.
-    }
-
-    @Override
-    @NotNull
-    public String getModelMultiplier(@NotNull String modelId) {
-        return "1x";
-    }
-
-    @Override
-    @Nullable
-    public AuthMethod getAuthMethod() {
-        return null;
     }
 }

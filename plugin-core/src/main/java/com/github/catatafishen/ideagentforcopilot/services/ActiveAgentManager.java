@@ -5,6 +5,7 @@ import com.github.catatafishen.ideagentforcopilot.bridge.AgentClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentSettings;
 import com.github.catatafishen.ideagentforcopilot.bridge.AnthropicDirectClient;
+import com.github.catatafishen.ideagentforcopilot.bridge.ClaudeCliClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.GenericAgentSettings;
 import com.github.catatafishen.ideagentforcopilot.bridge.ProfileBasedAgentConfig;
 import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
@@ -172,6 +173,9 @@ public final class ActiveAgentManager implements Disposable {
 
             if (profile.getTransportType() == TransportType.ANTHROPIC_DIRECT) {
                 acpClient = new AnthropicDirectClient(profile, ToolRegistry.getInstance(project), project);
+            } else if (profile.getTransportType() == TransportType.CLAUDE_CLI) {
+                int mcpPort = resolveMcpPort();
+                acpClient = new ClaudeCliClient(profile, ToolRegistry.getInstance(project), project, mcpPort);
             } else {
                 String projectPath = project.getBasePath();
                 int mcpPort = resolveMcpPort();
@@ -185,8 +189,8 @@ public final class ActiveAgentManager implements Disposable {
 
             LOG.info(profile.getDisplayName() + " agent client started");
         } catch (Exception e) {
-            LOG.error("Failed to start agent client", e);
-            throw new IllegalStateException("Failed to start agent client", e);
+            LOG.warn("Failed to start agent client", e);
+            throw new IllegalStateException(e.getMessage(), e);
         }
     }
 

@@ -235,11 +235,11 @@
                 secondary="false"
                 anchor="right"
                 icon="/icons/copilot.svg"
-                factoryClass="com.github.catatafishen.ideagentforcopilot.ui.AgenticCopilotToolWindowFactory"/>
+                factoryClass="com.github.catatafishen.ideagentforcopilot.ui.ChatToolWindowFactory"/>
 
     <!-- Application Services -->
     <applicationService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.AgenticCopilotService"/>
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.IdeAgentService"/>
     <applicationService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager"/>
     <applicationService

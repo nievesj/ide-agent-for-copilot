@@ -9,10 +9,10 @@ import com.intellij.openapi.diagnostic.Logger;
  * Singleton that lives for the entire IDE session.
  */
 @Service(Service.Level.APP)
-public final class AgenticCopilotService implements Disposable {
-    private static final Logger LOG = Logger.getInstance(AgenticCopilotService.class);
+public final class IdeAgentService implements Disposable {
+    private static final Logger LOG = Logger.getInstance(IdeAgentService.class);
 
-    public AgenticCopilotService() {
+    public IdeAgentService() {
         LOG.info("AgentBridge Service initialized");
     }
 
