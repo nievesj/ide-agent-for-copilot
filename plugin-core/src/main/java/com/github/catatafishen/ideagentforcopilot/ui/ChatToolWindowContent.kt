@@ -1273,7 +1273,7 @@ class ChatToolWindowContent(
             isPopup = false
         }
 
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
         private var cachedOptions: List<SessionOption> = emptyList()
         private var cachedChildren: Array<AnAction> = AnAction.EMPTY_ARRAY
@@ -1294,7 +1294,7 @@ class ChatToolWindowContent(
     private inner class SessionOptionSelectorAction(
         private val option: SessionOption
     ) : ComboBoxAction() {
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
         override fun createPopupActionGroup(button: JComponent, context: DataContext): DefaultActionGroup {
             val group = DefaultActionGroup()
