@@ -302,13 +302,13 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setAlternateNames(List.of());
         p.setInstallHint("Install the Claude CLI from code.claude.com and run 'claude auth login'.");
         p.setAcpArgs(List.of());
-        p.setMcpMethod(McpInjectionMethod.NONE);
-        p.setSupportsMcpConfigFlag(false);
+        p.setMcpMethod(McpInjectionMethod.CONFIG_FLAG);
+        p.setSupportsMcpConfigFlag(true);
         p.setSupportsModelFlag(true);
         p.setSupportsConfigDir(false);
         p.setRequiresResourceDuplication(false);
         p.setExcludeAgentBuiltInTools(true);
-        p.setUsePluginPermissions(false);
+        p.setUsePluginPermissions(true);
         p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
         return p;
     }
