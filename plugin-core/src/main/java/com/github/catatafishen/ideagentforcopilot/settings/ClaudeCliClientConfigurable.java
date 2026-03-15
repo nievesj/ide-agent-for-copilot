@@ -7,10 +7,12 @@ import com.intellij.openapi.project.Project;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBTextArea;
+import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -29,6 +31,8 @@ public final class ClaudeCliClientConfigurable implements Configurable {
     }
 
     private JBLabel authStatusLabel;
+    private JBTextField binaryPathField;
+    private JBTextField instructionsFileField;
     private JBTextArea customModelsArea;
     private JPanel panel;
 
@@ -36,15 +40,28 @@ public final class ClaudeCliClientConfigurable implements Configurable {
     public @NotNull JComponent createComponent() {
         authStatusLabel = new JBLabel();
 
-        customModelsArea = new JBTextArea(5, 40);
+        binaryPathField = new JBTextField();
+        binaryPathField.getEmptyText().setText("Auto-detect (leave empty)");
+        binaryPathField.setToolTipText("Absolute path to the claude binary. Leave empty to find it on PATH.");
+
+        instructionsFileField = new JBTextField();
+        instructionsFileField.getEmptyText().setText("E.g. CLAUDE.md");
+        instructionsFileField.setToolTipText(
+            "Path relative to project root. Plugin instructions are prepended to this file on each session start.");
+
+        customModelsArea = new JBTextArea(4, 40);
         customModelsArea.setLineWrap(false);
         customModelsArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, JBUI.Fonts.label().getSize()));
-
         JBScrollPane modelsScroll = new JBScrollPane(customModelsArea);
-        modelsScroll.setPreferredSize(JBUI.size(400, 120));
+        modelsScroll.setPreferredSize(JBUI.size(400, 90));
 
         panel = FormBuilder.createFormBuilder()
             .addLabeledComponent("Auth status:", authStatusLabel)
+            .addSeparator(8)
+            .addLabeledComponent("Claude binary:", binaryPathField)
+            .addTooltip("Leave empty to auto-detect on PATH.")
+            .addLabeledComponent("Instructions file:", instructionsFileField)
+            .addTooltip("Plugin instructions are prepended here on session start (relative to project root).")
             .addSeparator(8)
             .addComponent(new JBLabel("Custom models (one per line):"))
             .addTooltip("Format: <model-id>=<Display Name>. Leave empty to use the built-in model list.")
@@ -60,7 +77,9 @@ public final class ClaudeCliClientConfigurable implements Configurable {
         if (customModelsArea == null) return false;
         AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.CLAUDE_CLI_PROFILE_ID);
         if (p == null) return false;
-        return !parseModels().equals(p.getCustomCliModels());
+        return !parseModels().equals(p.getCustomCliModels())
+            || !binaryPathField.getText().trim().equals(p.getCustomBinaryPath())
+            || !instructionsFileField.getText().trim().equals(nullToEmpty(p.getPrependInstructionsTo()));
     }
 
     @Override
@@ -70,6 +89,8 @@ public final class ClaudeCliClientConfigurable implements Configurable {
         AgentProfile p = mgr.getProfile(AgentProfileManager.CLAUDE_CLI_PROFILE_ID);
         if (p == null) return;
         p.setCustomCliModels(parseModels());
+        p.setCustomBinaryPath(binaryPathField.getText().trim());
+        p.setPrependInstructionsTo(instructionsFileField.getText().trim());
         mgr.updateProfile(p);
     }
 
@@ -79,6 +100,8 @@ public final class ClaudeCliClientConfigurable implements Configurable {
         refreshAuthStatus();
         AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.CLAUDE_CLI_PROFILE_ID);
         if (p == null) return;
+        binaryPathField.setText(p.getCustomBinaryPath());
+        instructionsFileField.setText(nullToEmpty(p.getPrependInstructionsTo()));
         customModelsArea.setText(String.join("\n", p.getCustomCliModels()));
         customModelsArea.setCaretPosition(0);
     }
@@ -86,6 +109,8 @@ public final class ClaudeCliClientConfigurable implements Configurable {
     @Override
     public void disposeUIResources() {
         authStatusLabel = null;
+        binaryPathField = null;
+        instructionsFileField = null;
         customModelsArea = null;
         panel = null;
     }
@@ -109,5 +134,10 @@ public final class ClaudeCliClientConfigurable implements Configurable {
             .map(String::trim)
             .filter(s -> !s.isEmpty())
             .toList();
+    }
+
+    @NotNull
+    private static String nullToEmpty(@Nullable String s) {
+        return s != null ? s : "";
     }
 }

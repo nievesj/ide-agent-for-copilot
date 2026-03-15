@@ -334,6 +334,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setExcludeAgentBuiltInTools(true);
         p.setUsePluginPermissions(true);
         p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
+        p.setPrependInstructionsTo("CLAUDE.md");
         return p;
     }
 
