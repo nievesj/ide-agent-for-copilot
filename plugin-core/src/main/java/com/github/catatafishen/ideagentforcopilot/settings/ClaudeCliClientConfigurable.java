@@ -17,11 +17,6 @@ import java.awt.*;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * Settings page for the Claude CLI client.
- * Shows authentication status and the optional custom-models list
- * ({@code model-id=Display Name} one per line).
- */
 public final class ClaudeCliClientConfigurable implements Configurable {
 
     @SuppressWarnings("unused")
@@ -40,20 +35,20 @@ public final class ClaudeCliClientConfigurable implements Configurable {
     @Override
     public @NotNull JComponent createComponent() {
         authStatusLabel = new JBLabel();
-        customModelsArea = new JBTextArea(6, 40);
+
+        customModelsArea = new JBTextArea(5, 40);
         customModelsArea.setLineWrap(false);
-        customModelsArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        customModelsArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, JBUI.Fonts.label().getSize()));
 
         JBScrollPane modelsScroll = new JBScrollPane(customModelsArea);
+        modelsScroll.setPreferredSize(JBUI.size(400, 120));
 
         panel = FormBuilder.createFormBuilder()
-            .addComponent(new JBLabel("<html><b>Authentication status</b></html>"))
-            .addComponent(authStatusLabel)
+            .addLabeledComponent("Auth status:", authStatusLabel)
             .addSeparator(8)
-            .addComponent(new JBLabel("<html><b>Custom models</b></html>"))
-            .addTooltip("One entry per line: <model-id>=<Display Name>")
-            .addTooltip("Leave empty to use the built-in model list.")
-            .addComponentFillVertically(modelsScroll, 200)
+            .addComponent(new JBLabel("Custom models (one per line):"))
+            .addTooltip("Format: <model-id>=<Display Name>. Leave empty to use the built-in model list.")
+            .addComponentFillVertically(modelsScroll, 0)
             .getPanel();
         panel.setBorder(JBUI.Borders.empty(8));
         reset();
@@ -65,8 +60,7 @@ public final class ClaudeCliClientConfigurable implements Configurable {
         if (customModelsArea == null) return false;
         AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.CLAUDE_CLI_PROFILE_ID);
         if (p == null) return false;
-        List<String> current = parseModels();
-        return !current.equals(p.getCustomCliModels());
+        return !parseModels().equals(p.getCustomCliModels());
     }
 
     @Override
@@ -103,7 +97,7 @@ public final class ClaudeCliClientConfigurable implements Configurable {
             authStatusLabel.setText(status);
             authStatusLabel.setForeground(new Color(0, 128, 0));
         } else {
-            authStatusLabel.setText("✗ Not logged in — run 'claude auth login' in a terminal.");
+            authStatusLabel.setText("Not logged in — run 'claude auth login' in a terminal.");
             authStatusLabel.setForeground(Color.RED);
         }
     }

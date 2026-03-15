@@ -329,37 +329,6 @@
       id="com.github.catatafishen.ideagentforcopilot.toolPermissions"
       displayName="Tool Permissions"/>
 
-    <!-- ── Other section ── -->
-    <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.OtherGroupConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.other"
-      displayName="Other"/>
-
-    <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.other"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ScratchTypesConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.scratchTypes"
-      displayName="Scratch File Types"/>
-
-    <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.other"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.projectFiles"
-      displayName="Project Files"/>
-
-    <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.other"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ChatHistoryConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.chatHistory"
-      displayName="Chat History"/>
-
-    <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.other"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.BillingConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.billing"
-      displayName="Billing Data"/>
-
     <!-- Start PSI Bridge when the project opens -->
     <postStartupActivity
       implementation="com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeStartup"/>

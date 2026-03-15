@@ -42,7 +42,6 @@ final class AcpProfileForm {
 
     JBTextField binaryNameField;
     JBTextField alternateNamesField;
-    JBTextField installHintField;
     JBTextField customBinaryPathField;
     JBTextField acpArgsField;
     ComboBox<McpInjectionMethod> mcpMethodCombo;
@@ -67,8 +66,6 @@ final class AcpProfileForm {
         binaryNameField.getEmptyText().setText("e.g. copilot");
         alternateNamesField = new JBTextField();
         alternateNamesField.getEmptyText().setText("Comma-separated, e.g. gh, github-copilot");
-        installHintField = new JBTextField();
-        installHintField.getEmptyText().setText("Shown when binary is not found");
         customBinaryPathField = new JBTextField();
         customBinaryPathField.getEmptyText().setText("Absolute path (overrides auto-discovery)");
         acpArgsField = new JBTextField();
@@ -108,8 +105,6 @@ final class AcpProfileForm {
                 .addTooltip("Primary executable name (e.g., \"copilot\", \"opencode\")")
                 .addLabeledComponent("Alternate names (comma-separated):", alternateNamesField)
                 .addTooltip("Fallback binary names if the primary is not found")
-                .addLabeledComponent("Install hint:", installHintField)
-                .addTooltip("Shown when the binary cannot be found")
                 .addLabeledComponent("Custom binary path:", customBinaryPathField)
                 .addTooltip("Override auto-discovery with an absolute path");
         }
@@ -164,7 +159,6 @@ final class AcpProfileForm {
         if (has(SECTION_BINARY)) {
             binaryNameField.setText(p.getBinaryName());
             alternateNamesField.setText(String.join(", ", p.getAlternateNames()));
-            installHintField.setText(p.getInstallHint());
             customBinaryPathField.setText(p.getCustomBinaryPath());
         }
         if (has(SECTION_ACP_ARGS)) acpArgsField.setText(String.join(" ", p.getAcpArgs()));
@@ -209,7 +203,6 @@ final class AcpProfileForm {
     private void saveBinary(@NotNull AgentProfile t) {
         t.setBinaryName(binaryNameField.getText().trim());
         t.setAlternateNames(splitComma(alternateNamesField.getText()));
-        t.setInstallHint(installHintField.getText().trim());
         t.setCustomBinaryPath(customBinaryPathField.getText().trim());
     }
 
@@ -263,7 +256,6 @@ final class AcpProfileForm {
     private boolean isBinaryModified(@NotNull AgentProfile p) {
         return !binaryNameField.getText().trim().equals(p.getBinaryName())
             || !splitComma(alternateNamesField.getText()).equals(p.getAlternateNames())
-            || !installHintField.getText().trim().equals(p.getInstallHint())
             || !customBinaryPathField.getText().trim().equals(p.getCustomBinaryPath());
     }
 

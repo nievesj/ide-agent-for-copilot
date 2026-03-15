@@ -10,11 +10,6 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 
-/**
- * Settings page for the GitHub Copilot client (ACP transport).
- * Shows binary discovery, ACP args, MCP injection, pre-launch hooks,
- * agent selector, permissions, and feature flags.
- */
 public final class CopilotClientConfigurable implements Configurable {
 
     private static final int SECTIONS =
@@ -33,43 +28,61 @@ public final class CopilotClientConfigurable implements Configurable {
     }
 
     private AcpProfileForm form;
+    private BillingConfigurable billingConfigurable;
 
     @Override
     public @NotNull JComponent createComponent() {
         form = new AcpProfileForm(SECTIONS);
-        JPanel panel = form.buildPanel();
-        JBScrollPane scroll = new JBScrollPane(panel);
-        scroll.setBorder(null);
+        JBScrollPane configScroll = new JBScrollPane(form.buildPanel());
+        configScroll.setBorder(null);
+
+        billingConfigurable = new BillingConfigurable();
+        JComponent billingPanel = billingConfigurable.createComponent();
+
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.addTab("Configuration", configScroll);
+        tabs.addTab("Billing Data", billingPanel);
+
         reset();
-        return scroll;
+        return tabs;
     }
 
     @Override
     public boolean isModified() {
         if (form == null) return false;
         AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.COPILOT_PROFILE_ID);
-        return p != null && form.isModified(p);
+        return (p != null && form.isModified(p))
+            || (billingConfigurable != null && billingConfigurable.isModified());
     }
 
     @Override
     public void apply() {
-        if (form == null) return;
-        AgentProfileManager mgr = AgentProfileManager.getInstance();
-        AgentProfile p = mgr.getProfile(AgentProfileManager.COPILOT_PROFILE_ID);
-        if (p == null) return;
-        form.save(p);
-        mgr.updateProfile(p);
+        if (form != null) {
+            AgentProfileManager mgr = AgentProfileManager.getInstance();
+            AgentProfile p = mgr.getProfile(AgentProfileManager.COPILOT_PROFILE_ID);
+            if (p != null) {
+                form.save(p);
+                mgr.updateProfile(p);
+            }
+        }
+        if (billingConfigurable != null) billingConfigurable.apply();
     }
 
     @Override
     public void reset() {
-        if (form == null) return;
-        AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.COPILOT_PROFILE_ID);
-        if (p != null) form.load(p);
+        if (form != null) {
+            AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.COPILOT_PROFILE_ID);
+            if (p != null) form.load(p);
+        }
+        if (billingConfigurable != null) billingConfigurable.reset();
     }
 
     @Override
     public void disposeUIResources() {
         form = null;
+        if (billingConfigurable != null) {
+            billingConfigurable.disposeUIResources();
+            billingConfigurable = null;
+        }
     }
 }

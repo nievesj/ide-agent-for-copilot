@@ -11,16 +11,19 @@ import org.jetbrains.annotations.NotNull;
 import javax.swing.*;
 import java.awt.*;
 
-/**
- * Parent settings group: Settings > Tools > IDE Agent for Copilot.
- * Child pages (Tool Permissions, Macro Tools, MCP Server) appear as sub-nodes.
- */
 public final class PluginSettingsConfigurable implements Configurable {
 
     public static final String ID = "com.github.catatafishen.ideagentforcopilot.settings";
     public static final String DISPLAY_NAME = "AgentBridge";
 
-    public PluginSettingsConfigurable(@NotNull Project ignoredProject) {
+    private final Project project;
+
+    private ScratchTypesConfigurable scratchTypesConfigurable;
+    private ProjectFilesConfigurable projectFilesConfigurable;
+    private ChatHistoryConfigurable chatHistoryConfigurable;
+
+    public PluginSettingsConfigurable(@NotNull Project project) {
+        this.project = project;
     }
 
     /**
@@ -37,33 +40,79 @@ public final class PluginSettingsConfigurable implements Configurable {
 
     @Override
     public @NotNull JComponent createComponent() {
-        JPanel panel = new JPanel(new BorderLayout());
-        JBLabel label = new JBLabel(
-            "<html><b>" + DISPLAY_NAME + "</b><br><br>"
-                + "Configure the plugin using the sections in the tree on the left:<br><br>"
-                + "<b>MCP</b> — MCP server, PSI Bridge, and tool registration<br>"
-                + "<b>Client Agents</b> — configure each AI agent client and tool permissions<br>"
-                + "<b>Other</b> — scratch file types and project file shortcuts</html>");
-        label.setBorder(JBUI.Borders.empty(12));
-        panel.add(label, BorderLayout.NORTH);
+        scratchTypesConfigurable = new ScratchTypesConfigurable();
+        projectFilesConfigurable = new ProjectFilesConfigurable();
+        chatHistoryConfigurable = new ChatHistoryConfigurable(project);
 
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.addTab("About", buildAboutPanel());
+        tabs.addTab("Scratch File Types", scratchTypesConfigurable.createComponent());
+        tabs.addTab("Project Files", projectFilesConfigurable.createComponent());
+        tabs.addTab("Chat History", chatHistoryConfigurable.createComponent());
+
+        reset();
+        return tabs;
+    }
+
+    private @NotNull JPanel buildAboutPanel() {
         String version = com.github.catatafishen.ideagentforcopilot.BuildInfo.getVersion();
         String hash = com.github.catatafishen.ideagentforcopilot.BuildInfo.getGitHash();
+
+        JBLabel descLabel = new JBLabel(
+            "<html>"
+                + "<b>" + DISPLAY_NAME + "</b> bridges your IntelliJ IDE with AI coding agents.<br><br>"
+                + "Agents connect via the <b>Agent Coding Protocol (ACP)</b> and gain access to<br>"
+                + "live code intelligence, refactoring, search, file editing, and build tools<br>"
+                + "through the <b>MCP server</b> running inside the IDE.<br><br>"
+                + "Supported clients: <b>GitHub Copilot</b>, <b>OpenCode</b>, <b>Claude Code</b>, <b>Claude CLI</b>."
+                + "</html>");
+        descLabel.setBorder(JBUI.Borders.empty(4, 0, 12, 0));
+
         JBLabel versionLabel = new JBLabel("Version " + version + "  ·  " + hash);
         versionLabel.setForeground(JBUI.CurrentTheme.Label.disabledForeground());
         versionLabel.setFont(JBUI.Fonts.smallFont());
-        versionLabel.setBorder(JBUI.Borders.empty(8, 12));
+
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(JBUI.Borders.empty(12));
+        panel.add(descLabel, BorderLayout.NORTH);
         panel.add(versionLabel, BorderLayout.SOUTH);
         return panel;
     }
 
     @Override
     public boolean isModified() {
-        return false;
+        return (scratchTypesConfigurable != null && scratchTypesConfigurable.isModified())
+            || (projectFilesConfigurable != null && projectFilesConfigurable.isModified())
+            || (chatHistoryConfigurable != null && chatHistoryConfigurable.isModified());
     }
 
     @Override
     public void apply() {
-        // No settings on the parent page itself
+        if (scratchTypesConfigurable != null) scratchTypesConfigurable.apply();
+        if (projectFilesConfigurable != null) projectFilesConfigurable.apply();
+        if (chatHistoryConfigurable != null) chatHistoryConfigurable.apply();
+    }
+
+    @Override
+    public void reset() {
+        if (scratchTypesConfigurable != null) scratchTypesConfigurable.reset();
+        if (projectFilesConfigurable != null) projectFilesConfigurable.reset();
+        if (chatHistoryConfigurable != null) chatHistoryConfigurable.reset();
+    }
+
+    @Override
+    public void disposeUIResources() {
+        if (scratchTypesConfigurable != null) {
+            scratchTypesConfigurable.disposeUIResources();
+            scratchTypesConfigurable = null;
+        }
+        if (projectFilesConfigurable != null) {
+            projectFilesConfigurable.disposeUIResources();
+            projectFilesConfigurable = null;
+        }
+        if (chatHistoryConfigurable != null) {
+            chatHistoryConfigurable.disposeUIResources();
+            chatHistoryConfigurable = null;
+        }
     }
 }
