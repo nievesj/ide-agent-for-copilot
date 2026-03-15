@@ -179,8 +179,11 @@ internal class PromptOrchestrator(
         ApplicationManager.getApplication().invokeLater {
             consolePanel().setCurrentProfile(agentManager.activeProfileId)
             consolePanel().setCurrentModel(selectedModelId)
+            // Show the multiplier chip for clients that support it (e.g. Copilot), even when "1x".
+            // For non-multiplier clients the chip is token/cost-based and shown after completion.
             if (agentManager.client.supportsMultiplier()) {
-                consolePanel().setPromptStats(selectedModelId, getModelMultiplier(selectedModelId))
+                val multiplier = getModelMultiplier(selectedModelId)
+                consolePanel().setPromptStats(selectedModelId, multiplier)
             }
         }
         return selectedModelId
@@ -292,7 +295,7 @@ internal class PromptOrchestrator(
         } else {
             consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
             val usageChip = BillingManager.formatUsageChip(turnInputTokens, turnOutputTokens, turnCostUsd)
-            if (usageChip.isNotEmpty()) {
+            if (usageChip.isNotEmpty() && usageChip != "1x") {
                 ApplicationManager.getApplication().invokeLater {
                     consolePanel().setPromptStats(turnModelId, usageChip)
                 }

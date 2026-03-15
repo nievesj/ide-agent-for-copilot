@@ -949,9 +949,7 @@ class ChatToolWindowContent(
                             consolePanel.setCurrentModel(model.id)
                             if (supportsMultiplier) {
                                 val multiplier = getModelMultiplier(model.id)
-                                if (multiplier != "1x") {
-                                    consolePanel.setPromptStats(model.id, multiplier)
-                                }
+                                consolePanel.setPromptStats(model.id, multiplier)
                             }
                         }
                         ApplicationManager.getApplication().executeOnPooledThread {
