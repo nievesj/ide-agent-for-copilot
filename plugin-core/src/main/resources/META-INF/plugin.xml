@@ -291,12 +291,12 @@
       id="com.github.catatafishen.ideagentforcopilot.mcp.tools"
       displayName="Tools"/>
 
-    <!-- ── Client Agents section ── -->
+    <!-- ── Agents section ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"
       instance="com.github.catatafishen.ideagentforcopilot.settings.ClientAgentsGroupConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.clientAgents"
-      displayName="Client Agents"/>
+      displayName="Agents"/>
 
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
@@ -322,16 +322,11 @@
       id="com.github.catatafishen.ideagentforcopilot.clientAgents.claudeCli"
       displayName="Claude CLI"/>
 
+    <!-- ── Tool Permissions ── -->
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.AgentSettingsConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.clientAgents.agentSettings"
-      displayName="Agent Settings"/>
-
-    <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
+      parentId="com.github.catatafishen.ideagentforcopilot.settings"
       instance="com.github.catatafishen.ideagentforcopilot.settings.ToolPermissionsConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.clientAgents.toolPermissions"
+      id="com.github.catatafishen.ideagentforcopilot.toolPermissions"
       displayName="Tool Permissions"/>
 
     <!-- ── Other section ── -->

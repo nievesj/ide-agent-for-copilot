@@ -1,11 +1,12 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
+import com.github.catatafishen.ideagentforcopilot.services.AgentUiSettings;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
-import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
@@ -19,19 +20,17 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Root settings group for all AI agent clients.
- * Registered in plugin.xml under the main plugin settings node.
- * <p>
- * Built-in clients (GitHub Copilot, OpenCode, Claude Code, Claude CLI) are registered
- * as static children in plugin.xml. User-added generic ACP profiles are listed after
- * them via {@link Configurable.Composite#getConfigurables()}.
- * <p>
- * The group overview page shows a brief description and an "Add Custom ACP Client" form.
- */
 public final class ClientAgentsGroupConfigurable implements Configurable, Configurable.Composite {
 
     private final Project project;
+
+    // Agent behaviour settings
+    private JSpinner timeoutSpinner;
+    private JSpinner maxToolCallsSpinner;
+
+    // Custom client creation
+    private JBTextField newClientNameField;
+    private JPanel panel;
 
     public ClientAgentsGroupConfigurable(@NotNull Project project) {
         this.project = project;
@@ -39,16 +38,18 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
 
     @Override
     public @Nls(capitalization = Nls.Capitalization.Title) String getDisplayName() {
-        return "Client Agents";
+        return "Agents";
     }
-
-    // ── Group overview page ───────────────────────────────────────────────────
-
-    private JBTextField newClientNameField;
-    private JPanel panel;
 
     @Override
     public @Nullable JComponent createComponent() {
+        timeoutSpinner = new JSpinner(new SpinnerNumberModel(300, 30, 3600, 10));
+        maxToolCallsSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 500, 1));
+
+        Dimension spinnerSize = JBUI.size(100, timeoutSpinner.getPreferredSize().height);
+        timeoutSpinner.setMaximumSize(spinnerSize);
+        maxToolCallsSpinner.setMaximumSize(spinnerSize);
+
         newClientNameField = new JBTextField();
         newClientNameField.setColumns(24);
         newClientNameField.getEmptyText().setText("Name for your custom agent");
@@ -61,41 +62,50 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
         addRow.add(addBtn, BorderLayout.EAST);
 
         panel = FormBuilder.createFormBuilder()
-            .addComponent(new JBLabel(
-                "<html>"
-                    + "<b>Client Agents</b><br><br>"
-                    + "Choose a built-in agent client from the list on the left to configure it.<br><br>"
-                    + "Built-in clients: <b>GitHub Copilot</b>, <b>OpenCode</b>, "
-                    + "<b>Claude Code</b>, <b>Claude CLI</b>.<br><br>"
-                    + "<b>Custom ACP clients</b> let you connect to any ACP-compatible agent.<br>"
-                    + "Give it a name and click <i>Add</i> — it will appear in the list on "
-                    + "the left after you reopen Settings."
-                    + "</html>"))
+            .addLabeledComponent("Prompt timeout (seconds):", timeoutSpinner)
+            .addTooltip("Time before an inactive agent session is considered timed out (30–3600).")
+            .addLabeledComponent("Max tool calls per turn:", maxToolCallsSpinner)
+            .addTooltip("Limit how many tools the agent can call in a single turn. 0 = unlimited.")
             .addSeparator(12)
-            .addLabeledComponent("New custom client:", addRow)
+            .addLabeledComponent("Add custom ACP client:", addRow)
+            .addTooltip("Creates a custom ACP-compatible agent. Reopen Settings to configure it.")
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         panel.setBorder(JBUI.Borders.empty(8));
+
+        reset();
         return panel;
     }
 
     @Override
     public boolean isModified() {
-        return false;
+        AgentUiSettings settings = ActiveAgentManager.getInstance(project).getSettings();
+        if ((int) timeoutSpinner.getValue() != settings.getPromptTimeout()) return true;
+        return (int) maxToolCallsSpinner.getValue() != settings.getMaxToolCallsPerTurn();
     }
 
     @Override
     public void apply() {
-        // Nothing to apply — the name field is consumed immediately on Add.
+        AgentUiSettings settings = ActiveAgentManager.getInstance(project).getSettings();
+        settings.setPromptTimeout((int) timeoutSpinner.getValue());
+        settings.setMaxToolCallsPerTurn((int) maxToolCallsSpinner.getValue());
+    }
+
+    @Override
+    public void reset() {
+        if (timeoutSpinner == null) return;
+        AgentUiSettings settings = ActiveAgentManager.getInstance(project).getSettings();
+        timeoutSpinner.setValue(settings.getPromptTimeout());
+        maxToolCallsSpinner.setValue(settings.getMaxToolCallsPerTurn());
     }
 
     @Override
     public void disposeUIResources() {
+        timeoutSpinner = null;
+        maxToolCallsSpinner = null;
         newClientNameField = null;
         panel = null;
     }
-
-    // ── Dynamic children (user-added generic ACP profiles) ───────────────────
 
     /**
      * Returns one {@link GenericAcpClientConfigurable} per user-added generic ACP profile.
@@ -111,8 +121,6 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
         }
         return children.toArray(new Configurable[0]);
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void addGenericClient() {
         String name = newClientNameField != null ? newClientNameField.getText().trim() : "";
@@ -132,7 +140,7 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
 
         if (newClientNameField != null) newClientNameField.setText("");
         JOptionPane.showMessageDialog(panel,
-            "\"" + name + "\" has been added.\nReopen Settings to configure it.",
+            "\"" + name + "\" added. Reopen Settings to configure it.",
             "Client added", JOptionPane.INFORMATION_MESSAGE);
     }
 }
