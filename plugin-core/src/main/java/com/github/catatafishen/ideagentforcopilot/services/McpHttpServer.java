@@ -102,7 +102,9 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             httpServer.createContext("/mcp", this::handleMcp);
         }
 
-        httpServer.setExecutor(Executors.newFixedThreadPool(8));
+        // SSE mode blocks one thread per connection; use a cached pool so it scales.
+        // Streamable HTTP uses short-lived requests, so a fixed pool would also work.
+        httpServer.setExecutor(Executors.newCachedThreadPool());
         httpServer.start();
         running = true;
         LOG.info("MCP server started on port " + actualPort + " (" + activeTransportMode.getDisplayName()
