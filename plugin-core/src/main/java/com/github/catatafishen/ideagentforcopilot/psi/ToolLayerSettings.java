@@ -21,12 +21,17 @@ public interface ToolLayerSettings {
      * Shared across implementations so the setting is consistent regardless of
      * which agent plugin is active.
      */
-    String FOLLOW_AGENT_FILES_KEY = "copilot.followAgentFiles";
+    String FOLLOW_AGENT_FILES_KEY = "agent.followAgentFiles";
 
     @NotNull
     static ToolLayerSettings getInstance(@NotNull Project project) {
         ToolLayerSettings service = (ToolLayerSettings) PlatformApiCompat.getServiceByRawClass(project, ToolLayerSettings.class);
-        return service != null ? service : DefaultToolLayerSettings.FALLBACK;
+        if (service == null) {
+            com.intellij.openapi.diagnostic.Logger.getInstance(ToolLayerSettings.class)
+                .warn("ToolLayerSettings service not found, using DefaultToolLayerSettings.FALLBACK");
+            return DefaultToolLayerSettings.FALLBACK;
+        }
+        return service;
     }
 
     /**

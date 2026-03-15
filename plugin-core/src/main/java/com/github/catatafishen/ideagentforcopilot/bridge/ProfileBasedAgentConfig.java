@@ -147,6 +147,12 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         }
     }
 
+    @Override
+    public void clearSavedModel() {
+        new com.github.catatafishen.ideagentforcopilot.services.GenericSettings(getSettingsPrefix()).setSelectedModel("");
+        LOG.info(profile.getDisplayName() + ": cleared saved model selection (rejected by CLI)");
+    }
+
     private void addConfigDirIfSupported(@NotNull List<String> cmd, @Nullable String projectBasePath) {
         if (!profile.isSupportsConfigDir() || projectBasePath == null) return;
         Path agentWorkPath = Path.of(projectBasePath, ".agent-work");
@@ -213,6 +219,16 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     @Override
     public @NotNull String getEffectiveMcpServerName() {
         return effectiveMcpServerName;
+    }
+
+    @Override
+    public @Nullable String getToolNameRegex() {
+        return profile.getToolNameRegex();
+    }
+
+    @Override
+    public @Nullable String getToolNameReplacement() {
+        return profile.getToolNameReplacement();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

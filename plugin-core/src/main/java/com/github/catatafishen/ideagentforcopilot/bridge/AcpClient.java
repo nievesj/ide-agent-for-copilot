@@ -1160,6 +1160,11 @@ public class AcpClient implements AgentClient {
             String line;
             while ((line = reader.readLine()) != null) {
                 LOG.warn(agentConfig.getDisplayName() + " CLI stderr: " + line);
+                // The CLI rejected our --model flag. Clear the saved model so the auto-restart
+                // can launch without it and connect successfully.
+                if (line.contains("invalid value for --model") || line.contains("Unknown model:")) {
+                    agentConfig.clearSavedModel();
+                }
             }
         } catch (IOException e) {
             if (!closed) {

@@ -51,7 +51,10 @@ public final class PluginSettingsConfigurable implements Configurable {
         tabs.addTab("Chat History", chatHistoryConfigurable.createComponent());
 
         reset();
-        return tabs;
+
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.add(tabs, BorderLayout.NORTH);
+        return wrapper;
     }
 
     private @NotNull JPanel buildAboutPanel() {
@@ -72,10 +75,25 @@ public final class PluginSettingsConfigurable implements Configurable {
         versionLabel.setForeground(JBUI.CurrentTheme.Label.disabledForeground());
         versionLabel.setFont(JBUI.Fonts.smallFont());
 
-        JPanel panel = new JPanel(new BorderLayout());
+        JPanel panel = new JPanel(new GridBagLayout());
         panel.setBorder(JBUI.Borders.empty(12));
-        panel.add(descLabel, BorderLayout.NORTH);
-        panel.add(versionLabel, BorderLayout.SOUTH);
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.NORTH;
+        panel.add(descLabel, gbc);
+
+        gbc.gridy = 1;
+        panel.add(versionLabel, gbc);
+
+        // Add a filler at the bottom to push everything to the top
+        gbc.gridy = 2;
+        gbc.weighty = 1.0;
+        gbc.fill = GridBagConstraints.BOTH;
+        panel.add(new JPanel(), gbc);
+
         return panel;
     }
 

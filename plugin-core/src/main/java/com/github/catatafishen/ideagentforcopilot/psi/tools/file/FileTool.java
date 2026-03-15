@@ -114,8 +114,10 @@ public abstract class FileTool extends Tool {
      * Guard against reentrant navigate() calls. IntelliJ's navigate() pumps EDT events
      * while waiting for tab creation, which can dispatch another followFileIfEnabled.
      * Two overlapping tab insertions race inside JBTabsImpl.updateText() causing NPE.
+     * Per-project map ensures one navigation at a time per window.
      */
-    private static final AtomicBoolean navigating = new AtomicBoolean(false);
+    private static final ConcurrentHashMap<Project, AtomicBoolean> NAVIGATING =
+        new ConcurrentHashMap<>();
 
     private static final long PROJECT_VIEW_COOLDOWN_MS = 5_000;
     private static volatile long lastProjectViewSelectMs;
@@ -126,28 +128,38 @@ public abstract class FileTool extends Tool {
      */
     public static void followFileIfEnabled(Project project, String pathStr, int startLine, int endLine,
                                            Color highlightColor, String actionLabel) {
-        if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
+        if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
+            LOG.debug("followFileIfEnabled skipped: setting disabled for project " + project.getName());
+            return;
+        }
 
         EdtUtil.invokeLater(() -> {
-            if (!navigating.compareAndSet(false, true)) return;
+            AtomicBoolean nav = NAVIGATING.computeIfAbsent(project, k -> new AtomicBoolean(false));
+            if (!nav.compareAndSet(false, true)) {
+                LOG.info("followFileIfEnabled skipped: already navigating for project " + project.getName());
+                return;
+            }
             try {
                 VirtualFile vf = ToolUtils.resolveVirtualFile(project, pathStr);
-                if (vf == null) return;
+                if (vf == null) {
+                    LOG.warn("followFileIfEnabled failed: file not found: " + pathStr);
+                    return;
+                }
 
                 FileEditorManager fem = FileEditorManager.getInstance(project);
                 int midLine = (startLine > 0 && endLine > 0)
                     ? (startLine + endLine) / 2
                     : Math.max(startLine, 1);
                 if (midLine > 0) {
-                    new OpenFileDescriptor(project, vf, midLine - 1, 0).navigate(false);
+                    new OpenFileDescriptor(project, vf, midLine - 1, 0).navigate(true);
                     scrollAndHighlight(fem, vf, startLine, endLine, midLine, highlightColor, actionLabel);
                 } else {
-                    fem.openFile(vf, false);
+                    fem.openFile(vf, true);
                 }
 
                 selectInProjectView(project, vf);
             } finally {
-                navigating.set(false);
+                nav.set(false);
             }
         });
     }

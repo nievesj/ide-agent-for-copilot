@@ -96,6 +96,8 @@ public final class AgentProfile {
     private String prependInstructionsTo;
     private List<String> bundledAgentFiles = new ArrayList<>();
     private String additionalInstructions = "";
+    private String toolNameRegex;
+    private String toolNameReplacement;
 
     /**
      * Custom model list for CLI-mode profiles.
@@ -166,6 +168,8 @@ public final class AgentProfile {
         copy.prependInstructionsTo = prependInstructionsTo;
         copy.bundledAgentFiles = new ArrayList<>(bundledAgentFiles);
         copy.additionalInstructions = additionalInstructions;
+        copy.toolNameRegex = toolNameRegex;
+        copy.toolNameReplacement = toolNameReplacement;
         copy.customCliModels = new ArrayList<>(customCliModels);
         return copy;
     }
@@ -206,6 +210,8 @@ public final class AgentProfile {
         copy.prependInstructionsTo = prependInstructionsTo;
         copy.bundledAgentFiles = new ArrayList<>(bundledAgentFiles);
         copy.additionalInstructions = additionalInstructions;
+        copy.toolNameRegex = toolNameRegex;
+        copy.toolNameReplacement = toolNameReplacement;
         copy.customCliModels = new ArrayList<>(customCliModels);
         return copy;
     }
@@ -240,6 +246,8 @@ public final class AgentProfile {
         this.prependInstructionsTo = other.prependInstructionsTo;
         this.bundledAgentFiles = new ArrayList<>(other.bundledAgentFiles);
         this.additionalInstructions = other.additionalInstructions;
+        this.toolNameRegex = other.toolNameRegex;
+        this.toolNameReplacement = other.toolNameReplacement;
         this.customCliModels = new ArrayList<>(other.customCliModels);
     }
 
@@ -507,6 +515,24 @@ public final class AgentProfile {
 
     public void setCustomCliModels(@NotNull List<String> customCliModels) {
         this.customCliModels = new ArrayList<>(customCliModels);
+    }
+
+    @Nullable
+    public String getToolNameRegex() {
+        return toolNameRegex;
+    }
+
+    public void setToolNameRegex(@Nullable String toolNameRegex) {
+        this.toolNameRegex = toolNameRegex;
+    }
+
+    @Nullable
+    public String getToolNameReplacement() {
+        return toolNameReplacement;
+    }
+
+    public void setToolNameReplacement(@Nullable String toolNameReplacement) {
+        this.toolNameReplacement = toolNameReplacement;
     }
 
     /**

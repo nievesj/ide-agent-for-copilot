@@ -66,6 +66,7 @@ public final class JunieClientConfigurable implements Configurable {
             .addTooltip("Leave empty to auto-detect on PATH.")
             .addLabeledComponent("Instructions file:", instructionsFileField)
             .addTooltip("Plugin instructions are prepended here on session start (relative to project root).")
+            .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         panel.setBorder(JBUI.Borders.empty(8));
         reset();

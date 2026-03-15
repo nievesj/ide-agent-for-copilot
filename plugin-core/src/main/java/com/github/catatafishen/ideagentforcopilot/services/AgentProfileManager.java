@@ -184,6 +184,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         stored.setUsePluginPermissions(defaults.isUsePluginPermissions());
         stored.setPermissionInjectionMethod(defaults.getPermissionInjectionMethod());
         stored.setModelUsageField(defaults.getModelUsageField());
+        stored.setToolNameRegex(defaults.getToolNameRegex());
+        stored.setToolNameReplacement(defaults.getToolNameReplacement());
         stored.setBundledAgentFiles(defaults.getBundledAgentFiles());
         stored.setAdditionalInstructions(defaults.getAdditionalInstructions());
         stored.setInstallUrl(defaults.getInstallUrl());
@@ -379,8 +381,9 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setSupportsMcpConfigFlag(false);
         p.setMcpConfigTemplate(
             "{\"mcpServers\":{\"intellij-code-tools\":"
-                + "{\"type\":\"http\","
-                + "\"url\":\"http://localhost:{mcpPort}/mcp\"}}}");
+                + "{\"type\":\"stdio\","
+                + "\"command\":\"{mcpCommand}\","
+                + "\"args\":[\"{mcpPort}\"]}}}");
         p.setSupportsModelFlag(true);
         p.setSupportsConfigDir(false);
         p.setRequiresResourceDuplication(false);
@@ -437,6 +440,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         private boolean usePluginPermissions = true;
         private boolean excludeAgentBuiltInTools;
         private String permissionInjectionMethod = "NONE";
+        private String toolNameRegex = "";
+        private String toolNameReplacement = "";
         private String transportType = "ACP";
 
         public String getId() {
@@ -639,6 +644,22 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             this.permissionInjectionMethod = permissionInjectionMethod;
         }
 
+        public String getToolNameRegex() {
+            return toolNameRegex;
+        }
+
+        public void setToolNameRegex(String toolNameRegex) {
+            this.toolNameRegex = toolNameRegex != null ? toolNameRegex : "";
+        }
+
+        public String getToolNameReplacement() {
+            return toolNameReplacement;
+        }
+
+        public void setToolNameReplacement(String toolNameReplacement) {
+            this.toolNameReplacement = toolNameReplacement != null ? toolNameReplacement : "";
+        }
+
         public String getTransportType() {
             return transportType;
         }
@@ -675,6 +696,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             e.setUsePluginPermissions(p.isUsePluginPermissions());
             e.setExcludeAgentBuiltInTools(p.isExcludeAgentBuiltInTools());
             e.setPermissionInjectionMethod(p.getPermissionInjectionMethod().name());
+            e.setToolNameRegex(p.getToolNameRegex());
+            e.setToolNameReplacement(p.getToolNameReplacement());
             e.setTransportType(p.getTransportType().name());
             return e;
         }
@@ -710,6 +733,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             p.setPrependInstructionsTo(getPrependInstructionsTo().isEmpty() ? null : getPrependInstructionsTo());
             p.setUsePluginPermissions(isUsePluginPermissions());
             p.setExcludeAgentBuiltInTools(isExcludeAgentBuiltInTools());
+            p.setToolNameRegex(getToolNameRegex().isEmpty() ? null : getToolNameRegex());
+            p.setToolNameReplacement(getToolNameReplacement().isEmpty() ? null : getToolNameReplacement());
             try {
                 p.setPermissionInjectionMethod(PermissionInjectionMethod.valueOf(getPermissionInjectionMethod()));
             } catch (IllegalArgumentException e) {

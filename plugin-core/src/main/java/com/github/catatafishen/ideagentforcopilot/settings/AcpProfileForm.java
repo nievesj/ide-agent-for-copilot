@@ -57,6 +57,8 @@ final class AcpProfileForm {
     JBCheckBox supportsMcpConfigFlagCb;
     JBCheckBox requiresResourceDuplicationCb;
     JBTextField modelUsageFieldField;
+    JBTextField toolNameRegexField;
+    JBTextField toolNameReplacementField;
 
     private final int sections;
 
@@ -91,6 +93,10 @@ final class AcpProfileForm {
         requiresResourceDuplicationCb = new JBCheckBox("Requires resource content duplication");
         modelUsageFieldField = new JBTextField();
         modelUsageFieldField.getEmptyText().setText("e.g. copilotUsage");
+        toolNameRegexField = new JBTextField();
+        toolNameRegexField.getEmptyText().setText("Regex to match tool name (e.g. ^intellij-code-tools-(.*)$)");
+        toolNameReplacementField = new JBTextField();
+        toolNameReplacementField.getEmptyText().setText("Replacement string (e.g. $1)");
     }
 
     /**
@@ -147,7 +153,11 @@ final class AcpProfileForm {
                 .addComponent(supportsMcpConfigFlagCb)
                 .addComponent(requiresResourceDuplicationCb)
                 .addLabeledComponent("Model usage field:", modelUsageFieldField)
-                .addTooltip("JSON field name in model metadata for usage info (e.g., \"copilotUsage\")");
+                .addTooltip("JSON field name in model metadata for usage info (e.g., \"copilotUsage\")")
+                .addLabeledComponent("Tool name regex mapper:", toolNameRegexField)
+                .addTooltip("Regex to transform tool names before they reach the UI (applied using replaceAll)")
+                .addLabeledComponent("Tool name replacement:", toolNameReplacementField)
+                .addTooltip("Replacement string for the tool name regex");
         }
         return b.addComponentFillVertically(new JPanel(), 0).getPanel();
     }
@@ -184,6 +194,8 @@ final class AcpProfileForm {
             supportsMcpConfigFlagCb.setSelected(p.isSupportsMcpConfigFlag());
             requiresResourceDuplicationCb.setSelected(p.isRequiresResourceDuplication());
             modelUsageFieldField.setText(p.getModelUsageField() != null ? p.getModelUsageField() : "");
+            toolNameRegexField.setText(p.getToolNameRegex() != null ? p.getToolNameRegex() : "");
+            toolNameReplacementField.setText(p.getToolNameReplacement() != null ? p.getToolNameReplacement() : "");
         }
     }
 
@@ -238,6 +250,10 @@ final class AcpProfileForm {
         t.setRequiresResourceDuplication(requiresResourceDuplicationCb.isSelected());
         String muf = modelUsageFieldField.getText().trim();
         t.setModelUsageField(muf.isEmpty() ? null : muf);
+        String tnr = toolNameRegexField.getText().trim();
+        t.setToolNameRegex(tnr.isEmpty() ? null : tnr);
+        String tnrp = toolNameReplacementField.getText().trim();
+        t.setToolNameReplacement(tnrp.isEmpty() ? null : tnrp);
     }
 
     /**
@@ -285,7 +301,9 @@ final class AcpProfileForm {
             || supportsConfigDirCb.isSelected() != p.isSupportsConfigDir()
             || supportsMcpConfigFlagCb.isSelected() != p.isSupportsMcpConfigFlag()
             || requiresResourceDuplicationCb.isSelected() != p.isRequiresResourceDuplication()
-            || !Objects.equals(muf.isEmpty() ? null : muf, p.getModelUsageField());
+            || !Objects.equals(muf.isEmpty() ? null : muf, p.getModelUsageField())
+            || !Objects.equals(toolNameRegexField.getText().trim().isEmpty() ? null : toolNameRegexField.getText().trim(), p.getToolNameRegex())
+            || !Objects.equals(toolNameReplacementField.getText().trim().isEmpty() ? null : toolNameReplacementField.getText().trim(), p.getToolNameReplacement());
     }
 
     private String agentDir() {

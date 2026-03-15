@@ -135,4 +135,31 @@ public interface AgentConfig {
     default String getEffectiveMcpServerName() {
         return "intellij-code-tools";
     }
+
+    /**
+     * Returns a regex pattern for mapping tool names before they reach the UI.
+     * Useful for generic ACP clients where the tool name format is unknown.
+     */
+    @Nullable
+    default String getToolNameRegex() {
+        return null;
+    }
+
+    /**
+     * Returns the replacement string for the tool name regex.
+     */
+    @Nullable
+    default String getToolNameReplacement() {
+        return null;
+    }
+
+    /**
+     * Clears the persisted model selection for this agent.
+     * Called when the agent process rejects the saved {@code --model} flag on startup,
+     * so the next restart attempt launches without a model flag and can connect successfully.
+     * Default: no-op (agents that don't support a --model flag don't need this).
+     */
+    default void clearSavedModel() {
+        // no-op
+    }
 }

@@ -133,6 +133,14 @@ public interface AgentClient extends Closeable {
          */
         AGENT_MESSAGE_CHUNK("agent_message_chunk"),
         /**
+         * A streaming text chunk (synonym for agent_message_chunk).
+         */
+        MESSAGE_CHUNK("message_chunk"),
+        /**
+         * A streaming text chunk (synonym for agent_message_chunk).
+         */
+        TEXT_CHUNK("text_chunk"),
+        /**
          * A streaming reasoning/thinking chunk from the model.
          */
         AGENT_THOUGHT("agent_thought_chunk"),
