@@ -42,7 +42,7 @@ public final class PluginSettingsConfigurable implements Configurable {
             "<html><b>" + DISPLAY_NAME + "</b><br><br>"
                 + "Configure the plugin using the sections in the tree on the left:<br><br>"
                 + "<b>MCP</b> — MCP server, PSI Bridge, and tool registration<br>"
-                + "<b>ACP</b> — agent settings, profiles, and tool permissions<br>"
+                + "<b>Client Agents</b> — configure each AI agent client and tool permissions<br>"
                 + "<b>Other</b> — scratch file types and project file shortcuts</html>");
         label.setBorder(JBUI.Borders.empty(12));
         panel.add(label, BorderLayout.NORTH);

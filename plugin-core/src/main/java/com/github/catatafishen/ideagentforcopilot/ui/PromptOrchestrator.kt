@@ -428,6 +428,7 @@ internal class PromptOrchestrator(
         val isCancelled = e is InterruptedException || e.cause is InterruptedException
         val msg = if (isCancelled) "Request cancelled" else e.message ?: "Unknown error"
 
+        consolePanel().cancelAllRunning()
         callbacks.saveConversation()
 
         if (authService.isAuthenticationError(msg)) {

@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
+import com.github.catatafishen.ideagentforcopilot.bridge.TransportType
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile
@@ -8,7 +9,6 @@ import com.github.catatafishen.ideagentforcopilot.services.McpServerControl
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.popup.JBPopupFactory
@@ -17,6 +17,7 @@ import com.intellij.ui.InplaceButton
 import com.intellij.ui.JBColor
 import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.components.*
+import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.AsyncProcessIcon
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -527,13 +528,16 @@ class AcpConnectPanel(
         }
 
         val profileId = selectedProfile.id
-        val cmd = agentManager.getCustomAcpCommandFor(profileId)
-        if (cmd.isBlank()) {
+
+        // ANTHROPIC_DIRECT profiles call the API directly — no subprocess start command needed.
+        val needsStartCommand = selectedProfile.transportType != TransportType.ANTHROPIC_DIRECT
+        val cmd = if (needsStartCommand) agentManager.getCustomAcpCommandFor(profileId) else ""
+        if (needsStartCommand && cmd.isBlank()) {
             statusBanner.showError("No start command configured for ${selectedProfile.displayName} — check Settings.")
             return
         }
 
-        val customCommand = if (cmd != selectedProfile.defaultStartCommand) cmd else null
+        val customCommand = if (cmd.isNotBlank() && cmd != selectedProfile.defaultStartCommand) cmd else null
 
         statusBanner.dismissCurrent()
         connectButton.isEnabled = false

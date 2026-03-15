@@ -158,6 +158,40 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
         if (flag != null) flag.set(true);
     }
 
+    // ── Session options ──────────────────────────────────────────────────────
+
+    /**
+     * Budget token values for each effort level.
+     * Must be &lt; MAX_TOKENS (16384). Default (empty string) uses THINKING_BUDGET_DEFAULT.
+     */
+    private static final int THINKING_BUDGET_DEFAULT = 5000;
+    private static final int THINKING_BUDGET_LOW = 1024;
+    private static final int THINKING_BUDGET_MEDIUM = 5000;
+    private static final int THINKING_BUDGET_HIGH = 10000;
+    private static final int THINKING_BUDGET_MAX = 16000;
+
+    private static final SessionOption THINKING_OPTION = new SessionOption(
+        "effort", "Thinking Budget",
+        List.of("", "low", "medium", "high", "max")
+    );
+
+    @Override
+    public @NotNull List<SessionOption> listSessionOptions() {
+        return List.of(THINKING_OPTION);
+    }
+
+    private int resolveThinkingBudget(@NotNull String sessionId) {
+        String effort = getSessionOption(sessionId, "effort");
+        if (effort == null || effort.isEmpty()) return THINKING_BUDGET_DEFAULT;
+        return switch (effort) {
+            case "low" -> THINKING_BUDGET_LOW;
+            case "medium" -> THINKING_BUDGET_MEDIUM;
+            case "high" -> THINKING_BUDGET_HIGH;
+            case "max" -> THINKING_BUDGET_MAX;
+            default -> THINKING_BUDGET_DEFAULT;
+        };
+    }
+
     // ── Model listing ────────────────────────────────────────────────────────
 
     @Override
@@ -191,19 +225,25 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
     private List<Model> parseModelsFromResponse(@NotNull String responseBody) {
         JsonObject body = JsonParser.parseString(responseBody).getAsJsonObject();
         JsonArray data = body.getAsJsonArray("data");
-        List<Model> models = new ArrayList<>();
-        if (data == null) return models;
+        if (data == null) return List.of();
+        // Use a LinkedHashMap keyed by display_name to deduplicate: the Anthropic API returns
+        // both undated aliases (e.g. "claude-opus-4-6") and dated snapshots
+        // (e.g. "claude-opus-4-6-20251101") with identical display names. Keep the first
+        // occurrence, which is the alias and is the more stable identifier to send.
+        java.util.LinkedHashMap<String, Model> seen = new java.util.LinkedHashMap<>();
         for (var elem : data) {
             JsonObject m = elem.getAsJsonObject();
             String id = m.has("id") ? m.get("id").getAsString() : "";
             if (id.isEmpty()) continue;
             String displayName = m.has("display_name") ? m.get("display_name").getAsString() : id;
-            Model model = new Model();
-            model.setId(id);
-            model.setName(displayName);
-            models.add(model);
+            seen.computeIfAbsent(displayName, k -> {
+                Model model = new Model();
+                model.setId(id);
+                model.setName(k);
+                return model;
+            });
         }
-        return models;
+        return new ArrayList<>(seen.values());
     }
 
     // ── Prompt execution ─────────────────────────────────────────────────────
@@ -225,31 +265,37 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
 
         messages.add(buildUserMessage(prompt, references));
 
-        return runAgentLoop(messages, resolvedModel, apiKey, onChunk, onUpdate, onRequest, cancelled);
+        int thinkingBudget = resolveThinkingBudget(sessionId);
+        return runAgentLoop(messages, new LoopConfig(resolvedModel, apiKey, thinkingBudget, onChunk, onUpdate, onRequest, cancelled));
+    }
+
+    private record LoopConfig(
+        @NotNull String model,
+        @NotNull String apiKey,
+        int thinkingBudget,
+        @Nullable Consumer<String> onChunk,
+        @Nullable Consumer<SessionUpdate> onUpdate,
+        @Nullable Runnable onRequest,
+        @NotNull AtomicBoolean cancelled) {
     }
 
     @NotNull
     private String runAgentLoop(@NotNull List<JsonObject> messages,
-                                @NotNull String model,
-                                @NotNull String apiKey,
-                                @Nullable Consumer<String> onChunk,
-                                @Nullable Consumer<SessionUpdate> onUpdate,
-                                @Nullable Runnable onRequest,
-                                @NotNull AtomicBoolean cancelled) throws AcpException {
+                                @NotNull LoopConfig cfg) throws AcpException {
         AtomicReference<String> stopReason = new AtomicReference<>(STOP_REASON_END_TURN);
         for (int i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-            if (cancelled.get()) throw new AcpException("Request cancelled", null, false);
-            if (onRequest != null) onRequest.run();
+            if (cfg.cancelled().get()) throw new AcpException("Request cancelled", null, false);
+            if (cfg.onRequest() != null) cfg.onRequest().run();
 
-            JsonObject requestBody = buildRequestBody(messages, model);
+            JsonObject requestBody = buildRequestBody(messages, cfg.model(), cfg.thinkingBudget());
             List<JsonObject> contentBlocks = new ArrayList<>();
 
-            streamResponse(apiKey, requestBody, contentBlocks, stopReason, onChunk, onUpdate, cancelled);
+            streamResponse(cfg.apiKey(), requestBody, contentBlocks, stopReason, cfg.onChunk(), cfg.onUpdate(), cfg.cancelled());
             messages.add(buildAssistantMessage(contentBlocks));
 
             if (!STOP_REASON_TOOL_USE.equals(stopReason.get())) break;
 
-            List<JsonObject> toolResults = executeToolUseBlocks(contentBlocks, onUpdate, cancelled);
+            List<JsonObject> toolResults = executeToolUseBlocks(contentBlocks, cfg.onUpdate(), cfg.cancelled());
             messages.add(buildToolResultMessage(toolResults));
         }
         return stopReason.get();
@@ -553,7 +599,7 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
     // ── Request building ─────────────────────────────────────────────────────
 
     @NotNull
-    private JsonObject buildRequestBody(@NotNull List<JsonObject> messages, @NotNull String model) {
+    private JsonObject buildRequestBody(@NotNull List<JsonObject> messages, @NotNull String model, int thinkingBudget) {
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
         body.addProperty("max_tokens", MAX_TOKENS);
@@ -568,7 +614,7 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
         // Enable extended thinking
         JsonObject thinkingConfig = new JsonObject();
         thinkingConfig.addProperty(FIELD_TYPE, "enabled");
-        thinkingConfig.addProperty("budget_tokens", 5000);
+        thinkingConfig.addProperty("budget_tokens", thinkingBudget);
         body.add(TYPE_THINKING, thinkingConfig);
 
         JsonArray msgs = new JsonArray();

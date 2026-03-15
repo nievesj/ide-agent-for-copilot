@@ -291,30 +291,12 @@
       id="com.github.catatafishen.ideagentforcopilot.mcp.tools"
       displayName="Tools"/>
 
-    <!-- ── ACP section ── -->
+    <!-- ── Client Agents section ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.AcpGroupConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.acp"
-      displayName="ACP"/>
-
-    <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.acp"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.AgentSettingsConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.agentSettings"
-      displayName="Agent Settings"/>
-
-    <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.acp"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.AgentProfilesConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.agentProfiles"
-      displayName="Agent Profiles"/>
-
-    <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.acp"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ToolPermissionsConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.toolPermissions"
-      displayName="Tool Permissions"/>
+      instance="com.github.catatafishen.ideagentforcopilot.settings.ClientAgentsGroupConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.clientAgents"
+      displayName="Client Agents"/>
 
     <!-- ── Other section ── -->
     <projectConfigurable

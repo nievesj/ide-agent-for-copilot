@@ -8,6 +8,7 @@ import com.intellij.ui.EditorNotificationPanel
 import com.intellij.ui.InlineBanner
 import com.intellij.util.Alarm
 import java.awt.BorderLayout
+import java.awt.Dimension
 import java.awt.Graphics
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
@@ -39,6 +40,8 @@ internal fun statusBorderColor(status: EditorNotificationPanel.Status): java.awt
  */
 class StatusBanner(parentDisposable: Disposable) :
     com.intellij.ui.components.JBPanel<StatusBanner>(BorderLayout()) {
+
+    override fun getMaximumSize(): Dimension = Dimension(Int.MAX_VALUE, preferredSize.height)
 
     private companion object {
         const val INFO_DISMISS_MS = 10_000
