@@ -123,6 +123,9 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         if (profile.isSupportsMcpConfigFlag() && profile.getMcpMethod() == McpInjectionMethod.CONFIG_FLAG) {
             addMcpConfigFlag(cmd, mcpPort);
         }
+        if (profile.getMcpMethod() == McpInjectionMethod.MCP_LOCATION_FLAG) {
+            addMcpLocationFlag(cmd, mcpPort);
+        }
         if (profile.getPermissionInjectionMethod() == PermissionInjectionMethod.CLI_FLAGS) {
             addPermissionCliFlags(cmd);
         }
@@ -339,6 +342,40 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
             LOG.info("MCP config written to " + configFile.getAbsolutePath());
         } catch (IOException e) {
             LOG.warn("Failed to write MCP config file", e);
+        }
+    }
+
+    /**
+     * Writes the resolved MCP config JSON as {@code mcp.json} inside a temporary directory
+     * and appends {@code --mcp-location <tempDir>} to the command.
+     * Used by agents (e.g. Junie) that discover MCP servers by scanning a folder for {@code mcp.json}.
+     */
+    private void addMcpLocationFlag(@NotNull List<String> cmd, int mcpPort) {
+        if (mcpPort <= 0) {
+            LOG.info("MCP port is " + mcpPort + " — skipping MCP location config");
+            return;
+        }
+        String template = profile.getMcpConfigTemplate();
+        if (template.isEmpty()) {
+            LOG.info("No MCP config template — skipping MCP location config for " + profile.getDisplayName());
+            return;
+        }
+
+        String resolved = resolveMcpTemplate(mcpPort);
+        if (resolved == null) return;
+
+        try {
+            Path tempDir = Files.createTempDirectory("acp-mcp-loc-");
+            Path configFile = tempDir.resolve("mcp.json");
+            Files.writeString(configFile, resolved);
+            // Register for deletion on JVM exit
+            configFile.toFile().deleteOnExit();
+            tempDir.toFile().deleteOnExit();
+            cmd.add("--mcp-location");
+            cmd.add(tempDir.toString());
+            LOG.info("MCP location config written to " + configFile);
+        } catch (IOException e) {
+            LOG.warn("Failed to write MCP location config file", e);
         }
     }
 

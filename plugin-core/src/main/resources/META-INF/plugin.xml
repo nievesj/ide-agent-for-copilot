@@ -322,6 +322,12 @@
       id="com.github.catatafishen.ideagentforcopilot.clientAgents.claudeCli"
       displayName="Claude CLI"/>
 
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.JunieClientConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.clientAgents.junie"
+      displayName="Junie"/>
+
     <!-- ── Tool Permissions ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"

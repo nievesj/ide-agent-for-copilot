@@ -64,7 +64,7 @@ public final class PluginSettingsConfigurable implements Configurable {
                 + "Agents connect via the <b>Agent Coding Protocol (ACP)</b> and gain access to<br>"
                 + "live code intelligence, refactoring, search, file editing, and build tools<br>"
                 + "through the <b>MCP server</b> running inside the IDE.<br><br>"
-                + "Supported clients: <b>GitHub Copilot</b>, <b>OpenCode</b>, <b>Claude Code</b>, <b>Claude CLI</b>."
+                + "Supported clients: <b>GitHub Copilot</b>, <b>OpenCode</b>, <b>Claude Code</b>, <b>Claude CLI</b>, <b>Junie</b>."
                 + "</html>");
         descLabel.setBorder(JBUI.Borders.empty(4, 0, 12, 0));
 

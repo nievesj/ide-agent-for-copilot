@@ -33,6 +33,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     public static final String OPENCODE_PROFILE_ID = "opencode";
     public static final String CLAUDE_CODE_PROFILE_ID = "claude-code";
     public static final String CLAUDE_CLI_PROFILE_ID = "claude-cli";
+    public static final String JUNIE_PROFILE_ID = "junie";
 
     private final Map<String, AgentProfile> profiles = new LinkedHashMap<>();
 
@@ -155,6 +156,11 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         } else {
             refreshBuiltInProfile(CLAUDE_CLI_PROFILE_ID);
         }
+        if (!profiles.containsKey(JUNIE_PROFILE_ID)) {
+            profiles.put(JUNIE_PROFILE_ID, createJunieProfile());
+        } else {
+            refreshBuiltInProfile(JUNIE_PROFILE_ID);
+        }
     }
 
     private void refreshBuiltInProfile(@NotNull String id) {
@@ -199,6 +205,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             case OPENCODE_PROFILE_ID -> createOpenCodeProfile();
             case CLAUDE_CODE_PROFILE_ID -> createClaudeCodeProfile();
             case CLAUDE_CLI_PROFILE_ID -> createClaudeCliProfile();
+            case JUNIE_PROFILE_ID -> createJunieProfile();
             default -> null;
         };
     }
@@ -347,6 +354,41 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             "claude-sonnet-4-5=Claude Sonnet 4.5",
             "claude-haiku-4-5=Claude Haiku 4.5"
         ));
+        return p;
+    }
+
+    @NotNull
+    private static AgentProfile createJunieProfile() {
+        AgentProfile p = new AgentProfile();
+        p.setId(JUNIE_PROFILE_ID);
+        p.setDisplayName("Junie");
+        p.setBuiltIn(true);
+        p.setExperimental(false);
+        p.setTransportType(TransportType.ACP);
+        p.setDescription("""
+            Junie CLI by JetBrains. Connects via ACP (--acp true). \
+            Authenticate with your JetBrains Account or a JUNIE_API_KEY token. \
+            Install from junie.jetbrains.com and run 'junie' once to authenticate.""");
+        p.setBinaryName("junie");
+        p.setAlternateNames(List.of());
+        p.setInstallHint("Install from junie.jetbrains.com and run 'junie' to authenticate.");
+        p.setInstallUrl("https://junie.jetbrains.com/docs/junie-cli.html");
+        p.setSupportsOAuthSignIn(false);
+        p.setAcpArgs(List.of("--acp", "true"));
+        p.setMcpMethod(McpInjectionMethod.MCP_LOCATION_FLAG);
+        p.setSupportsMcpConfigFlag(false);
+        p.setMcpConfigTemplate(
+            "{\"mcpServers\":{\"intellij-code-tools\":"
+                + "{\"type\":\"http\","
+                + "\"url\":\"http://localhost:{mcpPort}/mcp\"}}}");
+        p.setSupportsModelFlag(true);
+        p.setSupportsConfigDir(false);
+        p.setRequiresResourceDuplication(false);
+        p.setExcludeAgentBuiltInTools(true);
+        p.setUsePluginPermissions(false);
+        p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
+        // Junie reads guidelines from AGENTS.md (checked as .junie/AGENTS.md first)
+        p.setPrependInstructionsTo("AGENTS.md");
         return p;
     }
 
