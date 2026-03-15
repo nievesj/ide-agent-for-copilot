@@ -186,6 +186,10 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         if (stored.getPrependInstructionsTo() == null || stored.getPrependInstructionsTo().isEmpty()) {
             stored.setPrependInstructionsTo(defaults.getPrependInstructionsTo());
         }
+        // Seed custom CLI models if the user has never set them (empty = use defaults)
+        if (stored.getCustomCliModels().isEmpty()) {
+            stored.setCustomCliModels(defaults.getCustomCliModels());
+        }
     }
 
     @Nullable
@@ -335,6 +339,14 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setUsePluginPermissions(true);
         p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
         p.setPrependInstructionsTo("CLAUDE.md");
+        // Seed the custom models list with the known Claude models.
+        // Users can edit this list to add new models or aliases.
+        // Format: <model-id>=<Display Name>
+        p.setCustomCliModels(List.of(
+            "claude-opus-4-5=Claude Opus 4.5",
+            "claude-sonnet-4-5=Claude Sonnet 4.5",
+            "claude-haiku-4-5=Claude Haiku 4.5"
+        ));
         return p;
     }
 

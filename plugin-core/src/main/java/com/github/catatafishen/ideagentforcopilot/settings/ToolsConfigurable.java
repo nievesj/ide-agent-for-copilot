@@ -6,8 +6,10 @@ import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.TitledSeparator;
 import com.intellij.ui.components.JBCheckBox;
+import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBPanel;
 import com.intellij.ui.components.JBScrollPane;
+import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
@@ -45,7 +47,6 @@ public final class ToolsConfigurable implements Configurable {
         JBPanel<?> toolsPanel = new JBPanel<>();
         toolsPanel.setLayout(new BoxLayout(toolsPanel, BoxLayout.Y_AXIS));
 
-        // Enable / Disable All buttons
         JButton enableAllBtn = new JButton("Enable All");
         JButton disableAllBtn = new JButton("Disable All");
         enableAllBtn.addActionListener(e -> toolCheckboxes.values().forEach(cb -> cb.setSelected(true)));
@@ -59,7 +60,6 @@ public final class ToolsConfigurable implements Configurable {
         topRow.add(disableAllBtn);
         topRow.add(Box.createHorizontalGlue());
         topRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-
         toolsPanel.add(topRow);
 
         List<ToolDefinition> tools = McpToolFilter.getConfigurableTools(project);
@@ -75,11 +75,20 @@ public final class ToolsConfigurable implements Configurable {
             }
 
             JBCheckBox cb = new JBCheckBox(tool.displayName(), settings.isToolEnabled(tool.id()));
-            cb.setToolTipText(tool.description());
-            cb.setBorder(JBUI.Borders.empty(1, 16, 1, 0));
+            cb.setBorder(JBUI.Borders.empty(1, 16, 0, 0));
             cb.setAlignmentX(Component.LEFT_ALIGNMENT);
             toolCheckboxes.put(tool.id(), cb);
             toolsPanel.add(cb);
+
+            String desc = tool.description();
+            if (!desc.isBlank()) {
+                JBLabel descLabel = new JBLabel(desc);
+                descLabel.setFont(descLabel.getFont().deriveFont((float) (JBUI.Fonts.label().getSize() - 1)));
+                descLabel.setForeground(UIUtil.getContextHelpForeground());
+                descLabel.setBorder(JBUI.Borders.empty(0, 36, 3, 0));
+                descLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+                toolsPanel.add(descLabel);
+            }
         }
 
         toolsPanel.add(Box.createVerticalGlue());
