@@ -466,6 +466,14 @@ const ChatController = {
         // Compensate scroll so user stays at same visual position
         const addedHeight = document.body.scrollHeight - prevHeight;
         if (addedHeight > 0) window.scrollBy(0, addedHeight);
+
+        // Continue loading if still near top after scroll adjustment
+        requestAnimationFrame(() => {
+            if (window.scrollY <= 200) {
+                const lm = msgs.querySelector<HTMLElement>('load-more:not([loading])');
+                if (lm) lm.click();
+            }
+        });
     },
 
     showWorkingIndicator(): void {
