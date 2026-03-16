@@ -8,6 +8,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.ui.HyperlinkLabel;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
+import com.intellij.util.EnvironmentUtil;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
@@ -151,9 +152,11 @@ public final class CopilotClientConfigurable implements Configurable {
         // Try copilot first, then copilot-cli
         for (String binary : new String[]{"copilot", "copilot-cli"}) {
             try {
-                Process process = new ProcessBuilder(binary, "--version")
-                    .redirectErrorStream(true)
-                    .start();
+                ProcessBuilder pb = new ProcessBuilder(binary, "--version");
+                pb.redirectErrorStream(true);
+                // Use the user's actual shell environment to ensure PATH is correct
+                pb.environment().putAll(EnvironmentUtil.getEnvironmentMap());
+                Process process = pb.start();
                 String output = new String(process.getInputStream().readAllBytes()).trim();
                 int exit = process.waitFor();
                 if (exit == 0 && !output.isEmpty()) return output;
