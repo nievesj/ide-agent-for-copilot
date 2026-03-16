@@ -298,7 +298,8 @@ class AcpConnectPanel(
     private fun createProfileSelector(): JComponent {
         refreshProfileCombo()
         profileCombo.renderer = SimpleListCellRenderer.create { label, value, _ ->
-            label.text = value?.displayName ?: ""
+            val name = value?.displayName ?: ""
+            label.text = if (value?.isExperimental == true) "$name (experimental)" else name
         }
         profileCombo.alignmentX = LEFT_ALIGNMENT
         profileCombo.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))

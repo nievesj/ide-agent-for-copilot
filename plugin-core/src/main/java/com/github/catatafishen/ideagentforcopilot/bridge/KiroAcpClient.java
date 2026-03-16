@@ -22,9 +22,9 @@ public class KiroAcpClient extends AcpClient {
         p.setId(PROFILE_ID);
         p.setDisplayName("Kiro");
         p.setBuiltIn(true);
-        p.setExperimental(false);
+        p.setExperimental(true);
         p.setTransportType(TransportType.ACP);
-        p.setDescription("Kiro CLI. Ensure 'kiro-cli' is in your PATH.");
+        p.setDescription("Kiro CLI — experimental support. Ensure 'kiro-cli' is in your PATH.");
         p.setBinaryName("kiro-cli");
         p.setAlternateNames(List.of("kiro"));
         p.setInstallHint("Install Kiro CLI and ensure it's available on your PATH.");

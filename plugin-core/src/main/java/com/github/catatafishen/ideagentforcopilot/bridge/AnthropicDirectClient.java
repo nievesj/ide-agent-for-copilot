@@ -57,14 +57,14 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
     public static AgentProfile createDefaultProfile() {
         AgentProfile p = new AgentProfile();
         p.setId(PROFILE_ID);
-        p.setDisplayName("Claude Code");
+        p.setDisplayName("Claude Code API");
         p.setBuiltIn(true);
         p.setExperimental(true);
         p.setTransportType(TransportType.ANTHROPIC_DIRECT);
         p.setDescription("""
-            Direct Anthropic API profile for Claude Code. \
+            Direct Anthropic API profile for Claude Code — experimental support. \
             Calls api.anthropic.com/v1/messages directly — no subprocess or ACP adapter needed. \
-            Requires an Anthropic API key (set in Settings → Tools → IDE Agent → Agent Profiles → Claude Code). \
+            Requires an Anthropic API key (set in Settings → Tools → IDE Agent → Agent Profiles → Claude Code API). \
             All IntelliJ IDE tools are available natively via the PSI bridge.""");
         p.setBinaryName("");
         p.setAlternateNames(List.of());

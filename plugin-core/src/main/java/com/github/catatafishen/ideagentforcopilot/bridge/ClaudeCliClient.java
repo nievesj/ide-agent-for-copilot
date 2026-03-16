@@ -63,12 +63,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     public static AgentProfile createDefaultProfile() {
         AgentProfile p = new AgentProfile();
         p.setId(PROFILE_ID);
-        p.setDisplayName("Claude Code (CLI)");
+        p.setDisplayName("Claude Code CLI");
         p.setBuiltIn(true);
         p.setExperimental(true);
         p.setTransportType(TransportType.CLAUDE_CLI);
         p.setDescription("""
-            Claude Code CLI profile. Drives the locally-installed \
+            Claude Code CLI profile — experimental support. Drives the locally-installed \
             'claude' binary in --print mode via subprocess. \
             Uses your Claude subscription — no Anthropic API key required. \
             Install the CLI from code.claude.com and run 'claude auth login' once to set up.""");
