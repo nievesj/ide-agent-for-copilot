@@ -43,11 +43,15 @@ internal object ConversationSerializer {
             is EntryData.Text -> {
                 obj.addProperty("type", "text")
                 obj.addProperty("raw", e.raw.toString())
+                if (e.timestamp.isNotEmpty()) obj.addProperty("ts", e.timestamp)
+                if (e.agent.isNotEmpty()) obj.addProperty("agent", e.agent)
             }
 
             is EntryData.Thinking -> {
                 obj.addProperty("type", "thinking")
                 obj.addProperty("raw", e.raw.toString())
+                if (e.timestamp.isNotEmpty()) obj.addProperty("ts", e.timestamp)
+                if (e.agent.isNotEmpty()) obj.addProperty("agent", e.agent)
             }
 
             is EntryData.ToolCall -> {
@@ -57,6 +61,8 @@ internal object ConversationSerializer {
                 obj.addProperty("kind", e.kind)
                 if (!e.result.isNullOrEmpty()) obj.addProperty("result", e.result)
                 if (!e.status.isNullOrEmpty()) obj.addProperty("status", e.status)
+                if (e.timestamp.isNotEmpty()) obj.addProperty("ts", e.timestamp)
+                if (e.agent.isNotEmpty()) obj.addProperty("agent", e.agent)
             }
 
             is EntryData.SubAgent -> {
@@ -67,6 +73,8 @@ internal object ConversationSerializer {
                 obj.addProperty("result", e.result ?: "")
                 obj.addProperty("status", e.status ?: "")
                 obj.addProperty("colorIndex", e.colorIndex)
+                if (e.timestamp.isNotEmpty()) obj.addProperty("ts", e.timestamp)
+                if (e.agent.isNotEmpty()) obj.addProperty("agent", e.agent)
             }
 
             is EntryData.ContextFiles -> {
@@ -121,15 +129,26 @@ internal object ConversationSerializer {
             EntryData.Prompt(obj["text"]?.asString ?: "", obj["ts"]?.asString ?: "", ctxFiles)
         }
 
-        "text" -> EntryData.Text(StringBuilder(obj["raw"]?.asString ?: ""))
-        "thinking" -> EntryData.Thinking(StringBuilder(obj["raw"]?.asString ?: ""))
+        "text" -> EntryData.Text(
+            StringBuilder(obj["raw"]?.asString ?: ""),
+            obj["ts"]?.asString ?: "",
+            obj["agent"]?.asString ?: ""
+        )
+
+        "thinking" -> EntryData.Thinking(
+            StringBuilder(obj["raw"]?.asString ?: ""),
+            obj["ts"]?.asString ?: "",
+            obj["agent"]?.asString ?: ""
+        )
 
         "tool" -> EntryData.ToolCall(
             obj["title"]?.asString ?: "",
             obj["args"]?.asString,
             obj["kind"]?.asString ?: "other",
             obj["result"]?.asString,
-            obj["status"]?.asString
+            obj["status"]?.asString,
+            obj["ts"]?.asString ?: "",
+            obj["agent"]?.asString ?: ""
         )
 
         "subagent" -> {
@@ -140,7 +159,10 @@ internal object ConversationSerializer {
                 obj["prompt"]?.asString?.ifEmpty { null },
                 obj["result"]?.asString?.ifEmpty { null },
                 obj["status"]?.asString?.ifEmpty { null } ?: "completed",
-                ci
+                ci,
+                null,
+                obj["ts"]?.asString ?: "",
+                obj["agent"]?.asString ?: ""
             )
         }
 

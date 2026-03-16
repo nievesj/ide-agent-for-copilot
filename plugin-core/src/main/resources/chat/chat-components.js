@@ -1253,11 +1253,18 @@ var __chatUI = (() => {
       const loadMore = msgs.querySelector("load-more");
       const insertBefore = loadMore ? loadMore.nextSibling : msgs.firstChild;
       const prevHeight = document.body.scrollHeight;
+      const wasNearTop = window.scrollY <= 200;
       while (temp.firstChild) {
         msgs.insertBefore(temp.firstChild, insertBefore);
       }
       const addedHeight = document.body.scrollHeight - prevHeight;
       if (addedHeight > 0) window.scrollBy(0, addedHeight);
+      if (wasNearTop) {
+        requestAnimationFrame(() => {
+          const lm = msgs.querySelector("load-more:not([loading])");
+          if (lm) lm.click();
+        });
+      }
     },
     showWorkingIndicator() {
       this._container()?.workingIndicator?.show();

@@ -35,6 +35,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private var turnCounter = 0
     private var currentTurnId = ""
     private var toolJustCompleted = false
+    private var currentAgent = ""
     private val toolCallNames = mutableMapOf<String, String>() // domId → tool baseName
     private val toolCallEntries = mutableMapOf<String, EntryData.ToolCall>() // domId → entry
     private val toolRegistry = com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getInstance(project)
@@ -218,6 +219,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         executeJs("ChatController.setCurrentProfile('${escJs(profileId)}')")
     }
 
+    override fun setCurrentAgent(agentName: String) {
+        currentAgent = agentName
+    }
+
     override fun addContextFilesEntry(files: List<Pair<String, String>>) {
         entries.add(EntryData.ContextFiles(files))
     }
@@ -225,7 +230,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun appendThinkingText(text: String) {
         maybeStartNewSegment()
         if (currentThinkingData == null) {
-            currentThinkingData = EntryData.Thinking().also { entries.add(it) }
+            currentThinkingData = EntryData.Thinking(StringBuilder(), timestamp(), currentAgent).also { entries.add(it) }
         }
         currentThinkingData!!.raw.append(text)
         executeJs("ChatController.addThinkingText('$currentTurnId','main','${escJs(text)}')")
@@ -254,7 +259,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
         if (currentTextData == null && text.isBlank()) return
         if (currentTextData == null) {
-            currentTextData = EntryData.Text().also { entries.add(it) }
+            currentTextData = EntryData.Text(StringBuilder(), timestamp(), currentAgent).also { entries.add(it) }
         }
         currentTextData!!.raw.append(text)
         executeJs("ChatController.appendAgentText('$currentTurnId','main','${escJs(text)}')")
@@ -264,7 +269,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun addToolCallEntry(id: String, title: String, arguments: String?, kind: String?) {
         finalizeCurrentText()
         val resolvedKind = kind ?: "other"
-        val entry = EntryData.ToolCall(title, arguments, resolvedKind)
+        val entry = EntryData.ToolCall(title, arguments, resolvedKind, null, null, timestamp(), currentAgent)
         entries.add(entry)
         val did = domId(id)
         toolCallNames[did] = title
@@ -326,8 +331,11 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         maybeStartNewSegment()
         finalizeCurrentText()
         val colorIndex = nextSubAgentColor++ % ChatTheme.SA_COLOR_COUNT
-        val entry =
-            EntryData.SubAgent(agentType, description, prompt, colorIndex = colorIndex, callId = id)
+        val entry = EntryData.SubAgent(
+            agentType, description, prompt,
+            colorIndex = colorIndex, callId = id,
+            timestamp = timestamp(), agent = currentAgent
+        )
         if (initialResult != null) {
             entry.result = initialResult; entry.status = initialStatus
         }
@@ -531,18 +539,33 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         var segmentAfterDetails = StringBuilder()
         var segmentStarted = false
         var hadToolOrSubagent = false
+        var segmentTimestamp = ""
+        var segmentAgent = ""
 
         fun flushSegment() {
-            sb.append("<chat-message type='agent'>")
-            if (segmentMetaChips.isNotEmpty()) {
-                sb.append("<message-meta class='show'>$segmentMetaChips</message-meta>")
+            sb.append("<chat-message type='agent'")
+            if (segmentAgent.isNotEmpty()) {
+                sb.append(" data-agent='${esc(segmentAgent)}'")
             }
+            sb.append(">")
+            sb.append("<message-meta")
+            if (segmentMetaChips.isNotEmpty()) {
+                sb.append(" class='show'")
+            }
+            sb.append(">")
+            if (segmentTimestamp.isNotEmpty()) {
+                sb.append("<span class='ts'>${esc(segmentTimestamp)}</span>")
+            }
+            sb.append(segmentMetaChips)
+            sb.append("</message-meta>")
             sb.append("<turn-details>$segmentDetailsContent</turn-details>")
             sb.append(segmentAfterDetails)
             sb.append("</chat-message>")
             segmentMetaChips = StringBuilder()
             segmentDetailsContent = StringBuilder()
             segmentAfterDetails = StringBuilder()
+            segmentTimestamp = ""
+            segmentAgent = ""
             hadToolOrSubagent = false
         }
 
@@ -553,6 +576,18 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 i++; continue
             }
             if (hadToolOrSubagent && (e is EntryData.Text || e is EntryData.Thinking)) flushSegment()
+
+            // Capture timestamp and agent from the first entry in the segment
+            if (!segmentStarted) {
+                when (e) {
+                    is EntryData.Text -> { segmentTimestamp = e.timestamp; segmentAgent = e.agent }
+                    is EntryData.Thinking -> { segmentTimestamp = e.timestamp; segmentAgent = e.agent }
+                    is EntryData.ToolCall -> { segmentTimestamp = e.timestamp; segmentAgent = e.agent }
+                    is EntryData.SubAgent -> { segmentTimestamp = e.timestamp; segmentAgent = e.agent }
+                    else -> {}
+                }
+            }
+
             appendAgentEntry(e, segmentMetaChips, segmentDetailsContent, segmentAfterDetails)
             if (e is EntryData.ToolCall || e is EntryData.SubAgent) hadToolOrSubagent = true
             segmentStarted = true

@@ -40,14 +40,26 @@ sealed class EntryData {
         val contextFiles: List<Triple<String, String, Int>>? = null
     ) : EntryData()
 
-    class Text(val raw: StringBuilder = StringBuilder()) : EntryData()
-    class Thinking(val raw: StringBuilder = StringBuilder()) : EntryData()
+    class Text(
+        val raw: StringBuilder = StringBuilder(),
+        val timestamp: String = "",
+        val agent: String = ""
+    ) : EntryData()
+
+    class Thinking(
+        val raw: StringBuilder = StringBuilder(),
+        val timestamp: String = "",
+        val agent: String = ""
+    ) : EntryData()
+
     class ToolCall(
         val title: String,
         val arguments: String? = null,
         val kind: String = "other",
         var result: String? = null,
-        var status: String? = null
+        var status: String? = null,
+        val timestamp: String = "",
+        val agent: String = ""
     ) : EntryData()
 
     class SubAgent(
@@ -57,7 +69,9 @@ sealed class EntryData {
         var result: String? = null,
         var status: String? = null,
         var colorIndex: Int = 0,
-        val callId: String? = null
+        val callId: String? = null,
+        val timestamp: String = "",
+        val agent: String = ""
     ) : EntryData()
 
     class ContextFiles(val files: List<Pair<String, String>>) : EntryData()

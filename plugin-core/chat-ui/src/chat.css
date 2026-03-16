@@ -2581,3 +2581,25 @@ pre.word-wrap code {
     padding: var(--sp-2) 0;
     margin-top: var(--sp-2);
 }
+
+/* ── Agent tooltip ────────────────────────────────────── */
+chat-message[data-agent]:hover::before {
+    content: attr(data-agent);
+    position: absolute;
+    top: -2px;
+    left: 0;
+    transform: translateY(-100%);
+    background: var(--tooltip-bg);
+    color: var(--fg);
+    padding: 4px 8px;
+    border-radius: var(--r-sm);
+    font-size: 0.85em;
+    white-space: nowrap;
+    z-index: 1000;
+    pointer-events: none;
+    opacity: 0.95;
+}
+
+chat-message[data-agent] {
+    position: relative;
+}
