@@ -8,7 +8,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.ui.HyperlinkLabel;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
-import com.intellij.util.EnvironmentUtil;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
@@ -28,8 +27,8 @@ public final class OpenCodeClientConfigurable implements Configurable {
 
     private static final int SECTIONS =
         AcpProfileForm.SECTION_BINARY | AcpProfileForm.SECTION_ACP_ARGS
-        | AcpProfileForm.SECTION_MCP | AcpProfileForm.SECTION_PERMISSIONS
-        | AcpProfileForm.SECTION_FLAGS;
+            | AcpProfileForm.SECTION_MCP | AcpProfileForm.SECTION_PERMISSIONS
+            | AcpProfileForm.SECTION_FLAGS;
 
     @SuppressWarnings("unused")
     public OpenCodeClientConfigurable(@NotNull Project ignoredProject) {
@@ -135,10 +134,12 @@ public final class OpenCodeClientConfigurable implements Configurable {
     @Nullable
     private static String detectOpenCodeVersion() {
         try {
-            ProcessBuilder pb = new ProcessBuilder("opencode", "--version");
+            // Run through login shell to ensure PATH is fully loaded from shell profile
+            boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+            ProcessBuilder pb = isWindows
+                ? new ProcessBuilder("cmd", "/c", "opencode --version")
+                : new ProcessBuilder("bash", "-l", "-c", "opencode --version");
             pb.redirectErrorStream(true);
-            // Use the user's actual shell environment to ensure PATH is correct
-            pb.environment().putAll(EnvironmentUtil.getEnvironmentMap());
             Process process = pb.start();
             String output = new String(process.getInputStream().readAllBytes()).trim();
             int exit = process.waitFor();
