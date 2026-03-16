@@ -37,6 +37,15 @@ public final class InstructionsManager {
     private InstructionsManager() {
     }
 
+    /**
+     * Workaround: prepend plugin instructions to a file on the filesystem.
+     * This is a fallback for agents that ignore the ACP {@code instructions} field
+     * and don't process in-conversation messages (session/message). For agents like
+     * Junie that support session/message, prefer injecting instructions via
+     * {@link AgentConfig#getSessionInstructions()} in {@code AcpClient.createSession()}.
+     *
+     * <p>Thread-safe: uses a class-level lock so concurrent calls don't race.</p>
+     */
     public static void ensureInstructions(@Nullable String projectBasePath,
                                           @NotNull String relativeTargetPath,
                                           @NotNull String additionalInstructions) {

@@ -157,6 +157,11 @@ public interface AgentConfig {
      * Returns startup instructions to inject into the conversation via {@code session/message}
      * after session creation. This is the preferred mechanism for agents that process
      * in-conversation messages (e.g. Junie). Return {@code null} to skip.
+     *
+     * <p>Agents that ignore {@code session/message} (e.g. Copilot CLI, Claude Code) use
+     * file-prepend via {@link InstructionsManager} instead — controlled by
+     * {@link com.github.catatafishen.ideagentforcopilot.services.AgentProfile#getPrependInstructionsTo()}.
+     * The two mechanisms are mutually exclusive per profile.</p>
      */
     @Nullable
     default String getSessionInstructions() {

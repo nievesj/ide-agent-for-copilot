@@ -240,6 +240,13 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     @Override
     @Nullable
     public String getSessionInstructions() {
+        // If this profile uses file-prepend (e.g. Copilot → .copilot/copilot-instructions.md,
+        // Claude → CLAUDE.md), skip session/message injection — those agents ignore it.
+        String prependTarget = profile.getPrependInstructionsTo();
+        if (prependTarget != null && !prependTarget.isEmpty()) {
+            return null;
+        }
+
         StringBuilder sb = new StringBuilder();
         try (java.io.InputStream is = getClass().getResourceAsStream("/default-startup-instructions.md")) {
             if (is != null) {
