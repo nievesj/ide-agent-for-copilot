@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.HyperlinkLabel;
@@ -94,7 +95,7 @@ public final class KiroClientConfigurable implements Configurable {
     @Override
     public void reset() {
         if (binaryPathField == null) return;
-        refreshStatus();
+        refreshStatusAsync();
         AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.KIRO_PROFILE_ID);
         if (p == null) return;
         binaryPathField.setText(nullToEmpty(p.getCustomBinaryPath()));
@@ -109,16 +110,24 @@ public final class KiroClientConfigurable implements Configurable {
         panel = null;
     }
 
-    private void refreshStatus() {
+    private void refreshStatusAsync() {
         if (statusLabel == null) return;
-        String version = detectKiroVersion();
-        if (version != null) {
-            statusLabel.setText("✓ Kiro CLI found — " + version);
-            statusLabel.setForeground(new Color(0, 128, 0));
-        } else {
-            statusLabel.setText("Kiro CLI not found on PATH — install from kiro.dev");
-            statusLabel.setForeground(Color.RED);
-        }
+        statusLabel.setText("Checking...");
+        statusLabel.setForeground(UIUtil.getLabelForeground());
+
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            String version = detectKiroVersion();
+            SwingUtilities.invokeLater(() -> {
+                if (statusLabel == null) return;
+                if (version != null) {
+                    statusLabel.setText("✓ Kiro CLI found — " + version);
+                    statusLabel.setForeground(new Color(0, 128, 0));
+                } else {
+                    statusLabel.setText("Kiro CLI not found on PATH — install from kiro.dev");
+                    statusLabel.setForeground(Color.RED);
+                }
+            });
+        });
     }
 
     @Nullable
@@ -132,8 +141,11 @@ public final class KiroClientConfigurable implements Configurable {
                 String output = new String(process.getInputStream().readAllBytes()).trim();
                 int exit = process.waitFor();
                 if (exit == 0 && !output.isEmpty()) return output;
-            } catch (IOException | InterruptedException e) {
+            } catch (IOException e) {
                 // Try next binary
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return null;
             }
         }
         return null;

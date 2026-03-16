@@ -2,14 +2,22 @@ package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
+import com.intellij.ui.HyperlinkLabel;
+import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
+import com.intellij.util.ui.FormBuilder;
+import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import java.awt.*;
+import java.io.IOException;
 
 /**
  * Settings page for the OpenCode client (ACP transport).
@@ -31,13 +39,38 @@ public final class OpenCodeClientConfigurable implements Configurable {
         return "OpenCode";
     }
 
+    private JBLabel statusLabel;
     private AcpProfileForm form;
+    private JPanel mainPanel;
 
     @Override
     public @NotNull JComponent createComponent() {
+        statusLabel = new JBLabel();
+
+        HyperlinkLabel installLink = new HyperlinkLabel("Install OpenCode from npmjs.com/package/opencode-ai");
+        installLink.setHyperlinkTarget("https://www.npmjs.com/package/opencode-ai");
+
+        JBLabel installNote = new JBLabel(
+            "<html>Install with <code>npm i -g opencode-ai</code>. Ensure it's available on PATH.</html>");
+        installNote.setForeground(UIUtil.getContextHelpForeground());
+        installNote.setFont(JBUI.Fonts.smallFont());
+
+        JPanel statusPanel = FormBuilder.createFormBuilder()
+            .addLabeledComponent("Status:", statusLabel)
+            .addComponent(installNote, 2)
+            .addComponent(installLink, 2)
+            .addSeparator(8)
+            .getPanel();
+
         form = new AcpProfileForm(SECTIONS);
-        JPanel panel = form.buildPanel();
-        JBScrollPane scroll = new JBScrollPane(panel);
+        JPanel configPanel = form.buildPanel();
+
+        mainPanel = new JPanel(new BorderLayout(0, 8));
+        mainPanel.add(statusPanel, BorderLayout.NORTH);
+        mainPanel.add(configPanel, BorderLayout.CENTER);
+        mainPanel.setBorder(JBUI.Borders.empty(8));
+
+        JBScrollPane scroll = new JBScrollPane(mainPanel);
         scroll.setBorder(null);
         reset();
         return scroll;
@@ -63,12 +96,53 @@ public final class OpenCodeClientConfigurable implements Configurable {
     @Override
     public void reset() {
         if (form == null) return;
+        refreshStatusAsync();
         AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.OPENCODE_PROFILE_ID);
         if (p != null) form.load(p);
     }
 
     @Override
     public void disposeUIResources() {
+        statusLabel = null;
         form = null;
+        mainPanel = null;
+    }
+
+    private void refreshStatusAsync() {
+        if (statusLabel == null) return;
+        statusLabel.setText("Checking...");
+        statusLabel.setForeground(UIUtil.getLabelForeground());
+
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            String version = detectOpenCodeVersion();
+            SwingUtilities.invokeLater(() -> {
+                if (statusLabel == null) return;
+                if (version != null) {
+                    statusLabel.setText("✓ OpenCode found — " + version);
+                    statusLabel.setForeground(new Color(0, 128, 0));
+                } else {
+                    statusLabel.setText("OpenCode not found on PATH — install with npm i -g opencode-ai");
+                    statusLabel.setForeground(Color.RED);
+                }
+            });
+        });
+    }
+
+    /**
+     * Runs {@code opencode --version} and returns the trimmed output, or null if not installed.
+     */
+    @Nullable
+    private static String detectOpenCodeVersion() {
+        try {
+            Process process = new ProcessBuilder("opencode", "--version")
+                .redirectErrorStream(true)
+                .start();
+            String output = new String(process.getInputStream().readAllBytes()).trim();
+            int exit = process.waitFor();
+            if (exit == 0 && !output.isEmpty()) return output;
+        } catch (IOException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return null;
     }
 }

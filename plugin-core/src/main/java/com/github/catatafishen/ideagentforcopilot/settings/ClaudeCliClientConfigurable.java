@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.components.JBLabel;
@@ -10,6 +11,7 @@ import com.intellij.ui.components.JBTextArea;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -55,8 +57,14 @@ public final class ClaudeCliClientConfigurable implements Configurable {
         JBScrollPane modelsScroll = new JBScrollPane(customModelsArea);
         modelsScroll.setPreferredSize(JBUI.size(400, 90));
 
+        JBLabel authNote = new JBLabel(
+            "<html>Run <code>claude auth login</code> in a terminal to authenticate.</html>");
+        authNote.setForeground(UIUtil.getContextHelpForeground());
+        authNote.setFont(JBUI.Fonts.smallFont());
+
         panel = FormBuilder.createFormBuilder()
-            .addLabeledComponent("Auth status:", authStatusLabel)
+            .addLabeledComponent("Status:", authStatusLabel)
+            .addComponent(authNote, 2)
             .addSeparator(8)
             .addLabeledComponent("Claude binary:", binaryPathField)
             .addTooltip("Leave empty to auto-detect on PATH.")
@@ -97,7 +105,7 @@ public final class ClaudeCliClientConfigurable implements Configurable {
     @Override
     public void reset() {
         if (customModelsArea == null) return;
-        refreshAuthStatus();
+        refreshAuthStatusAsync();
         AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.CLAUDE_CLI_PROFILE_ID);
         if (p == null) return;
         binaryPathField.setText(p.getCustomBinaryPath());
@@ -115,16 +123,24 @@ public final class ClaudeCliClientConfigurable implements Configurable {
         panel = null;
     }
 
-    private void refreshAuthStatus() {
+    private void refreshAuthStatusAsync() {
         if (authStatusLabel == null) return;
-        String status = AgentProfileManager.getClaudeCliAuthStatus();
-        if (status != null) {
-            authStatusLabel.setText(status);
-            authStatusLabel.setForeground(new Color(0, 128, 0));
-        } else {
-            authStatusLabel.setText("Not logged in — run 'claude auth login' in a terminal.");
-            authStatusLabel.setForeground(Color.RED);
-        }
+        authStatusLabel.setText("Checking...");
+        authStatusLabel.setForeground(UIUtil.getLabelForeground());
+
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            String status = AgentProfileManager.getClaudeCliAuthStatus();
+            SwingUtilities.invokeLater(() -> {
+                if (authStatusLabel == null) return;
+                if (status != null) {
+                    authStatusLabel.setText("✓ Logged in — " + status);
+                    authStatusLabel.setForeground(new Color(0, 128, 0));
+                } else {
+                    authStatusLabel.setText("Not logged in — run 'claude auth login' in a terminal");
+                    authStatusLabel.setForeground(Color.RED);
+                }
+            });
+        });
     }
 
     @NotNull

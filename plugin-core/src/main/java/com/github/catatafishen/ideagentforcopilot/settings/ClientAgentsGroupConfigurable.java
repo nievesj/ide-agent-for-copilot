@@ -7,9 +7,12 @@ import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
 import com.github.catatafishen.ideagentforcopilot.services.AgentUiSettings;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
+import com.intellij.ui.TitledSeparator;
+import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -43,6 +46,7 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
 
     @Override
     public @Nullable JComponent createComponent() {
+        // ── Agent Behavior Settings ──
         timeoutSpinner = new JSpinner(new SpinnerNumberModel(300, 30, 3600, 10));
         maxToolCallsSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 500, 1));
 
@@ -50,6 +54,27 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
         timeoutSpinner.setMaximumSize(spinnerSize);
         maxToolCallsSpinner.setMaximumSize(spinnerSize);
 
+        JBLabel introLabel = new JBLabel(
+            "<html>Configure agent clients below. Each client connects to a different AI backend:</html>");
+        introLabel.setForeground(UIUtil.getContextHelpForeground());
+
+        // ── Built-in Clients Overview ──
+        JBLabel clientsOverview = new JBLabel(
+            "<html>" +
+            "<b>ACP-based Clients</b> — Run local CLI tools that implement the Agent Communication Protocol:<br>" +
+            "• <b>GitHub Copilot</b> — Premium multi-model agent with billing<br>" +
+            "• <b>OpenCode</b> — Community-maintained experimental agent<br>" +
+            "• <b>Junie</b> — JetBrains AI agent with JetBrains Account auth<br>" +
+            "• <b>Kiro</b> — Kiro CLI agent<br><br>" +
+            "<b>Direct API Clients</b> — Connect directly to API providers:<br>" +
+            "• <b>Claude Code</b> — Anthropic's Claude via direct API<br><br>" +
+            "<b>CLI Clients</b> — Specialized command-line tools:<br>" +
+            "• <b>Claude CLI</b> — Official Anthropic CLI agent" +
+            "</html>");
+        clientsOverview.setFont(JBUI.Fonts.smallFont());
+        clientsOverview.setForeground(UIUtil.getContextHelpForeground());
+
+        // ── Custom Client Creation ──
         newClientNameField = new JBTextField();
         newClientNameField.setColumns(24);
         newClientNameField.getEmptyText().setText("Name for your custom agent");
@@ -62,11 +87,15 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
         addRow.add(addBtn, BorderLayout.EAST);
 
         panel = FormBuilder.createFormBuilder()
+            .addComponent(introLabel)
+            .addVerticalGap(8)
+            .addComponent(clientsOverview)
+            .addComponent(new TitledSeparator("Agent Behavior"))
             .addLabeledComponent("Prompt timeout (seconds):", timeoutSpinner)
             .addTooltip("Time before an inactive agent session is considered timed out (30–3600).")
             .addLabeledComponent("Max tool calls per turn:", maxToolCallsSpinner)
             .addTooltip("Limit how many tools the agent can call in a single turn. 0 = unlimited.")
-            .addSeparator(12)
+            .addComponent(new TitledSeparator("Custom Clients"))
             .addLabeledComponent("Add custom ACP client:", addRow)
             .addTooltip("Creates a custom ACP-compatible agent. Reopen Settings to configure it.")
             .addComponentFillVertically(new JPanel(), 0)

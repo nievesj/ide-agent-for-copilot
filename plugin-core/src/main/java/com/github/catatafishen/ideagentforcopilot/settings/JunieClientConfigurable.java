@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.HyperlinkLabel;
@@ -96,7 +97,7 @@ public final class JunieClientConfigurable implements Configurable {
     @Override
     public void reset() {
         if (binaryPathField == null) return;
-        refreshStatus();
+        refreshStatusAsync();
         AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.JUNIE_PROFILE_ID);
         if (p == null) return;
         binaryPathField.setText(nullToEmpty(p.getCustomBinaryPath()));
@@ -111,16 +112,24 @@ public final class JunieClientConfigurable implements Configurable {
         panel = null;
     }
 
-    private void refreshStatus() {
+    private void refreshStatusAsync() {
         if (statusLabel == null) return;
-        String version = detectJunieVersion();
-        if (version != null) {
-            statusLabel.setText("✓ Junie CLI found — " + version);
-            statusLabel.setForeground(new Color(0, 128, 0));
-        } else {
-            statusLabel.setText("Junie CLI not found on PATH — install from junie.jetbrains.com");
-            statusLabel.setForeground(Color.RED);
-        }
+        statusLabel.setText("Checking...");
+        statusLabel.setForeground(UIUtil.getLabelForeground());
+
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            String version = detectJunieVersion();
+            SwingUtilities.invokeLater(() -> {
+                if (statusLabel == null) return;
+                if (version != null) {
+                    statusLabel.setText("✓ Junie CLI found — " + version);
+                    statusLabel.setForeground(new Color(0, 128, 0));
+                } else {
+                    statusLabel.setText("Junie CLI not found on PATH — install from junie.jetbrains.com");
+                    statusLabel.setForeground(Color.RED);
+                }
+            });
+        });
     }
 
     /**

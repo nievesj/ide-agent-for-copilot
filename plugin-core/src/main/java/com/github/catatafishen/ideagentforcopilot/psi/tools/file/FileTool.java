@@ -31,6 +31,7 @@ import com.intellij.psi.PsiManager;
 import com.intellij.util.Alarm;
 import org.jetbrains.annotations.NotNull;
 
+import javax.swing.*;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -125,6 +126,7 @@ public abstract class FileTool extends Tool {
     /**
      * Opens the file in the editor if "Follow Agent Files" is enabled.
      * Scrolls to the middle of [startLine, endLine] and briefly highlights the region.
+     * Preserves focus if the user is currently typing in the plugin's tool window.
      */
     public static void followFileIfEnabled(Project project, String pathStr, int startLine, int endLine,
                                            Color highlightColor, String actionLabel) {
@@ -146,15 +148,18 @@ public abstract class FileTool extends Tool {
                     return;
                 }
 
+                // Check if focus is inside the plugin's tool window — if so, don't steal it
+                boolean preserveFocus = isAgentToolWindowFocused(project);
+
                 FileEditorManager fem = FileEditorManager.getInstance(project);
                 int midLine = (startLine > 0 && endLine > 0)
                     ? (startLine + endLine) / 2
                     : Math.max(startLine, 1);
                 if (midLine > 0) {
-                    new OpenFileDescriptor(project, vf, midLine - 1, 0).navigate(true);
+                    new OpenFileDescriptor(project, vf, midLine - 1, 0).navigate(!preserveFocus);
                     scrollAndHighlight(fem, vf, startLine, endLine, midLine, highlightColor, actionLabel);
                 } else {
-                    fem.openFile(vf, true);
+                    fem.openFile(vf, !preserveFocus);
                 }
 
                 selectInProjectView(project, vf);
@@ -162,6 +167,20 @@ public abstract class FileTool extends Tool {
                 nav.set(false);
             }
         });
+    }
+
+    /**
+     * Returns true if the current keyboard focus is inside the IDE Agent tool window.
+     */
+    private static boolean isAgentToolWindowFocused(Project project) {
+        Component focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+        if (focusOwner == null) return false;
+
+        var twm = ToolWindowManager.getInstance(project);
+        var tw = twm.getToolWindow("IDE Agent for Copilot");
+        if (tw == null) return false;
+
+        return SwingUtilities.isDescendingFrom(focusOwner, tw.getComponent());
     }
 
     /**
