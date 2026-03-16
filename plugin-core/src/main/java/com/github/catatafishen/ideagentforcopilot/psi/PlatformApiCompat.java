@@ -871,6 +871,20 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Subscribes to tool call completion events and returns a disposable to disconnect.
+     *
+     * <p><b>Why extracted:</b> Same resolution issue as {@link #subscribeDaemonListener} —
+     * {@code project.getMessageBus().connect()} generic bounds differ between dev IDE and target SDK.</p>
+     */
+    static void subscribeToolCallListener(
+        @NotNull Project project,
+        @NotNull com.intellij.openapi.Disposable parentDisposable,
+        @NotNull PsiBridgeService.ToolCallListener listener) {
+        var connection = project.getMessageBus().connect(parentDisposable);
+        connection.subscribe(PsiBridgeService.TOOL_CALL_TOPIC, listener);
+    }
+
+    /**
      * Returns all installed UI themes.
      *
      * <p><b>Why extracted:</b> {@code LafManager.getInstalledThemes()} is annotated

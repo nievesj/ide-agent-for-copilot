@@ -78,6 +78,25 @@ public final class PsiBridgeService implements Disposable {
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.terminal.TerminalToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.editor.EditorToolFactory.create(project));
         registry.registerAll(allTools);
+
+        // Subscribe to tool call events to restore focus to chat input after each tool call
+        PlatformApiCompat.subscribeToolCallListener(project, this, (toolName, durationMs, success) ->
+            restoreChatFocus()
+        );
+    }
+
+    /**
+     * Restores keyboard focus to the Agent tool window after a tool call completes.
+     * This prevents focus from staying in the editor when files are opened in follow mode.
+     */
+    private void restoreChatFocus() {
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+            var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
+            var tw = twm.getToolWindow("AgentBridge");
+            if (tw != null && tw.isVisible()) {
+                tw.activate(null);
+            }
+        });
     }
 
     @SuppressWarnings("java:S1905") // Cast needed: IDE doesn't resolve Project→ComponentManager supertype
