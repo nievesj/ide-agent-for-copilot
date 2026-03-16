@@ -160,6 +160,10 @@ var __chatUI = (() => {
       this._programmaticScroll = true;
       window.scrollTo(0, document.body.scrollHeight);
     }
+    compensateScroll(targetY) {
+      this._programmaticScroll = true;
+      window.scrollTo(0, targetY);
+    }
     disconnectedCallback() {
       this._observer?.disconnect();
       this._copyObs?.disconnect();
@@ -1269,9 +1273,14 @@ var __chatUI = (() => {
       const addedHeight = document.body.scrollHeight - prevHeight;
       if (addedHeight > 0) {
         const targetScroll = Math.max(10, prevScrollY + addedHeight);
-        window.scrollTo(0, targetScroll);
+        const container = this._container();
+        if (container) {
+          container.compensateScroll(targetScroll);
+        } else {
+          window.scrollTo(0, targetScroll);
+        }
       }
-      if (wasNearTop) {
+      if (wasNearTop && window.scrollY <= 100) {
         requestAnimationFrame(() => {
           const lm = msgs.querySelector("load-more:not([loading])");
           if (lm) lm.click();
