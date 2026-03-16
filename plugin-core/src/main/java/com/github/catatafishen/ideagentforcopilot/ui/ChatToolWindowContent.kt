@@ -100,21 +100,9 @@ class ChatToolWindowContent(
         connection.subscribe(
             com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.FOCUS_RESTORE_TOPIC,
             com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.FocusRestoreListener {
+                // Only triggered when chat was active before tool call, so just request focus
                 if (::promptTextArea.isInitialized) {
-                    val toolWindowManager = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
-                    val toolWindow = toolWindowManager.getToolWindow("AgentBridge")
-
-                    // Fast path: if already active, request focus immediately
-                    if (toolWindow?.isActive == true) {
-                        promptTextArea.requestFocusInWindow()
-                    } else {
-                        // Slow path: activate tool window first
-                        ApplicationManager.getApplication().invokeLater {
-                            toolWindow?.activate {
-                                promptTextArea.requestFocusInWindow()
-                            }
-                        }
-                    }
+                    promptTextArea.requestFocusInWindow()
                 }
             }
         )

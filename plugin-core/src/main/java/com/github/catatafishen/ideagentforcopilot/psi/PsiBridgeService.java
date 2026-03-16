@@ -148,6 +148,10 @@ public final class PsiBridgeService implements Disposable {
         long startMs = System.currentTimeMillis();
         boolean success = true;
 
+        // Track if chat tool window is active before the tool call
+        // Only restore focus afterward if it was active before (don't steal focus if user switched away)
+        boolean chatWasActive = isChatToolWindowActive();
+
         // Serialize non-read-only tool calls to prevent EDT flooding.
         // Multiple concurrent write/heavy operations each posting lambdas via invokeLater
         // can saturate the EDT queue and cause the IDE to freeze.
@@ -198,7 +202,10 @@ public final class PsiBridgeService implements Disposable {
         } finally {
             if (needsLock) writeToolSemaphore.release();
             fireToolCallEvent(toolName, startMs, success);
-            fireFocusRestoreEvent();
+            // Only restore focus if chat was active before the tool call
+            if (chatWasActive) {
+                fireFocusRestoreEvent();
+            }
         }
     }
 
@@ -252,6 +259,22 @@ public final class PsiBridgeService implements Disposable {
                 .restoreFocus();
         } catch (Exception e) {
             LOG.debug("Failed to fire focus restore event", e);
+        }
+    }
+
+    /**
+     * Checks if the AgentBridge chat tool window is currently active.
+     * Used to determine whether to restore focus after a tool call.
+     */
+    private boolean isChatToolWindowActive() {
+        try {
+            com.intellij.openapi.wm.ToolWindowManager toolWindowManager =
+                com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
+            com.intellij.openapi.wm.ToolWindow toolWindow = toolWindowManager.getToolWindow("AgentBridge");
+            return toolWindow != null && toolWindow.isActive();
+        } catch (Exception e) {
+            LOG.debug("Failed to check chat tool window state", e);
+            return false;
         }
     }
 
