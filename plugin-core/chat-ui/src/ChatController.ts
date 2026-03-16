@@ -458,6 +458,7 @@ const ChatController = {
         const insertBefore = loadMore ? loadMore.nextSibling : msgs.firstChild;
 
         const prevHeight = document.body.scrollHeight;
+        const wasNearTop = window.scrollY <= 200;
 
         while (temp.firstChild) {
             msgs.insertBefore(temp.firstChild, insertBefore);
@@ -467,13 +468,13 @@ const ChatController = {
         const addedHeight = document.body.scrollHeight - prevHeight;
         if (addedHeight > 0) window.scrollBy(0, addedHeight);
 
-        // Continue loading if still near top after scroll adjustment
-        requestAnimationFrame(() => {
-            if (window.scrollY <= 200) {
+        // Continue loading if user was near top before scroll adjustment
+        if (wasNearTop) {
+            requestAnimationFrame(() => {
                 const lm = msgs.querySelector<HTMLElement>('load-more:not([loading])');
                 if (lm) lm.click();
-            }
-        });
+            });
+        }
     },
 
     showWorkingIndicator(): void {
