@@ -9,11 +9,13 @@ const ChatController = {
     _container(): HTMLElement & {
         scrollIfNeeded(): void;
         forceScroll(): void;
+        compensateScroll(targetY: number): void;
         workingIndicator: HTMLElement & { show(): void; hide(): void; resetTimer(): void }
     } | null {
         return document.querySelector<HTMLElement & {
             scrollIfNeeded(): void;
             forceScroll(): void;
+            compensateScroll(targetY: number): void;
             workingIndicator: HTMLElement & { show(): void; hide(): void; resetTimer(): void }
         }>('chat-container');
     },
@@ -478,11 +480,18 @@ const ChatController = {
         const addedHeight = document.body.scrollHeight - prevHeight;
         if (addedHeight > 0) {
             const targetScroll = Math.max(10, prevScrollY + addedHeight);
-            window.scrollTo(0, targetScroll);
+            const container = this._container();
+            if (container) {
+                container.compensateScroll(targetScroll);
+            } else {
+                window.scrollTo(0, targetScroll);
+            }
         }
 
-        // Continue loading if user was near top before scroll adjustment
-        if (wasNearTop) {
+        // Continue loading if user was near top before scroll adjustment AND
+        // the compensated scroll is still near the top (within 100px).
+        // This prevents rapid auto-loading when there's enough content loaded.
+        if (wasNearTop && window.scrollY <= 100) {
             requestAnimationFrame(() => {
                 const lm = msgs.querySelector<HTMLElement>('load-more:not([loading])');
                 if (lm) lm.click();

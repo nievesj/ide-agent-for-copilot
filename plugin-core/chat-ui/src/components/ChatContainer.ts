@@ -167,6 +167,11 @@ export default class ChatContainer extends HTMLElement {
         window.scrollTo(0, document.body.scrollHeight);
     }
 
+    compensateScroll(targetY: number): void {
+        this._programmaticScroll = true;
+        window.scrollTo(0, targetY);
+    }
+
     disconnectedCallback(): void {
         this._observer?.disconnect();
         this._copyObs?.disconnect();
