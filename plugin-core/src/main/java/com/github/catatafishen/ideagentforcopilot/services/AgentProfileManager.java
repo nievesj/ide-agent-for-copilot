@@ -8,7 +8,7 @@ import com.github.catatafishen.ideagentforcopilot.bridge.JunieAcpClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.KiroAcpClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.OpenCodeAcpClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
-import com.intellij.openapi.application.ApplicationManager;
+import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
@@ -50,7 +50,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
 
     @NotNull
     public static AgentProfileManager getInstance() {
-        return ApplicationManager.getApplication().getService(AgentProfileManager.class);
+        return PlatformApiCompat.getApplicationService(AgentProfileManager.class);
     }
 
     /**

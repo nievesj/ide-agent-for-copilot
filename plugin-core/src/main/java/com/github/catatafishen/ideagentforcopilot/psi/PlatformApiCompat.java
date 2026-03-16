@@ -241,6 +241,17 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Typed version of ApplicationManager.getApplication().getService() for application-level services.
+     * <p>
+     * <b>Why extracted:</b> {@code Application.getService(Class<T>)} causes IDE daemon false-positives
+     * because the generic bounds on {@code getService()} differ between the dev IDE and target SDK.
+     * Gradle compiles cleanly.
+     */
+    public static <T> @NotNull T getApplicationService(@NotNull Class<T> serviceClass) {
+        return ApplicationManager.getApplication().getService(serviceClass);
+    }
+
+    /**
      * Creates a JCEF load handler that calls the given callback when the main frame finishes loading.
      *
      * <p><b>Why extracted:</b> {@code CefLoadHandlerAdapter} provides default implementations for all
