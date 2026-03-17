@@ -107,12 +107,6 @@ public class CopilotAcpClient extends AcpClient {
     @Override
     @NotNull
     public String normalizeToolName(@NotNull String name) {
-        String slashPrefix = effectiveMcpPrefix.endsWith("-")
-            ? effectiveMcpPrefix.substring(0, effectiveMcpPrefix.length() - 1) + "/"
-            : effectiveMcpPrefix + "/";
-        if (name.startsWith(slashPrefix)) {
-            return name.substring(slashPrefix.length());
-        }
-        return name;
+        return name.replaceFirst("^intellij-code-tools-", "");
     }
 }

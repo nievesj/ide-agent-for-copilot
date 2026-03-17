@@ -89,6 +89,14 @@ public final class AgentProfile {
     private PermissionInjectionMethod permissionInjectionMethod = PermissionInjectionMethod.NONE;
 
     /**
+     * Whether this agent supports {@code session/message} JSON-RPC notifications.
+     * When {@code true}, startup instructions are sent via {@code session/message}.
+     * When {@code false}, instructions must come from config files or MCP prompt field.
+     * Defaults to {@code true} for backwards compatibility (Junie, Copilot support it).
+     */
+    private boolean supportsSessionMessage = true;
+
+    /**
      * Relative path (from project root) to the agent-instructions file that plugin context
      * should be prepended to on launch (e.g. {@code ".copilot/copilot-instructions.md"} or
      * {@code "CLAUDE.md"}). Empty/null means skip file injection (rely on MCP instructions field).
@@ -134,10 +142,6 @@ public final class AgentProfile {
         this.agentsDirectory = null;
     }
 
-    /**
-     * Creates a deep copy of this profile with a new ID.
-     */
-    @NotNull
     public AgentProfile duplicate() {
         AgentProfile copy = new AgentProfile();
         copy.id = UUID.randomUUID().toString();
@@ -165,6 +169,7 @@ public final class AgentProfile {
         copy.usePluginPermissions = usePluginPermissions;
         copy.excludeAgentBuiltInTools = excludeAgentBuiltInTools;
         copy.permissionInjectionMethod = permissionInjectionMethod;
+        copy.supportsSessionMessage = supportsSessionMessage;
         copy.prependInstructionsTo = prependInstructionsTo;
         copy.bundledAgentFiles = new ArrayList<>(bundledAgentFiles);
         copy.additionalInstructions = additionalInstructions;
@@ -174,12 +179,6 @@ public final class AgentProfile {
         return copy;
     }
 
-    /**
-     * Creates an independent deep copy preserving all fields including ID, name, and builtIn.
-     * Use this for settings UI working copies. Use {@link #duplicate()} for user-initiated
-     * "Duplicate Profile" which assigns a new ID and appends "(Copy)" to the name.
-     */
-    @NotNull
     public AgentProfile copyForEditing() {
         AgentProfile copy = new AgentProfile();
         copy.id = this.id;
@@ -207,6 +206,7 @@ public final class AgentProfile {
         copy.usePluginPermissions = usePluginPermissions;
         copy.excludeAgentBuiltInTools = excludeAgentBuiltInTools;
         copy.permissionInjectionMethod = permissionInjectionMethod;
+        copy.supportsSessionMessage = supportsSessionMessage;
         copy.prependInstructionsTo = prependInstructionsTo;
         copy.bundledAgentFiles = new ArrayList<>(bundledAgentFiles);
         copy.additionalInstructions = additionalInstructions;
@@ -243,6 +243,7 @@ public final class AgentProfile {
         this.usePluginPermissions = other.usePluginPermissions;
         this.excludeAgentBuiltInTools = other.excludeAgentBuiltInTools;
         this.permissionInjectionMethod = other.permissionInjectionMethod;
+        this.supportsSessionMessage = other.supportsSessionMessage;
         this.prependInstructionsTo = other.prependInstructionsTo;
         this.bundledAgentFiles = new ArrayList<>(other.bundledAgentFiles);
         this.additionalInstructions = other.additionalInstructions;
@@ -467,6 +468,14 @@ public final class AgentProfile {
 
     public void setPermissionInjectionMethod(@NotNull PermissionInjectionMethod permissionInjectionMethod) {
         this.permissionInjectionMethod = permissionInjectionMethod;
+    }
+
+    public boolean isSupportsSessionMessage() {
+        return supportsSessionMessage;
+    }
+
+    public void setSupportsSessionMessage(boolean supportsSessionMessage) {
+        this.supportsSessionMessage = supportsSessionMessage;
     }
 
     @Nullable

@@ -108,11 +108,16 @@ public interface AgentConfig {
     }
 
     /**
-     * Whether to send {@code excludedTools} in the {@code session/new} request
-     * to remove the agent's built-in tools (view, edit, bash, etc.).
-     * Agents like OpenCode honour this parameter; Copilot CLI ignores it (bug #556).
+     * Whether to deny agent built-in tools (view, edit, bash, etc.) via permission system.
+     * <p>
+     * When true, all built-in tools are automatically denied during {@code session/request_permission},
+     * forcing the agent to use IntelliJ MCP tools instead. This is a blanket denial independent of
+     * per-tool permission settings.
+     * <p>
+     * <b>Note:</b> This has nothing to do with the ACP protocol. Some agents (e.g., Copilot CLI) have
+     * their own {@code --excluded-tools} CLI flag, but that's agent-specific, not ACP.
      */
-    default boolean shouldExcludeBuiltInTools() {
+    default boolean denyBuiltInToolsViaPermissions() {
         return false;
     }
 
@@ -154,11 +159,30 @@ public interface AgentConfig {
     }
 
     /**
+     * Whether resource content (file references) must be duplicated in the text prompt.
+     * Some agents (e.g. Copilot CLI, OpenCode) don't process ACP resource references natively,
+     * so the plugin inlines the content directly into the prompt text.
+     */
+    default boolean requiresResourceDuplication() {
+        return false;
+    }
+
+    /**
+     * Whether this agent supports {@code session/message} JSON-RPC notifications.
+     * When {@code true}, startup instructions and retry guidance are sent via {@code session/message}.
+     * When {@code false}, those messages are skipped (agent reads instructions from config files or MCP prompt).
+     * Defaults to {@code true} for backwards compatibility (Junie, Copilot support it).
+     */
+    default boolean supportsSessionMessage() {
+        return true;
+    }
+
+    /**
      * Returns startup instructions to inject into the conversation via {@code session/message}
      * after session creation. This is the preferred mechanism for agents that process
      * in-conversation messages (e.g. Junie). Return {@code null} to skip.
      *
-     * <p>Agents that ignore {@code session/message} (e.g. Copilot CLI, Claude Code) use
+     * <p>Agents that ignore {@code session/message} (e.g. Copilot CLI, Claude Code, OpenCode) use
      * file-prepend via {@link InstructionsManager} instead — controlled by
      * {@link com.github.catatafishen.ideagentforcopilot.services.AgentProfile#getPrependInstructionsTo()}.
      * The two mechanisms are mutually exclusive per profile.</p>

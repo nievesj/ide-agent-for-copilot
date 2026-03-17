@@ -113,8 +113,6 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
 
     private final AgentProfile profile;
     @Nullable
-    private final ToolRegistry registry;
-    @Nullable
     private final Project project;
 
     private final HttpClient httpClient;
@@ -128,8 +126,8 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
     public AnthropicDirectClient(@NotNull AgentProfile profile,
                                  @Nullable ToolRegistry registry,
                                  @Nullable Project project) {
+        super(registry);
         this.profile = profile;
-        this.registry = registry;
         this.project = project;
         this.httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))

@@ -315,10 +315,13 @@ public abstract class AcpClient implements AgentClient {
 
         // Inject startup instructions into the conversation via session/message.
         // This is the primary mechanism for agents like Junie that read in-conversation context.
-        String instructions = agentConfig.getSessionInstructions();
-        if (instructions != null && !instructions.isEmpty()) {
-            sendPromptMessage(instructions);
-            LOG.info("Sent startup instructions via session/message (" + instructions.length() + " chars)");
+        // Skip for agents that don't support session/message (e.g. OpenCode).
+        if (agentConfig.supportsSessionMessage()) {
+            String instructions = agentConfig.getSessionInstructions();
+            if (instructions != null && !instructions.isEmpty()) {
+                sendPromptMessage(instructions);
+                LOG.info("Sent startup instructions via session/message (" + instructions.length() + " chars)");
+            }
         }
 
         LOG.info("ACP session created: " + currentSessionId + " with " +
@@ -919,16 +922,30 @@ public abstract class AcpClient implements AgentClient {
         JsonArray promptArray = new JsonArray();
 
         // Add resource references before the text prompt
+        StringBuilder fullPrompt = new StringBuilder();
         if (references != null) {
             for (ResourceReference ref : references) {
                 promptArray.add(createResourceReference(ref));
+
+                // Some agents (Copilot, OpenCode) require resource content to be duplicated
+                // in the text prompt, not just sent as references
+                if (agentConfig.requiresResourceDuplication()) {
+                    fullPrompt.append("\n\n--- ").append(ref.uri()).append(" ---\n");
+                    fullPrompt.append(ref.text()).append("\n");
+                }
             }
         }
 
-        // Add text prompt
+        // Add text prompt (with duplicated resource content if required)
+        if (agentConfig.requiresResourceDuplication() && fullPrompt.length() > 0) {
+            fullPrompt.append("\n").append(prompt);
+        } else {
+            fullPrompt.append(prompt);
+        }
+
         JsonObject promptContent = new JsonObject();
         promptContent.addProperty("type", "text");
-        promptContent.addProperty("text", prompt);
+        promptContent.addProperty("text", fullPrompt.toString());
         promptArray.add(promptContent);
         params.add(PROMPT, promptArray);
 
@@ -1420,9 +1437,11 @@ public abstract class AcpClient implements AgentClient {
                               String logSuffix, String abusePrefixedKind) {
         String rejectOptionId = findRejectOption(reqParams);
         LOG.info("ACP request_permission: DENYING " + logSuffix);
-        Map<String, Object> retryParams = buildRetryParams(abusePrefixedKind);
-        String retryMessage = (String) retryParams.get(MESSAGE);
-        sendPromptMessage(retryMessage);
+        if (agentConfig.supportsSessionMessage()) {
+            Map<String, Object> retryParams = buildRetryParams(abusePrefixedKind);
+            String retryMessage = (String) retryParams.get(MESSAGE);
+            sendPromptMessage(retryMessage);
+        }
         builtInActionDeniedDuringTurn = true;
         sendPermissionResponse(reqId, rejectOptionId);
     }
@@ -1433,9 +1452,11 @@ public abstract class AcpClient implements AgentClient {
     private void denyPermission(long reqId, @Nullable JsonObject reqParams, String permKind, String toolId) {
         String rejectOptionId = findRejectOption(reqParams);
         LOG.info("ACP request_permission: DENYING " + permKind + TOOL_PREFIX + toolId + "), option=" + rejectOptionId);
-        Map<String, Object> retryParams = buildRetryParams(permKind);
-        String retryMessage = (String) retryParams.get(MESSAGE);
-        sendPromptMessage(retryMessage);
+        if (agentConfig.supportsSessionMessage()) {
+            Map<String, Object> retryParams = buildRetryParams(permKind);
+            String retryMessage = (String) retryParams.get(MESSAGE);
+            sendPromptMessage(retryMessage);
+        }
         builtInActionDeniedDuringTurn = true;
         sendPermissionResponse(reqId, rejectOptionId);
     }

@@ -54,6 +54,7 @@ public class OpenCodeAcpClient extends AcpClient {
         p.setExcludeAgentBuiltInTools(true);
         p.setUsePluginPermissions(false);
         p.setPermissionInjectionMethod(PermissionInjectionMethod.CONFIG_JSON);
+        p.setSupportsSessionMessage(false);
         p.setAdditionalInstructions(ADDITIONAL_INSTRUCTIONS);
         return p;
     }

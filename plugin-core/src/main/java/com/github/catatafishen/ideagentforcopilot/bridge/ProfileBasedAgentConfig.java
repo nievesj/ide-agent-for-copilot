@@ -206,7 +206,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     }
 
     @Override
-    public boolean shouldExcludeBuiltInTools() {
+    public boolean denyBuiltInToolsViaPermissions() {
         return profile.isExcludeAgentBuiltInTools();
     }
 
@@ -265,6 +265,16 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
             sb.append(additional);
         }
         return sb.isEmpty() ? null : sb.toString();
+    }
+
+    @Override
+    public boolean supportsSessionMessage() {
+        return profile.isSupportsSessionMessage();
+    }
+
+    @Override
+    public boolean requiresResourceDuplication() {
+        return profile.isRequiresResourceDuplication();
     }
 
     /**
