@@ -1,5 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
+import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
+import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
@@ -7,7 +9,6 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -23,6 +24,16 @@ import java.util.regex.Pattern;
 abstract class AbstractClaudeAgentClient implements AgentClient {
 
     private static final Logger LOG = Logger.getInstance(AbstractClaudeAgentClient.class);
+
+    /**
+     * Tool registry for resolving tool kinds from categories.
+     */
+    @Nullable
+    protected final ToolRegistry registry;
+
+    protected AbstractClaudeAgentClient(@Nullable ToolRegistry registry) {
+        this.registry = registry;
+    }
 
     // ── Claude model defaults ────────────────────────────────────────────────
 
@@ -114,37 +125,6 @@ abstract class AbstractClaudeAgentClient implements AgentClient {
         return name;
     }
 
-    // ── Tool kind resolution ─────────────────────────────────────────────────
-
-    private static final Set<String> EXECUTE_TOOLS = Set.of(
-        "bash", "run_command", "run_in_terminal", "run_tests", "build_project",
-        "run_configuration", "run_scratch_file", "run_inspections", "run_sonarqube_analysis",
-        "run_qodana", "git_commit", "git_push", "git_pull", "git_merge", "git_rebase",
-        "git_reset", "git_fetch", "git_stash", "git_cherry_pick", "git_tag"
-    );
-
-    protected static SessionUpdate.ToolKind resolveToolKind(@NotNull String name) {
-        String lower = name.toLowerCase();
-        if (EXECUTE_TOOLS.contains(lower)
-            || lower.startsWith("run_") || lower.startsWith("build_")) return SessionUpdate.ToolKind.EXECUTE;
-        if (lower.startsWith("write_") || lower.startsWith("create_") || lower.startsWith("delete_")
-            || lower.startsWith("edit_") || lower.startsWith("move_") || lower.startsWith("rename_")
-            || lower.startsWith("replace_") || lower.startsWith("insert_") || lower.startsWith("format_")
-            || lower.startsWith("apply_") || lower.startsWith("suppress_") || lower.startsWith("intellij_write")
-            || lower.startsWith("optimize_") || lower.startsWith("update_") || lower.startsWith("add_to")
-            || lower.equals("undo") || lower.equals("redo") || lower.equals("refactor"))
-            return SessionUpdate.ToolKind.EDIT;
-        if (lower.startsWith("search_") || lower.startsWith("find_")
-            || lower.equals("grep") || lower.equals("glob")) return SessionUpdate.ToolKind.SEARCH;
-        if (lower.startsWith("read_") || lower.startsWith("get_") || lower.startsWith("list_")
-            || lower.startsWith("intellij_read") || lower.equals("view")
-            || lower.equals("web_fetch") || lower.equals("web_search")
-            || lower.startsWith("git_status") || lower.startsWith("git_diff")
-            || lower.startsWith("git_log") || lower.startsWith("git_blame")
-            || lower.startsWith("git_show")) return SessionUpdate.ToolKind.READ;
-        return SessionUpdate.ToolKind.OTHER;
-    }
-
     // ── sessionUpdate emission ───────────────────────────────────────────────
 
     protected void emitToolCallStart(@NotNull String toolUseId, @NotNull String toolName,
@@ -156,8 +136,16 @@ abstract class AbstractClaudeAgentClient implements AgentClient {
         String agentType = input.has("agent_type") ? input.get("agent_type").getAsString() : null;
         String subAgentDesc = agentType != null && input.has("description") ? input.get("description").getAsString() : null;
         String subAgentPrompt = agentType != null && input.has("prompt") ? input.get("prompt").getAsString() : null;
+        // Get kind from tool registry
+        SessionUpdate.ToolKind kind = SessionUpdate.ToolKind.OTHER;
+        if (registry != null) {
+            ToolDefinition tool = registry.findById(normalized);
+            if (tool != null) {
+                kind = SessionUpdate.ToolKind.fromCategory(tool.category());
+            }
+        }
         onUpdate.accept(new SessionUpdate.ToolCall(
-            toolUseId, normalized, resolveToolKind(normalized), args, List.of(),
+            toolUseId, normalized, kind, args, List.of(),
             agentType, subAgentDesc, subAgentPrompt));
     }
 

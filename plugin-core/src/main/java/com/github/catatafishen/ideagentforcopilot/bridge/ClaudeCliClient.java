@@ -108,12 +108,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     private String resolvedBinaryPath;
 
-    @SuppressWarnings("unused") // registry reserved for future PSI tool integration
     public ClaudeCliClient(@NotNull AgentProfile profile,
                            @NotNull AgentConfig config,
                            @Nullable ToolRegistry registry,
                            @Nullable Project project,
                            int mcpPort) {
+        super(registry);
         this.profile = profile;
         this.config = config;
         this.project = project;
@@ -564,16 +564,20 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     }
 
     private void emitToolCallStart(@NotNull JsonObject event, @Nullable Consumer<SessionUpdate> onUpdate) {
+        LOG.info("[tool_use event] raw: " + event);
         String id = event.has("id") ? event.get("id").getAsString() : UUID.randomUUID().toString();
         String name = event.has("name") ? event.get("name").getAsString() : "tool";
         JsonObject input = event.has(FIELD_INPUT) ? event.getAsJsonObject(FIELD_INPUT) : new JsonObject();
+        LOG.info("[tool_use event] extracted: id=" + id + ", name=" + name + ", input=" + input);
         emitToolCallStart(id, name, input, onUpdate);
     }
 
     private void emitToolCallEnd(@NotNull JsonObject event, @Nullable Consumer<SessionUpdate> onUpdate) {
+        LOG.info("[tool_result event] raw: " + event);
         String toolUseId = event.has("tool_use_id") ? event.get("tool_use_id").getAsString() : "";
         boolean isError = event.has("is_error") && event.get("is_error").getAsBoolean();
         String content = extractToolResultContent(event);
+        LOG.info("[tool_result event] extracted: toolUseId=" + toolUseId + ", isError=" + isError + ", contentLen=" + content.length());
         emitToolCallEnd(toolUseId, content, !isError, onUpdate);
     }
 

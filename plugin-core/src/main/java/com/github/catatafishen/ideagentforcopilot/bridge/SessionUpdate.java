@@ -55,6 +55,22 @@ public sealed interface SessionUpdate
             }
             return OTHER;
         }
+
+        /**
+         * Maps a {@link com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.Category}
+         * to a {@link ToolKind} for UI chip styling.
+         */
+        public static ToolKind fromCategory(@Nullable Object category) {
+            if (category == null) return OTHER;
+            String catName = category.toString();
+            return switch (catName) {
+                case "SEARCH" -> SEARCH;
+                case "FILE", "EDITOR", "REFACTOR" -> EDIT;
+                case "BUILD", "RUN", "TERMINAL", "SHELL", "GIT" -> EXECUTE;
+                case "CODE_QUALITY", "TESTING", "IDE", "PROJECT", "INFRASTRUCTURE" -> READ;
+                default -> OTHER;
+            };
+        }
     }
 
     /**

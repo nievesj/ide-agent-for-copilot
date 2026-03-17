@@ -128,6 +128,9 @@ public abstract class AcpClient implements AgentClient {
     private static final String KIND_BASH = "bash";
     private static final String KIND_EXECUTE = "execute";
 
+    // Pending tool calls waiting for arguments (OpenCode sends args in tool_call_update, not initial tool_call)
+    private final ConcurrentHashMap<String, JsonObject> pendingToolCalls = new ConcurrentHashMap<>();
+
     /**
      * Built-in write/execute tools that sub-agents must not use.
      * These go through request_permission, so we can deny them.
@@ -645,8 +648,8 @@ public abstract class AcpClient implements AgentClient {
         if (type == null) return;
 
         switch (type) {
-            case TOOL_CALL -> onUpdate.accept(buildToolCallEvent(update));
-            case TOOL_CALL_UPDATE -> onUpdate.accept(buildToolCallUpdateEvent(update));
+            case TOOL_CALL -> handleToolCallEvent(update, onUpdate);
+            case TOOL_CALL_UPDATE -> handleToolCallUpdateEvent(update, onUpdate);
             case AGENT_THOUGHT -> {
                 String text = extractContentText(update);
                 if (text != null && !text.isEmpty()) onUpdate.accept(new SessionUpdate.AgentThought(text));
@@ -664,18 +667,74 @@ public abstract class AcpClient implements AgentClient {
         }
     }
 
+    /**
+     * Handle tool_call events. OpenCode sends arguments in tool_call_update, not initial tool_call,
+     * so we defer emitting the ToolCall until we receive an update with populated arguments.
+     */
+    private void handleToolCallEvent(@NotNull JsonObject update, @NotNull Consumer<SessionUpdate> onUpdate) {
+        String toolCallId = update.has(TOOL_CALL_ID_KEY) ? update.get(TOOL_CALL_ID_KEY).getAsString() : "";
+        String args = extractAcpArguments(update);
+        boolean hasArgs = args != null && !args.isEmpty() && !args.equals("{}");
+
+        if (hasArgs) {
+            // Arguments present (Claude CLI style) - emit immediately
+            onUpdate.accept(buildToolCallEvent(update));
+        } else {
+            // No arguments (OpenCode style) - defer until we get an update with args
+            LOG.info("[ACP tool_call] Deferring toolCallId=" + toolCallId + " (no arguments yet)");
+            pendingToolCalls.put(toolCallId, update);
+        }
+    }
+
+    /**
+     * Handle tool_call_update events. If there's a pending deferred tool call, emit it with merged arguments.
+     */
+    private void handleToolCallUpdateEvent(@NotNull JsonObject update, @NotNull Consumer<SessionUpdate> onUpdate) {
+        String toolCallId = update.has(TOOL_CALL_ID_KEY) ? update.get(TOOL_CALL_ID_KEY).getAsString() : "";
+
+        // Check if we have a deferred tool call waiting for arguments
+        JsonObject pendingCall = pendingToolCalls.remove(toolCallId);
+        if (pendingCall != null) {
+            // Merge arguments from update into the pending call and emit
+            String args = extractAcpArguments(update);
+            if (args != null && !args.isEmpty() && !args.equals("{}")) {
+                // Copy rawInput from update to pending call
+                if (update.has(RAW_INPUT_KEY)) {
+                    pendingCall.add(RAW_INPUT_KEY, update.get(RAW_INPUT_KEY));
+                }
+            }
+            LOG.info("[ACP tool_call] Emitting deferred toolCallId=" + toolCallId + " with args from update");
+            onUpdate.accept(buildToolCallEvent(pendingCall));
+        }
+
+        // Always emit the update
+        onUpdate.accept(buildToolCallUpdateEvent(update));
+    }
+
     @NotNull
     private SessionUpdate.ToolCall buildToolCallEvent(@NotNull JsonObject update) {
+        LOG.info("[ACP tool_call event] raw: " + update);
         String toolCallId = update.has(TOOL_CALL_ID_KEY) ? update.get(TOOL_CALL_ID_KEY).getAsString() : "";
         String rawTitle = update.has(TITLE_KEY) ? update.get(TITLE_KEY).getAsString() : "tool";
         String title = normalizeToolName(rawTitle);
-        SessionUpdate.ToolKind kind = SessionUpdate.ToolKind.fromString(update.has(KIND_KEY) ? update.get(KIND_KEY).getAsString() : null);
+        // Use protocol's kind if present and specific, otherwise get from tool registry.
+        // Some ACP implementations (e.g., OpenCode) send "kind":"other" for all tools.
+        String kindStr = update.has(KIND_KEY) ? update.get(KIND_KEY).getAsString() : null;
+        SessionUpdate.ToolKind kind = kindStr != null
+            ? SessionUpdate.ToolKind.fromString(kindStr)
+            : SessionUpdate.ToolKind.OTHER;
+        if (kind == SessionUpdate.ToolKind.OTHER && registry != null) {
+            ToolDefinition tool = registry.findById(title);
+            if (tool != null) {
+                kind = SessionUpdate.ToolKind.fromCategory(tool.category());
+            }
+        }
         String args = extractAcpArguments(update);
         List<String> filePaths = extractFilePaths(update, title);
         String agentType = extractSubAgentField(args, AGENT_TYPE_KEY);
         String subAgentDesc = agentType != null ? extractSubAgentField(args, DESCRIPTION) : null;
         String subAgentPrompt = agentType != null ? extractSubAgentField(args, PROMPT) : null;
-        LOG.debug("Tool call: id=" + toolCallId + ", title=" + title + ", kind=" + kind + ", hasArgs=" + (args != null));
+        LOG.info("[ACP tool_call event] extracted: id=" + toolCallId + ", title=" + title + ", kind=" + kind + ", args=" + args);
 
         return new SessionUpdate.ToolCall(toolCallId, title, kind, args, filePaths, agentType, subAgentDesc, subAgentPrompt);
     }
@@ -698,12 +757,13 @@ public abstract class AcpClient implements AgentClient {
 
     @NotNull
     private SessionUpdate.ToolCallUpdate buildToolCallUpdateEvent(@NotNull JsonObject update) {
+        LOG.info("[ACP tool_call_update event] raw: " + update);
         String toolCallId = update.has(TOOL_CALL_ID_KEY) ? update.get(TOOL_CALL_ID_KEY).getAsString() : "";
         SessionUpdate.ToolCallStatus status = SessionUpdate.ToolCallStatus.fromString(update.has(STATUS_KEY) ? update.get(STATUS_KEY).getAsString() : null);
         String result = extractAcpResult(update);
         String error = update.has(ERROR) ? update.get(ERROR).getAsString() : null;
         int resultLen = result != null ? result.length() : 0;
-        LOG.debug("Tool update: id=" + toolCallId + ", status=" + status + ", resultLen=" + resultLen + ", hasError=" + (error != null));
+        LOG.info("[ACP tool_call_update event] extracted: id=" + toolCallId + ", status=" + status + ", resultLen=" + resultLen + ", result=" + (result != null ? result.substring(0, Math.min(200, result.length())) : null));
         if (resultLen == 0 && error == null) {
             LOG.warn("Tool update with empty result: " + update);
         }
@@ -757,9 +817,21 @@ public abstract class AcpClient implements AgentClient {
 
     @Nullable
     private String extractAcpResult(@NotNull JsonObject update) {
+        // OpenCode sends results in rawOutput.output
+        if (update.has("rawOutput")) {
+            JsonElement rawOutput = update.get("rawOutput");
+            if (rawOutput.isJsonObject()) {
+                JsonObject rawOutputObj = rawOutput.getAsJsonObject();
+                if (rawOutputObj.has(OUTPUT_KEY)) {
+                    JsonElement output = rawOutputObj.get(OUTPUT_KEY);
+                    if (output.isJsonPrimitive()) return output.getAsString();
+                    if (output.isJsonObject() || output.isJsonArray()) return output.toString();
+                }
+            }
+        }
         // Try various keys that different agents use for tool results
         for (String key : new String[]{RESULT, CONTENT, OUTPUT_KEY, TOOL_RESULT_KEY, "result_text", "resultText",
-                "text", "response", "data", "value", "message"}) {
+            "text", "response", "data", "value", "message"}) {
             if (!update.has(key)) continue;
             if (CONTENT.equals(key)) return extractContentText(update);
             com.google.gson.JsonElement el = update.get(key);
@@ -790,8 +862,21 @@ public abstract class AcpClient implements AgentClient {
         StringBuilder sb = new StringBuilder();
         for (com.google.gson.JsonElement item : array) {
             if (item.isJsonObject()) {
-                com.google.gson.JsonElement text = item.getAsJsonObject().get("text");
-                if (text != null) sb.append(text.getAsString());
+                JsonObject itemObj = item.getAsJsonObject();
+                // Direct text field
+                if (itemObj.has("text")) {
+                    sb.append(itemObj.get("text").getAsString());
+                }
+                // OpenCode nested: content[].content.text
+                else if (itemObj.has(CONTENT)) {
+                    JsonElement nested = itemObj.get(CONTENT);
+                    if (nested.isJsonObject()) {
+                        JsonObject nestedObj = nested.getAsJsonObject();
+                        if (nestedObj.has("text")) {
+                            sb.append(nestedObj.get("text").getAsString());
+                        }
+                    }
+                }
             } else if (item.isJsonPrimitive()) {
                 sb.append(item.getAsString());
             }
