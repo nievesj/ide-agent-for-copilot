@@ -519,7 +519,7 @@ class AcpProtocolRegressionTest {
      */
     @Test
     void testMcpToolPermissionIsApproved() {
-        JsonObject params = MockAcpServer.buildRequestPermission("s1", "call_003", "other", "intellij_write_file");
+        JsonObject params = MockAcpServer.buildRequestPermission("s1", "call_003", "other", "write_file");
 
         JsonObject toolCall = params.getAsJsonObject("toolCall");
         assertEquals("other", toolCall.get("kind").getAsString());

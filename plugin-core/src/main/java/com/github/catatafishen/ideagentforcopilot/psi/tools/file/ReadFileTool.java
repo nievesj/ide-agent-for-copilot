@@ -31,7 +31,7 @@ public class ReadFileTool extends FileTool {
 
     @Override
     public @NotNull String id() {
-        return "intellij_read_file";
+        return "read_file";
     }
 
     @Override
@@ -123,13 +123,28 @@ public class ReadFileTool extends FileTool {
 
     private String applyReadHintAndTruncate(String content, String hint) {
         String[] lines = content.split("\n", -1);
-        if (lines.length > MAX_READ_LINES) {
-            String truncated = String.join("\n", Arrays.copyOfRange(lines, 0, MAX_READ_LINES));
-            String header = "[Large file: " + lines.length + " lines total — showing first " + MAX_READ_LINES
-                + " lines. Use start_line/end_line to read specific sections.]\n";
-            return (hint != null ? hint + "\n" : "") + header + truncated;
+        int totalLines = lines.length;
+        StringBuilder sb = new StringBuilder();
+
+        // Always show total line count
+        if (totalLines > 0) {
+            sb.append("[").append(totalLines).append(" lines total]\n");
         }
-        return hint != null ? hint + "\n" + content : content;
+
+        if (hint != null) {
+            sb.append(hint).append("\n");
+        }
+
+        if (totalLines > MAX_READ_LINES) {
+            String truncated = String.join("\n", Arrays.copyOfRange(lines, 0, MAX_READ_LINES));
+            sb.append("[Showing first ").append(MAX_READ_LINES)
+                .append(" lines. Use start_line/end_line to read specific sections.]\n");
+            sb.append(truncated);
+        } else {
+            sb.append(content);
+        }
+
+        return sb.toString();
     }
 
     private static String extractLineRange(String content, int startLine, int endLine) {

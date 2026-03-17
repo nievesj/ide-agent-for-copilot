@@ -31,8 +31,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Writes full file content or creates a new file through IntelliJ's editor buffer.
- * Also serves as the base for {@link WriteFileAliasTool} and {@link EditTextTool}
- * which share the same write logic.
+ * Also serves as the base for {@link EditTextTool} which shares the same write logic.
  */
 @SuppressWarnings("java:S112")
 public class WriteFileTool extends FileTool {
@@ -54,7 +53,7 @@ public class WriteFileTool extends FileTool {
 
     @Override
     public @NotNull String id() {
-        return "intellij_write_file";
+        return "write_file";
     }
 
     @Override

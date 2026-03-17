@@ -110,8 +110,8 @@ public final class PsiBridgeService implements Disposable {
         connection.subscribe(com.intellij.openapi.actionSystem.ex.AnActionListener.TOPIC, new com.intellij.openapi.actionSystem.ex.AnActionListener() {
             @Override
             public void afterActionPerformed(@NotNull com.intellij.openapi.actionSystem.AnAction action,
-                                           @NotNull com.intellij.openapi.actionSystem.AnActionEvent event,
-                                           @NotNull com.intellij.openapi.actionSystem.AnActionResult result) {
+                                             @NotNull com.intellij.openapi.actionSystem.AnActionEvent event,
+                                             @NotNull com.intellij.openapi.actionSystem.AnActionResult result) {
                 try {
                     PlatformApiCompat.syncPublisher(project, FOCUS_RESTORE_TOPIC).restoreFocus();
                 } catch (Exception e) {
@@ -452,17 +452,16 @@ public final class PsiBridgeService implements Disposable {
      */
     private static boolean isWriteToolName(String toolName) {
         return switch (toolName) {
-            case "write_file", "intellij_write_file", "edit_text",
-                 "create_file", "replace_symbol_body",
-                 "insert_before_symbol", "insert_after_symbol" -> true;
+            case "write_file", "edit_text", "create_file",
+                 "replace_symbol_body", "insert_before_symbol",
+                 "insert_after_symbol" -> true;
             default -> false;
         };
     }
 
     private static boolean isSuccessfulWrite(String toolName, String result) {
         return switch (toolName) {
-            case "write_file", "intellij_write_file", "edit_text" ->
-                result.startsWith("Edited:") || result.startsWith("Written:");
+            case "write_file", "edit_text" -> result.startsWith("Edited:") || result.startsWith("Written:");
             case "create_file" -> result.startsWith("✓ Created file:");
             case "replace_symbol_body" -> result.startsWith("Replaced lines ");
             case "insert_before_symbol" -> result.startsWith("Inserted ") && result.contains(" before ");
