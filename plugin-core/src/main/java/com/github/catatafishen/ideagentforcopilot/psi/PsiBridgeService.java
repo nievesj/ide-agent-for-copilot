@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
 import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
+import com.github.catatafishen.ideagentforcopilot.services.ToolExecutionCorrelator;
 import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.JsonElement;
@@ -163,11 +164,16 @@ public final class PsiBridgeService implements Disposable {
         // Only restore focus afterward if it was active before (don't steal focus if user switched away)
         boolean chatWasActive = isChatToolWindowActive();
 
-        // Serialize non-read-only tool calls to prevent EDT flooding.
-        // Multiple concurrent write/heavy operations each posting lambdas via invokeLater
-        // can saturate the EDT queue and cause the IDE to freeze.
-        boolean needsLock = !def.isReadOnly();
-        if (needsLock) {
+        // Determine if this tool requires synchronous execution (file/git/editing tools).
+        // ToolExecutionCorrelator handles per-tool locking and result recording for correlation.
+        ToolExecutionCorrelator correlator = ToolExecutionCorrelator.getInstance(project);
+        boolean requiresSync = correlator.requiresSync(def);
+
+        // For backward compatibility: still use global write semaphore for slow operations
+        // that aren't in the sync categories. This prevents EDT flooding from concurrent
+        // heavy operations (build, test, etc.) that don't need ordering guarantees.
+        boolean needsGlobalLock = !def.isReadOnly() && !requiresSync;
+        if (needsGlobalLock) {
             String lockError = acquireWriteLock(toolName, startMs);
             if (lockError != null) return lockError;
         }
@@ -195,7 +201,11 @@ public final class PsiBridgeService implements Disposable {
                 return denied;
             }
 
-            String result = def.execute(arguments);
+            // Execute tool with optional synchronization and record result for correlation.
+            // This replaces the direct def.execute() call and handles:
+            // 1. Per-tool synchronization for file/git/editing tools
+            // 2. Recording execution (tool name, args, result) for later matching with agent updates
+            String result = correlator.executeAndRecord(toolName, arguments, def, requiresSync);
 
             // Piggyback highlights after successful write operations
             if (isSuccessfulWrite(toolName, result) && daemonWaiter != null) {
@@ -211,7 +221,7 @@ public final class PsiBridgeService implements Disposable {
             success = false;
             return "Error: " + e.getMessage();
         } finally {
-            if (needsLock) writeToolSemaphore.release();
+            if (needsGlobalLock) writeToolSemaphore.release();
             fireToolCallEvent(toolName, startMs, success);
             // Only restore focus if chat was active before the tool call
             if (chatWasActive) {
