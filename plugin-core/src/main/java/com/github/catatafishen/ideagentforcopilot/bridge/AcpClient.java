@@ -15,6 +15,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -60,6 +61,7 @@ public abstract class AcpClient implements AgentClient {
     private static final String CONTENT = "content";
     private static final String UNKNOWN = "unknown";
     private static final String RUN_COMMAND_ABUSE_PREFIX = "run_command_abuse:";
+    private static final String MCP_SERVERS_KEY = "mcpServers";
     private static final String GIT_WRITE_ABUSE_PREFIX = "git_write_abuse:";
     private static final String USER_HOME = "user.home";
     private static final String TITLE_KEY = "title";
@@ -91,13 +93,19 @@ public abstract class AcpClient implements AgentClient {
     protected final String projectBasePath; // Project path for config-dir (protected for subclass access)
     @Nullable
     protected final ToolRegistry registry;
-    private final AgentConfig agentConfig;
-    private final AgentSettings agentSettings;
-    private final int mcpPort;
+    protected final AgentConfig agentConfig;
+    protected final AgentSettings agentSettings;
+    protected final int mcpPort;
     /**
      * Prefix used to strip the MCP server name from incoming tool-call names (e.g. "intellij-code-tools-").
      */
     protected volatile String effectiveMcpPrefix = "intellij-code-tools-";
+
+    /**
+     * Prefix used when identifying tool calls in the log or for permission mapping.
+     * Default matches GitHub Copilot style.
+     */
+    protected String logMcpPrefix = "intellij-code-tools-";
     private Process process;
     private BufferedWriter writer;
     private Thread readerThread;
@@ -182,6 +190,40 @@ public abstract class AcpClient implements AgentClient {
         this.registry = registry;
         this.projectBasePath = projectBasePath;
         this.mcpPort = mcpPort;
+    }
+
+    @Nullable
+    protected String resolveMcpTemplate(@NotNull String template) {
+        String resolved = template.replace("{mcpPort}", String.valueOf(mcpPort));
+
+        if (resolved.contains("{mcpJarPath}")) {
+            String jarPath = McpServerJarLocator.findMcpServerJar();
+            if (jarPath == null) {
+                LOG.warn("MCP server JAR not found — IntelliJ tools will be unavailable for "
+                    + agentConfig.getDisplayName());
+                return null;
+            }
+            resolved = resolved.replace("{mcpJarPath}", jarPath);
+        }
+
+        if (resolved.contains("{javaPath}")) {
+            String javaPath = resolveJavaPath();
+            if (javaPath == null) {
+                LOG.warn("Java binary not found — IntelliJ tools will be unavailable for "
+                    + agentConfig.getDisplayName());
+                return null;
+            }
+            resolved = resolved.replace("{javaPath}", javaPath);
+        }
+
+        return resolved;
+    }
+
+    @Nullable
+    protected static String resolveJavaPath() {
+        String javaExe = System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java";
+        String javaPath = System.getProperty("java.home") + File.separator + "bin" + File.separator + javaExe;
+        return new File(javaPath).exists() ? javaPath : null;
     }
 
     /**
@@ -311,12 +353,29 @@ public abstract class AcpClient implements AgentClient {
         JsonObject params = new JsonObject();
         params.addProperty("cwd", cwd != null ? cwd : System.getProperty(USER_HOME));
 
-        // mcpServers must be an array in session/new (agent validates this)
-        // MCP servers are configured via --additional-mcp-config CLI flag
-        // Empty array here because servers are loaded from the config file
-        params.add("mcpServers", new JsonArray());
-
-        LOG.info("Creating session (MCP servers configured via --additional-mcp-config)");
+        // mcpServers format depends on agent: Kiro uses object (keyed by name), others may use array
+        if (agentConfig.requiresMcpInSessionNew()) {
+            String template = agentConfig.getMcpConfigTemplate();
+            if (template != null && !template.isEmpty()) {
+                String resolved = resolveMcpTemplate(template);
+                if (resolved != null) {
+                    try {
+                        JsonObject mcpConfig = JsonParser.parseString(resolved).getAsJsonObject();
+                        if (mcpConfig.has(MCP_SERVERS_KEY)) {
+                            // Pass the mcpServers object directly (Kiro expects object keyed by server name)
+                            JsonObject serversObj = mcpConfig.getAsJsonObject(MCP_SERVERS_KEY);
+                            params.add(MCP_SERVERS_KEY, serversObj);
+                            LOG.info("Creating session with " + serversObj.size() + " injected MCP servers");
+                        }
+                    } catch (Exception e) {
+                        LOG.warn("Failed to parse MCP config for session/new injection", e);
+                        LOG.info("Creating session (MCP servers configured via CLI or filesystem)");
+                    }
+                }
+            }
+        } else {
+            LOG.info("Creating session (MCP servers configured via CLI or filesystem)");
+        }
 
         JsonObject result = sendRequest("session/new", params);
 
@@ -382,6 +441,20 @@ public abstract class AcpClient implements AgentClient {
      */
     public void setModel(@NotNull String sessionId, @NotNull String modelId) throws AcpException {
         ensureStarted();
+        if (availableModels != null && !availableModels.isEmpty()) {
+            boolean supported = false;
+            for (Model m : availableModels) {
+                if (m.getId().equalsIgnoreCase(modelId)) {
+                    supported = true;
+                    break;
+                }
+            }
+            if (!supported) {
+                LOG.warn("Requested model " + modelId + " is not supported by the agent. Available models: " +
+                    availableModels.stream().map(Model::getId).collect(java.util.stream.Collectors.joining(", ")));
+                return;
+            }
+        }
         JsonObject params = new JsonObject();
         params.addProperty(SESSION_ID, sessionId);
         params.addProperty("modelId", modelId);
@@ -713,12 +786,14 @@ public abstract class AcpClient implements AgentClient {
             // Merge arguments from update into the pending call and emit
             String args = extractAcpArguments(update);
             if (args != null && !args.isEmpty() && !args.equals("{}")) {
-                // Copy rawInput from update to pending call
-                if (update.has(RAW_INPUT_KEY)) {
-                    pendingCall.add(RAW_INPUT_KEY, update.get(RAW_INPUT_KEY));
+                // Transfer any argument-like keys found in update to pendingCall
+                for (String key : new String[]{ARGUMENTS_KEY, INPUT_KEY, RAW_INPUT_KEY, CONTENT, TITLE_KEY, KIND_KEY}) {
+                    if (update.has(key)) {
+                        pendingCall.add(key, update.get(key));
+                    }
                 }
             }
-            LOG.info("[ACP tool_call] Emitting deferred toolCallId=" + toolCallId + " with args from update");
+            LOG.info("[ACP tool_call] Emitting deferred toolCallId=" + toolCallId + " with merged info from update");
             onUpdate.accept(buildToolCallEvent(pendingCall));
         }
 
@@ -798,6 +873,16 @@ public abstract class AcpClient implements AgentClient {
             com.google.gson.JsonElement el = update.get(key);
             if (el.isJsonPrimitive()) return el.getAsString();
             if (el.isJsonObject() || el.isJsonArray()) return gson.toJson(el);
+        }
+        // Fallback: look in content for JSON-formatted arguments (common for Junie)
+        if (update.has(CONTENT)) {
+            String text = extractContentText(update);
+            if (text != null && !text.isEmpty()) {
+                String trimmed = text.trim();
+                if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                    return trimmed;
+                }
+            }
         }
         return null;
     }
@@ -942,17 +1027,21 @@ public abstract class AcpClient implements AgentClient {
         // Add resource references before the text prompt
         StringBuilder fullPrompt = new StringBuilder();
         boolean sendResourceRefs = agentConfig.sendResourceReferences();
+        boolean duplicateResources = agentConfig.requiresResourceDuplication();
+
         if (references != null) {
             for (ResourceReference ref : references) {
                 // Some agents (e.g. OpenCode) don't support ACP resource references;
                 // for those, skip sending them and rely on inlined content instead.
-                if (sendResourceRefs) {
+                // ALSO skip if we're already duplicating content in the text prompt
+                // (redundancy requested to be fixed for Junie).
+                if (sendResourceRefs && !duplicateResources) {
                     promptArray.add(createResourceReference(ref));
                 }
 
-                // Some agents (Copilot, OpenCode) require resource content to be duplicated
+                // Some agents (Copilot, OpenCode, Junie) require resource content to be duplicated
                 // in the text prompt, not just sent as references
-                if (agentConfig.requiresResourceDuplication()) {
+                if (duplicateResources) {
                     fullPrompt.append("\n\n--- ").append(ref.uri()).append(" ---\n");
                     fullPrompt.append(ref.text()).append("\n");
                 }
@@ -960,15 +1049,24 @@ public abstract class AcpClient implements AgentClient {
         }
 
         // Add text prompt (with duplicated resource content if required)
-        if (agentConfig.requiresResourceDuplication() && fullPrompt.length() > 0) {
+        if (duplicateResources && fullPrompt.length() > 0) {
             fullPrompt.append("\n").append(prompt);
         } else {
             fullPrompt.append(prompt);
         }
 
+        String finalPromptText = fullPrompt.toString();
+
+        // JUNIE WORKAROUND: If the prompt starts with '/' (or common command patterns),
+        // it might be misinterpreted as a slash command. Prepend a space to bypass
+        // the parser while keeping it readable.
+        if (finalPromptText.trim().startsWith("/") || finalPromptText.startsWith("\n/")) {
+            finalPromptText = " " + finalPromptText;
+        }
+
         JsonObject promptContent = new JsonObject();
         promptContent.addProperty("type", "text");
-        promptContent.addProperty("text", fullPrompt.toString());
+        promptContent.addProperty("text", finalPromptText);
         promptArray.add(promptContent);
         params.add(PROMPT, promptArray);
 
@@ -1379,7 +1477,7 @@ public abstract class AcpClient implements AgentClient {
      */
     private void handleAgentRequest(JsonObject msg) {
         String reqMethod = msg.get(METHOD).getAsString();
-        long reqId = msg.get("id").getAsLong();
+        String reqId = msg.get("id").getAsString();
         LOG.info("ACP agent request: " + reqMethod + " id=" + reqId);
 
         if ("session/request_permission".equals(reqMethod)) {
@@ -1394,7 +1492,7 @@ public abstract class AcpClient implements AgentClient {
      * Denies built-in write operations (edit, create), so the agent retries with IntelliJ MCP tools.
      * Auto-approves everything else (MCP tool calls, shell, reads).
      */
-    private void handlePermissionRequest(long reqId, @Nullable JsonObject reqParams) {
+    private void handlePermissionRequest(String reqId, @Nullable JsonObject reqParams) {
         String permKind = "";
         String permTitle = "";
         JsonObject toolCall = null;
@@ -1442,7 +1540,7 @@ public abstract class AcpClient implements AgentClient {
      *   <li>Built-in write tool blocking for sub-agents (fallback for unknown tools)</li>
      * </ol>
      */
-    private boolean checkAbuseAndDeny(long reqId, @Nullable JsonObject reqParams, @Nullable JsonObject toolCall) {
+    private boolean checkAbuseAndDeny(String reqId, @Nullable JsonObject reqParams, @Nullable JsonObject toolCall) {
         String toolId = resolveToolId(
             toolCall != null && toolCall.has("kind") ? toolCall.get("kind").getAsString() : null,
             toolCall);
@@ -1489,7 +1587,7 @@ public abstract class AcpClient implements AgentClient {
     /**
      * Deny a permission request for a detected abuse pattern, sending pre-rejection guidance first.
      */
-    private void denyForAbuse(long reqId, @Nullable JsonObject reqParams,
+    private void denyForAbuse(String reqId, @Nullable JsonObject reqParams,
                               String logSuffix, String abusePrefixedKind) {
         String rejectOptionId = findRejectOption(reqParams);
         LOG.info("ACP request_permission: DENYING " + logSuffix);
@@ -1505,7 +1603,7 @@ public abstract class AcpClient implements AgentClient {
     /**
      * Handle a DENY permission: send guidance before rejecting so the agent can retry.
      */
-    private void denyPermission(long reqId, @Nullable JsonObject reqParams, String permKind, String toolId) {
+    private void denyPermission(String reqId, @Nullable JsonObject reqParams, String permKind, String toolId) {
         String rejectOptionId = findRejectOption(reqParams);
         LOG.info("ACP request_permission: DENYING " + permKind + TOOL_PREFIX + toolId + "), option=" + rejectOptionId);
         if (agentConfig.supportsSessionMessage()) {
@@ -1520,7 +1618,7 @@ public abstract class AcpClient implements AgentClient {
     /**
      * Handle an ASK permission: prompt the UI and block until user responds (120s timeout).
      */
-    private void handleAskPermission(long reqId, @Nullable JsonObject reqParams,
+    private void handleAskPermission(String reqId, @Nullable JsonObject reqParams,
                                      String toolId, String permKind) {
         var listener = permissionRequestListener.get();
         if (listener == null) {
@@ -1568,7 +1666,7 @@ public abstract class AcpClient implements AgentClient {
         return context.toString();
     }
 
-    private void dispatchPermissionResponse(PermissionResponse response, long reqId,
+    private void dispatchPermissionResponse(PermissionResponse response, String reqId,
                                             @Nullable JsonObject reqParams, String toolId) {
         switch (response) {
             case ALLOW_SESSION -> {
@@ -1591,7 +1689,7 @@ public abstract class AcpClient implements AgentClient {
     /**
      * Handle an ALLOW permission: auto-approve the tool call.
      */
-    private void allowPermission(long reqId, @Nullable JsonObject reqParams,
+    private void allowPermission(String reqId, @Nullable JsonObject reqParams,
                                  String permKind, String toolId) {
         String allowOptionId = findAllowOption(reqParams);
         LOG.info("ACP request_permission: auto-approving " + permKind + TOOL_PREFIX + toolId + "), option=" + allowOptionId);
@@ -1731,7 +1829,7 @@ public abstract class AcpClient implements AgentClient {
      * Returns a map with "message" key containing the instruction text.
      */
     private Map<String, Object> buildRetryParams(@NotNull String deniedKind) {
-        String p = effectiveMcpPrefix; // shorthand for tool name prefixing
+        String p = logMcpPrefix; // shorthand for tool name prefixing in logs/messages
         String instruction;
 
         // Specific guidance for excluded built-in tools
@@ -1794,7 +1892,7 @@ public abstract class AcpClient implements AgentClient {
     }
 
     @SuppressWarnings("SameParameterValue") // Error code is standard JSON-RPC -32_601 for "Method not found"
-    private void sendErrorResponse(long reqId, int code, String message) {
+    private void sendErrorResponse(String reqId, int code, String message) {
         JsonObject response = new JsonObject();
         response.addProperty(JSONRPC, "2.0");
         response.addProperty("id", reqId);
@@ -1833,7 +1931,7 @@ public abstract class AcpClient implements AgentClient {
         return "reject_once";
     }
 
-    private void sendPermissionResponse(long reqId, String optionId) {
+    private void sendPermissionResponse(String reqId, String optionId) {
         JsonObject response = new JsonObject();
         response.addProperty(JSONRPC, "2.0");
         response.addProperty("id", reqId);
