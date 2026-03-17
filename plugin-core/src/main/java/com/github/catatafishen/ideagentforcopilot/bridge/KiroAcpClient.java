@@ -96,7 +96,8 @@ public class KiroAcpClient extends AcpClient {
             + "\"mcpServers\":["
             + "{"
             + "\"command\":\"{javaPath}\","
-            + "\"args\":[\"-jar\",\"{mcpJarPath}\",\"--port\",\"{mcpPort}\"]"
+            + "\"args\":[\"-jar\",\"{mcpJarPath}\",\"--port\",\"{mcpPort}\"],"
+            + "\"env\":{}"
             + "}"
             + "]"
             + "}";
