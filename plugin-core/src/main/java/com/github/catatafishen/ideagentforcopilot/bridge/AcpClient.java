@@ -88,7 +88,7 @@ public abstract class AcpClient implements AgentClient {
     private final CopyOnWriteArrayList<Consumer<JsonObject>> notificationListeners = new CopyOnWriteArrayList<>();
 
     private final Object writerLock = new Object();
-    private final String projectBasePath; // Project path for config-dir
+    protected final String projectBasePath; // Project path for config-dir (protected for subclass access)
     @Nullable
     protected final ToolRegistry registry;
     private final AgentConfig agentConfig;

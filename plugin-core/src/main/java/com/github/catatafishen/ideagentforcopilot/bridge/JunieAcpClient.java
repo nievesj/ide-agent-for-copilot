@@ -1,10 +1,15 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
+import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
+import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
+import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.ToolExecutionCorrelator;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.JsonObject;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.List;
 
 /**
  * Junie-specific ACP client.
@@ -33,6 +38,43 @@ import org.jetbrains.annotations.Nullable;
 public class JunieAcpClient extends AcpClient {
     private static final com.intellij.openapi.diagnostic.Logger LOG =
         com.intellij.openapi.diagnostic.Logger.getInstance(JunieAcpClient.class);
+
+    public static final String PROFILE_ID = "junie";
+
+    @NotNull
+    public static AgentProfile createDefaultProfile() {
+        AgentProfile p = new AgentProfile();
+        p.setId(PROFILE_ID);
+        p.setDisplayName("Junie");
+        p.setBuiltIn(true);
+        p.setExperimental(false);
+        p.setTransportType(TransportType.ACP);
+        p.setDescription("""
+            Junie CLI by JetBrains. Connects via ACP (--acp true). \
+            Authenticate with your JetBrains Account or a JUNIE_API_KEY token. \
+            Install from junie.jetbrains.com and run 'junie' once to authenticate.""");
+        p.setBinaryName(PROFILE_ID);
+        p.setAlternateNames(List.of());
+        p.setInstallHint("Install from junie.jetbrains.com and run 'junie' to authenticate.");
+        p.setInstallUrl("https://junie.jetbrains.com/docs/junie-cli.html");
+        p.setSupportsOAuthSignIn(false);
+        p.setAcpArgs(List.of("--acp=true"));
+        p.setMcpMethod(McpInjectionMethod.MCP_LOCATION_FLAG);
+        p.setSupportsMcpConfigFlag(false);
+        p.setMcpConfigTemplate(
+            "{\"mcpServers\":{\"intellij-code-tools\":"
+                + "{\"type\":\"stdio\","
+                + "\"command\":\"{javaPath}\","
+                + "\"args\":[\"-jar\",\"{mcpJarPath}\",\"--port\",\"{mcpPort}\"]}}}");
+        p.setSupportsModelFlag(true);
+        p.setSupportsConfigDir(false);
+        p.setRequiresResourceDuplication(true);
+        p.setExcludeAgentBuiltInTools(true);
+        p.setUsePluginPermissions(true);
+        p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
+        p.setPrependInstructionsTo("");
+        return p;
+    }
 
     public JunieAcpClient(@NotNull AgentConfig config,
                           @NotNull AgentSettings settings,
