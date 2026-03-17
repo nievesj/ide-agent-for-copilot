@@ -35,11 +35,13 @@ public class KiroAcpClient extends AcpClient {
         // Kiro doesn't support MCP config flags, only SESSION_NEW injection
         // mcpCapabilities shows {"http": false, "sse": false} - command-based only
         p.setMcpMethod(McpInjectionMethod.SESSION_NEW);
+        // ACP spec requires: name (required), command, args, env (as array, not object!)
         p.setMcpConfigTemplate(
             "{\"mcpServers\":["
-                + "{\"command\":\"{javaPath}\","
+                + "{\"name\":\"intellij-code-tools\","
+                + "\"command\":\"{javaPath}\","
                 + "\"args\":[\"-jar\",\"{mcpJarPath}\",\"--port\",\"{mcpPort}\"],"
-                + "\"env\":{}}"
+                + "\"env\":[]}"
                 + "]}");
 
         p.setSupportsMcpConfigFlag(false);
