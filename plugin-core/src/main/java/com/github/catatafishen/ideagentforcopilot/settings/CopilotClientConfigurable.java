@@ -155,12 +155,20 @@ public final class CopilotClientConfigurable implements Configurable {
                 boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
                 ProcessBuilder pb = isWindows
                     ? new ProcessBuilder("cmd", "/c", binary + " --version")
-                    : new ProcessBuilder("bash", "-c", binary + " --version");
-                pb.redirectErrorStream(true);
+                    : new ProcessBuilder("bash", "-c", binary + " --version 2>/dev/null");
+                // Do NOT redirect error stream, we only want clean stdout
+                processBuilderRedirectError(pb);
                 Process process = pb.start();
                 String output = new String(process.getInputStream().readAllBytes()).trim();
                 int exit = process.waitFor();
-                if (exit == 0 && !output.isEmpty()) return output;
+                if (exit == 0 && !output.isEmpty()) {
+                    // Extract version line if there's any noise left (should be clean now)
+                    return output.lines()
+                        .filter(l -> !l.toLowerCase().contains("bash:"))
+                        .findFirst()
+                        .orElse(output)
+                        .trim();
+                }
             } catch (IOException e) {
                 // Try next binary
             } catch (InterruptedException e) {
@@ -169,5 +177,15 @@ public final class CopilotClientConfigurable implements Configurable {
             }
         }
         return null;
+    }
+
+    private static void processBuilderRedirectError(ProcessBuilder pb) {
+        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+        if (isWindows) {
+            pb.redirectErrorStream(true);
+        } else {
+            // On Linux/Mac, we want to keep stderr separate to avoid bash noise
+            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+        }
     }
 }
