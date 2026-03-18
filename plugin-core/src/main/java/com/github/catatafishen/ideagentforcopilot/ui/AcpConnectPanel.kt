@@ -44,6 +44,8 @@ class AcpConnectPanel(
     }
 
     private val agentManager = ActiveAgentManager.getInstance(project)
+    private val authService = AuthLoginService(project)
+    private var inlineAuthProcess: Process? = null
 
     // MCP controls
     private val mcpStartButton = JButton(START_SERVER)
@@ -552,8 +554,47 @@ class AcpConnectPanel(
         ApplicationManager.getApplication().invokeLater {
             connectButton.isEnabled = true
             connectButton.text = "Connect"
-            statusBanner.showError(message)
+            val profile = agentManager.activeProfile
+            if (authService.isAuthenticationError(message) && profile.isSupportsOAuthSignIn) {
+                // Show auth-specific error with Sign In action
+                statusBanner.showAuthError(
+                    "Not signed in to ${profile.displayName} — click Sign In below.",
+                    onSignIn = { startInlineAuth() },
+                    onRetry = { doConnect() }
+                )
+            } else if (authService.isAuthenticationError(message)) {
+                // Non-OAuth agent — show retry hint
+                statusBanner.showError("$message — check your credentials and click Connect to retry.")
+            } else {
+                statusBanner.showError(message)
+            }
         }
+    }
+
+    private fun startInlineAuth() {
+        connectButton.isEnabled = false
+        connectButton.text = "Signing in…"
+        inlineAuthProcess?.destroy()
+        inlineAuthProcess = authService.startInlineAuth(
+            onDeviceCode = { info: AuthLoginService.DeviceCodeInfo ->
+                statusBanner.showDeviceCode(info.code, info.url)
+            },
+            onAuthComplete = {
+                statusBanner.hideDeviceCode()
+                inlineAuthProcess = null
+                authService.clearPendingAuthError()
+                connectButton.isEnabled = true
+                connectButton.text = "Connect"
+                statusBanner.showInfo("Signed in — click Connect to continue.")
+            },
+            onFallback = {
+                statusBanner.hideDeviceCode()
+                inlineAuthProcess = null
+                connectButton.isEnabled = true
+                connectButton.text = "Connect"
+                authService.startCopilotLogin()
+            },
+        )
     }
 
     fun resetConnectButton() {

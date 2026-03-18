@@ -116,8 +116,9 @@ public abstract class AcpClient implements AgentClient {
     // Guards against double-scheduling: both readLoop and the restart thread's catch block can
     // call attemptAutoRestart() for the same crash event. CAS ensures only one proceeds.
     private final AtomicBoolean restartPending = new AtomicBoolean(false);
-    private static final int MAX_RESTART_ATTEMPTS = 3;
-    private static final long[] RESTART_DELAYS_MS = {1000, 2000, 4000}; // Exponential backoff
+    private volatile boolean lastFailureWasAuth = false; // Track auth failures to avoid auto-retry
+    private static final int MAX_RESTART_ATTEMPTS = 1; // Reduced from 3 to prevent auth lockouts
+    private static final long[] RESTART_DELAYS_MS = {2000}; // Single retry with 2s delay
 
     // State from the initialization response
     private boolean initialized = false;
@@ -235,6 +236,9 @@ public abstract class AcpClient implements AgentClient {
             LOG.debug("ACP client is already running and healthy — skipping redundant start()");
             return;
         }
+
+        // Clear auth failure flag on manual restart attempts
+        lastFailureWasAuth = false;
 
         // Clean up the previous process if it died
         if (process != null) {
@@ -363,13 +367,44 @@ public abstract class AcpClient implements AgentClient {
                         JsonObject mcpConfig = JsonParser.parseString(resolved).getAsJsonObject();
                         if (mcpConfig.has(MCP_SERVERS_KEY)) {
                             JsonElement serversElement = mcpConfig.get(MCP_SERVERS_KEY);
-                            // Handle both array (Kiro) and object (others) formats
+                            // session/new requires array format: [{"name":"agentbridge",...}]
+                            // Config files may use object format: {"agentbridge":{...}}
+                            // Convert object to array when needed
                             if (serversElement.isJsonArray()) {
                                 params.add(MCP_SERVERS_KEY, serversElement.getAsJsonArray());
                                 LOG.info("Creating session with " + serversElement.getAsJsonArray().size() + " injected MCP servers");
                             } else if (serversElement.isJsonObject()) {
-                                params.add(MCP_SERVERS_KEY, serversElement.getAsJsonObject());
-                                LOG.info("Creating session with " + serversElement.getAsJsonObject().size() + " injected MCP servers");
+                                // Convert object format to array format for session/new
+                                JsonArray serversArray = new JsonArray();
+                                for (Map.Entry<String, JsonElement> entry : serversElement.getAsJsonObject().entrySet()) {
+                                    JsonObject serverEntry = entry.getValue().getAsJsonObject().deepCopy();
+                                    serverEntry.addProperty("name", entry.getKey());
+                                    // Copilot requires env and headers as arrays: [{"key":"K","value":"V"},...]
+                                    if (serverEntry.has("env") && serverEntry.get("env").isJsonObject()) {
+                                        JsonArray envArray = new JsonArray();
+                                        for (Map.Entry<String, JsonElement> envEntry : serverEntry.getAsJsonObject("env").entrySet()) {
+                                            JsonObject envItem = new JsonObject();
+                                            envItem.addProperty("key", envEntry.getKey());
+                                            envItem.addProperty("value", envEntry.getValue().getAsString());
+                                            envArray.add(envItem);
+                                        }
+                                        serverEntry.add("env", envArray);
+                                    }
+                                    if (serverEntry.has("headers") && serverEntry.get("headers").isJsonObject()) {
+                                        JsonArray headersArray = new JsonArray();
+                                        for (Map.Entry<String, JsonElement> hdrEntry : serverEntry.getAsJsonObject("headers").entrySet()) {
+                                            JsonObject hdrItem = new JsonObject();
+                                            hdrItem.addProperty("key", hdrEntry.getKey());
+                                            hdrItem.addProperty("value", hdrEntry.getValue().getAsString());
+                                            headersArray.add(hdrItem);
+                                        }
+                                        serverEntry.add("headers", headersArray);
+                                    }
+                                    serversArray.add(serverEntry);
+                                }
+
+                                params.add(MCP_SERVERS_KEY, serversArray);
+                                LOG.info("Creating session with " + serversArray.size() + " injected MCP servers (converted from object format)");
                             }
                         }
                     } catch (Exception e) {
@@ -382,9 +417,31 @@ public abstract class AcpClient implements AgentClient {
             LOG.info("Creating session (MCP servers configured via CLI or filesystem)");
         }
 
-        JsonObject result = sendRequest("session/new", params);
+        JsonObject result;
+        try {
+            result = sendRequest("session/new", params);
+        } catch (AcpException e) {
+            // If session creation fails with an authentication error, reset initialized state
+            // and destroy the process. This ensures that the next attempt starts a fresh
+            // process that can pick up new authentication credentials.
+            String msg = e.getMessage().toLowerCase();
+            if (msg.contains("auth") || msg.contains("authenticated") || msg.contains("sign in")) {
+                LOG.info("Authentication required for session/new - resetting process");
+                lastFailureWasAuth = true; // Mark as auth failure to prevent auto-restart
+                initialized = false;
+                if (process != null && process.isAlive()) {
+                    process.destroyForcibly();
+                }
+            } else {
+                lastFailureWasAuth = false; // Non-auth failure, allow auto-restart
+            }
+            throw e;
+        }
 
         currentSessionId = result.get(SESSION_ID).getAsString();
+        
+        // Clear auth failure flag on successful session creation
+        lastFailureWasAuth = false;
 
         // Parse available models
         parseAvailableModels(result);
@@ -1253,6 +1310,13 @@ public abstract class AcpClient implements AgentClient {
     }
 
     private void attemptAutoRestart() {
+        // Don't auto-restart after auth failures - let user fix auth first
+        if (lastFailureWasAuth) {
+            LOG.info("Skipping auto-restart after authentication failure - user must authenticate first");
+            failAllPendingRequests();
+            return;
+        }
+
         // Deduplicate: when a process crashes during doInitialize(), both readLoop and the
         // restart thread's catch block call this method for the same crash event.
         // CAS ensures only one of them actually schedules a restart, preventing double-counting.

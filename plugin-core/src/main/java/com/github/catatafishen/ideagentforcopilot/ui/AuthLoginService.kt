@@ -1,6 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
+import com.github.catatafishen.ideagentforcopilot.bridge.ProfileBasedAgentConfig
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
+import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -43,18 +45,25 @@ class AuthLoginService(private val project: Project) {
 
     /** Returns null if the active agent is installed and authenticated, or an error description. */
     fun copilotSetupDiagnostics(): String? {
-        // If there's a pending auth error, return it immediately
-        // without calling getClient() — which would auto-restart the ACP process.
-        // Cleared by the sign-in flow (onAuthComplete) or by clearPendingAuthError().
-        pendingAuthError?.let { return it }
-
+        // If there's a pending auth error that hasn't been cleared, return it
+        // BUT give it a chance to recover by checking fresh auth periodically
         val agentManager = ActiveAgentManager.getInstance(project)
 
-        // Delegate auth check to the client — each transport knows its own credentials.
+        // Always attempt fresh auth check - don't rely solely on sticky pendingAuthError
         return try {
-            agentManager.client.checkAuthentication()
+            val authCheck = agentManager.client.checkAuthentication()
+            // If auth check succeeds (returns null), clear any stale pending error
+            if (authCheck == null) {
+                pendingAuthError = null
+            }
+            authCheck
         } catch (e: Exception) {
-            e.message ?: "Failed to connect to agent"
+            val errorMsg = e.message ?: "Failed to connect to agent"
+            // Only set pendingAuthError for auth-related failures, not network/process issues
+            if (errorMsg.lowercase().contains("auth") || errorMsg.lowercase().contains("sign in")) {
+                pendingAuthError = errorMsg
+            }
+            errorMsg
         }
     }
 
@@ -112,6 +121,10 @@ class AuthLoginService(private val project: Project) {
         try {
             val pb = ProcessBuilder(cmd)
             pb.redirectErrorStream(true)
+            
+            // Configure agent-specific environment (e.g., COPILOT_HOME for copilot CLI)
+            configureAuthEnvironment(pb)
+            
             process = pb.start()
         } catch (e: Exception) {
             LOG.warn("Inline auth: could not start process, falling back to terminal", e)
@@ -190,7 +203,8 @@ class AuthLoginService(private val project: Project) {
 
     fun startCopilotLogin() {
         val resolvedCommand = resolveAuthCommand().joinToString(" ")
-        runAuthInEmbeddedTerminal(project, resolvedCommand, "Copilot Sign In") {
+        val envVars = getAuthEnvironmentVars()
+        runAuthInEmbeddedTerminal(project, resolvedCommand, envVars, "Copilot Sign In") {
             startCopilotLoginExternal(resolvedCommand)
         }
     }
@@ -210,7 +224,8 @@ class AuthLoginService(private val project: Project) {
     private fun startCopilotLoginExternal(command: String) {
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                launchExternalTerminal(command)
+                val envVars = getAuthEnvironmentVars()
+                launchExternalTerminal(command, envVars)
             } catch (e: Exception) {
                 LOG.warn("Could not open external terminal for Copilot auth", e)
                 ApplicationManager.getApplication().invokeLater {
@@ -228,7 +243,7 @@ class AuthLoginService(private val project: Project) {
     private fun startGhLoginExternal() {
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                launchExternalTerminal("gh auth login")
+                launchExternalTerminal("gh auth login", emptyMap())
             } catch (e: Exception) {
                 LOG.warn("Could not open external terminal for GitHub auth", e)
                 ApplicationManager.getApplication().invokeLater {
@@ -243,26 +258,85 @@ class AuthLoginService(private val project: Project) {
         }
     }
 
-    private fun launchExternalTerminal(command: String) {
+    private fun launchExternalTerminal(command: String, envVars: Map<String, String>) {
         val os = System.getProperty(OS_NAME_PROPERTY).lowercase()
+        val fullCommand = buildCommandWithEnvironment(command, envVars)
+        
         when {
             os.contains("win") ->
-                ProcessBuilder("cmd", "/c", "start", "cmd", "/k", command).start()
+                ProcessBuilder("cmd", "/c", "start", "cmd", "/k", fullCommand).start()
 
             os.contains("mac") ->
                 ProcessBuilder(
                     "osascript", "-e",
-                    "tell application \"Terminal\" to do script \"$command\"",
+                    "tell application \"Terminal\" to do script \"$fullCommand\"",
                 ).start()
 
             else ->
                 ProcessBuilder(
                     "sh", "-c",
-                    "x-terminal-emulator -e '$command' || " +
-                        "gnome-terminal -- $command || " +
-                        "konsole -e $command || " +
-                        "xterm -e $command",
+                    "x-terminal-emulator -e '$fullCommand' || " +
+                        "gnome-terminal -- bash -c '$fullCommand' || " +
+                        "konsole -e bash -c '$fullCommand' || " +
+                        "xterm -e bash -c '$fullCommand'",
                 ).start()
+        }
+    }
+
+    /**
+     * Configures environment variables for auth commands to use the same
+     * home directories as the main ACP agent processes.
+     */
+    private fun configureAuthEnvironment(pb: ProcessBuilder) {
+        try {
+            val agentManager = ActiveAgentManager.getInstance(project)
+            val profile = agentManager.getActiveProfile() ?: return
+            
+            // Use the same environment configuration as agent processes
+            val config = ProfileBasedAgentConfig(profile, ToolRegistry.getInstance(project))
+            config.configureAgentEnvironment(pb.environment(), project.basePath)
+        } catch (e: Exception) {
+            LOG.warn("Failed to configure auth environment", e)
+        }
+    }
+
+    /**
+     * Gets environment variables for auth commands to use the same
+     * home directories as the main ACP agent processes.
+     */
+    private fun getAuthEnvironmentVars(): Map<String, String> {
+        return try {
+            val agentManager = ActiveAgentManager.getInstance(project)
+            val profile = agentManager.getActiveProfile() ?: return emptyMap()
+            
+            // Get environment configuration as agent processes would use
+            val config = ProfileBasedAgentConfig(profile, ToolRegistry.getInstance(project))
+            val envMap = mutableMapOf<String, String>()
+            config.configureAgentEnvironment(envMap, project.basePath)
+            envMap
+        } catch (e: Exception) {
+            LOG.warn("Failed to get auth environment variables", e)
+            emptyMap()
+        }
+    }
+
+    /**
+     * Builds a shell command that exports environment variables before running the main command.
+     * Handles both Unix-like and Windows shells.
+     */
+    private fun buildCommandWithEnvironment(command: String, envVars: Map<String, String>): String {
+        if (envVars.isEmpty()) return command
+        
+        val isWindows = System.getProperty("os.name").lowercase().contains("win")
+        
+        return if (isWindows) {
+            // Windows cmd: set VAR=value && command
+            val exports = envVars.entries.joinToString(" && ") { (key, value) -> "set $key=$value" }
+            "$exports && $command"
+        } else {
+            // Unix shells: export VAR=value; command
+            val exports = envVars.entries.joinToString("; ") { (key, value) -> "export $key='$value'" }
+            "$exports; $command"
         }
     }
 }

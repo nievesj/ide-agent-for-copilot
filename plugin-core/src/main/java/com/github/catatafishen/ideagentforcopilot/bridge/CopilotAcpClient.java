@@ -53,10 +53,12 @@ public class CopilotAcpClient extends AcpClient {
         p.setAcpArgs(List.of("--acp", "--stdio"));
         p.setMcpMethod(McpInjectionMethod.CONFIG_FLAG);
         p.setSupportsMcpConfigFlag(true);
+        p.setForceMcpInSessionNew(true);  // Copilot requires both CONFIG_FLAG + mcpServers in session/new
         p.setMcpConfigTemplate(
-            "{\"mcpServers\":{\"agentbridge\":"
-                + "{\"type\":\"http\","
-                + "\"url\":\"http://localhost:{mcpPort}/mcp\"}}}");
+            "{\"mcpServers\":{\"agentbridge\":{"
+                + "\"type\":\"http\","
+                + "\"url\":\"http://localhost:{mcpPort}/mcp\","
+                + "\"headers\":{}}}}");
         p.setSupportsModelFlag(true);
         p.setSupportsConfigDir(true);
         p.setRequiresResourceDuplication(true);

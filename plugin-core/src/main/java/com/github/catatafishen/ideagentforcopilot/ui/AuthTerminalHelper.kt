@@ -20,6 +20,20 @@ fun runAuthInEmbeddedTerminal(
     tabName: String,
     onTerminalUnavailable: () -> Unit,
 ) {
+    runAuthInEmbeddedTerminal(project, command, emptyMap(), tabName, onTerminalUnavailable)
+}
+
+/**
+ * Opens a named tab in IntelliJ's embedded Terminal tool window and runs [command] once the
+ * shell is ready, with additional environment variables exported first.
+ */
+fun runAuthInEmbeddedTerminal(
+    project: Project,
+    command: String,
+    envVars: Map<String, String>,
+    tabName: String,
+    onTerminalUnavailable: () -> Unit,
+) {
     ApplicationManager.getApplication().executeOnPooledThread {
         try {
             val terminalViewClass = Class.forName("org.jetbrains.plugins.terminal.TerminalView")
@@ -42,8 +56,11 @@ fun runAuthInEmbeddedTerminal(
                 Thread.sleep(100)
             }
 
+            // Build the complete command with environment variables exported first
+            val fullCommand = buildCommandWithEnvironment(command, envVars)
+
             widget.javaClass.getMethod("executeCommand", String::class.java)
-                .invoke(widget, command)
+                .invoke(widget, fullCommand)
         } catch (_: ClassNotFoundException) {
             LOG.info("Terminal plugin not available, falling back to external terminal")
             ApplicationManager.getApplication().invokeLater { onTerminalUnavailable() }
@@ -51,5 +68,25 @@ fun runAuthInEmbeddedTerminal(
             LOG.warn("Failed to run auth command in embedded terminal", e)
             ApplicationManager.getApplication().invokeLater { onTerminalUnavailable() }
         }
+    }
+}
+
+/**
+ * Builds a shell command that exports environment variables before running the main command.
+ * Handles both Unix-like and Windows shells.
+ */
+private fun buildCommandWithEnvironment(command: String, envVars: Map<String, String>): String {
+    if (envVars.isEmpty()) return command
+    
+    val isWindows = System.getProperty("os.name").lowercase().contains("win")
+    
+    return if (isWindows) {
+        // Windows cmd: set VAR=value && command
+        val exports = envVars.entries.joinToString(" && ") { (key, value) -> "set $key=$value" }
+        "$exports && $command"
+    } else {
+        // Unix shells: export VAR=value; command
+        val exports = envVars.entries.joinToString("; ") { (key, value) -> "export $key='$value'" }
+        "$exports; $command"
     }
 }

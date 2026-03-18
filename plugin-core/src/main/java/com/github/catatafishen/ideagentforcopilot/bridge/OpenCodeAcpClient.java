@@ -45,8 +45,7 @@ public class OpenCodeAcpClient extends AcpClient {
         p.setBinaryName(PROFILE_ID);
         p.setInstallHint("Install with: npm i -g opencode-ai");
         p.setAcpArgs(List.of("acp"));
-        p.setMcpMethod(McpInjectionMethod.ENV_VAR);
-        p.setMcpEnvVarName("OPENCODE_CONFIG_CONTENT");
+        p.setMcpMethod(McpInjectionMethod.SESSION_NEW);
         p.setMcpConfigTemplate(buildConfigTemplate());
         p.setSupportsMcpConfigFlag(false);
         p.setSupportsModelFlag(false);
@@ -63,16 +62,18 @@ public class OpenCodeAcpClient extends AcpClient {
 
     /**
      * Builds the OpenCode config JSON template with bundled agents.
-     * Includes MCP server config + custom IDE-aware agent definitions.
+     * Includes ACP-standard mcpServers array + custom IDE-aware agent definitions.
      */
     @NotNull
     private static String buildConfigTemplate() {
         return "{"
+            + "\"mcpServers\":["
+            + "{\"name\":\"agentbridge\","
+            + "\"command\":\"{javaPath}\","
+            + "\"args\":[\"-jar\",\"{mcpJarPath}\",\"--port\",\"{mcpPort}\"],"
+            + "\"env\":[]}"
+            + "],"
             + "\"default_agent\":\"ide-general\","
-            + "\"mcp\":{\"agentbridge\":"
-            + "{\"type\":\"local\","
-            + "\"command\":[\"{javaPath}\",\"-jar\",\"{mcpJarPath}\","
-            + "\"--port\",\"{mcpPort}\"]}},"
             + "\"agent\":{"
             + buildGeneralAgent() + ","
             + buildExploreAgent()

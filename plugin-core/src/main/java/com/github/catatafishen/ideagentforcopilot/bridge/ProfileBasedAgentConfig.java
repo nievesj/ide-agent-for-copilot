@@ -15,6 +15,7 @@ import org.jetbrains.annotations.Nullable;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -28,6 +29,9 @@ import java.util.Map;
 public final class ProfileBasedAgentConfig implements AgentConfig {
 
     private static final Logger LOG = Logger.getInstance(ProfileBasedAgentConfig.class);
+    private static final String LOGGED_IN_USERS = "logged_in_users";
+    private static final String LAST_LOGGED_IN_USER = "last_logged_in_user";
+    private static final String FIRST_LAUNCH_AT = "firstLaunchAt";
     private static final String MCP_SERVERS_KEY = "mcpServers";
 
     private final AgentProfile profile;
@@ -183,21 +187,32 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
      * Each agent gets its own subdirectory under .agent-work/<agent-id>/
      */
     private void setAgentConfigDirEnvVars(@NotNull ProcessBuilder pb, @Nullable String projectBasePath) {
+        configureAgentEnvironment(pb.environment(), projectBasePath);
+    }
+
+    /**
+     * Configures agent-specific environment variables for the given environment map.
+     * This can be used both for ACP agent processes and for auth commands.
+     * 
+     * @param environment The environment map to configure (e.g., from ProcessBuilder)
+     * @param projectBasePath The project base path, null if not available
+     */
+    public void configureAgentEnvironment(@NotNull Map<String, String> environment, @Nullable String projectBasePath) {
         if (projectBasePath == null) return;
         String agentId = profile.getId();
         String agentWorkDir = Path.of(projectBasePath, ".agent-work", agentId).toString();
 
         switch (agentId) {
-            case "claude" -> pb.environment().put("CLAUDE_CONFIG_DIR", agentWorkDir);
+            case "claude" -> environment.put("CLAUDE_CONFIG_DIR", agentWorkDir);
             case "copilot" -> {
-                // Don't override COPILOT_HOME - let Copilot CLI use its default ~/.copilot
-                // for authentication while still using agent-work for logs/temp files
-                // pb.environment().put("COPILOT_HOME", agentWorkDir);
+                environment.put("COPILOT_HOME", agentWorkDir);
+                // Ensure authentication is available in project-specific Copilot config
+                ensureCopilotAuthentication(agentWorkDir);
             }
             case "opencode" -> {
                 // OpenCode uses OPENCODE_CONFIG pointing to the config.json file
                 String configJsonPath = Path.of(agentWorkDir, "opencode.json").toString();
-                pb.environment().put("OPENCODE_CONFIG", configJsonPath);
+                environment.put("OPENCODE_CONFIG", configJsonPath);
             }
             default -> {
                 // Kiro uses --config-dir flag instead
@@ -624,5 +639,83 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     @Override
     public @NotNull String getMcpServerName() {
         return profile.getMcpServerName();
+    }
+
+    /**
+     * Ensure Copilot authentication is available in the project-specific config directory
+     * by copying authentication details from the global ~/.copilot config.
+     */
+    private void ensureCopilotAuthentication(String agentWorkDir) {
+        try {
+            String userHome = System.getProperty("user.home");
+            Path globalConfigPath = Path.of(userHome, ".copilot", "config.json");
+            Path projectConfigPath = Path.of(agentWorkDir, "config.json");
+
+            // Create agent work directory if it doesn't exist
+            Files.createDirectories(Path.of(agentWorkDir));
+
+            // If project config doesn't exist and global config exists, copy auth info
+            // This is a migration aid for users who were previously authenticated globally
+            if (!Files.exists(projectConfigPath) && Files.exists(globalConfigPath)) {
+                copyAuthentication(globalConfigPath, projectConfigPath);
+            } else if (!Files.exists(projectConfigPath)) {
+                LOG.info("No existing authentication found. User will need to authenticate via copilot auth login");
+            }
+            // Note: auth commands now write directly to project-specific directory,
+            // so copying is only needed for initial migration from global config
+        } catch (Exception e) {
+            LOG.warn("Failed to ensure Copilot authentication in project config", e);
+        }
+    }
+
+    /**
+     * Copy authentication details from global Copilot config to project-specific config.
+     * This is a one-time migration aid for users who were previously authenticated globally.
+     */
+    private void copyAuthentication(Path globalConfigPath, Path projectConfigPath) {
+        if (!Files.exists(globalConfigPath)) {
+            LOG.info("No global Copilot config found - user will authenticate in project-specific directory");
+            return;
+        }
+
+        try {
+            // Read global config
+            String globalConfigContent = Files.readString(globalConfigPath, StandardCharsets.UTF_8);
+            JsonObject globalConfig = JsonParser.parseString(globalConfigContent).getAsJsonObject();
+
+            // Read or create project config
+            JsonObject projectConfig;
+            if (Files.exists(projectConfigPath)) {
+                String projectConfigContent = Files.readString(projectConfigPath, StandardCharsets.UTF_8);
+                projectConfig = JsonParser.parseString(projectConfigContent).getAsJsonObject();
+            } else {
+                projectConfig = new JsonObject();
+            }
+
+            // Copy authentication fields from global to project config
+            if (globalConfig.has(LOGGED_IN_USERS)) {
+                projectConfig.add(LOGGED_IN_USERS, globalConfig.get(LOGGED_IN_USERS));
+            }
+            if (globalConfig.has(LAST_LOGGED_IN_USER)) {
+                projectConfig.add(LAST_LOGGED_IN_USER, globalConfig.get(LAST_LOGGED_IN_USER));
+            }
+
+            // Preserve project-specific settings
+            if (!projectConfig.has(FIRST_LAUNCH_AT) && globalConfig.has(FIRST_LAUNCH_AT)) {
+                projectConfig.add(FIRST_LAUNCH_AT, globalConfig.get(FIRST_LAUNCH_AT));
+            }
+
+            // Write updated project config
+            String updatedContent = new com.google.gson.GsonBuilder()
+                .setPrettyPrinting()
+                .create()
+                .toJson(projectConfig);
+
+            Files.writeString(projectConfigPath, updatedContent, StandardCharsets.UTF_8);
+            LOG.info("Copied Copilot authentication to project config: " + projectConfigPath);
+
+        } catch (Exception e) {
+            LOG.warn("Failed to parse or copy Copilot config", e);
+        }
     }
 }

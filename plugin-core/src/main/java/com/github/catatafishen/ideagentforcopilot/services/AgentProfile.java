@@ -61,6 +61,11 @@ public final class AgentProfile {
     private String mcpConfigTemplate;
     private String mcpEnvVarName = "";
     private String mcpServerName = "agentbridge";
+    /**
+     * Force sending mcpServers in session/new even when using CONFIG_FLAG injection.
+     * Used by Copilot which requires both: CONFIG_FLAG for auth + mcpServers in session/new.
+     */
+    private boolean forceMcpInSessionNew;
 
     // ── Feature Flags ────────────────────────────────────────────────────────
 
@@ -162,6 +167,8 @@ public final class AgentProfile {
         copy.mcpMethod = mcpMethod;
         copy.mcpConfigTemplate = mcpConfigTemplate;
         copy.mcpEnvVarName = mcpEnvVarName;
+        copy.mcpServerName = mcpServerName;
+        copy.forceMcpInSessionNew = forceMcpInSessionNew;
         copy.supportsModelFlag = supportsModelFlag;
         copy.supportsConfigDir = supportsConfigDir;
         copy.supportsMcpConfigFlag = supportsMcpConfigFlag;
@@ -200,6 +207,8 @@ public final class AgentProfile {
         copy.mcpMethod = mcpMethod;
         copy.mcpConfigTemplate = mcpConfigTemplate;
         copy.mcpEnvVarName = mcpEnvVarName;
+        copy.mcpServerName = mcpServerName;
+        copy.forceMcpInSessionNew = forceMcpInSessionNew;
         copy.supportsModelFlag = supportsModelFlag;
         copy.supportsConfigDir = supportsConfigDir;
         copy.supportsMcpConfigFlag = supportsMcpConfigFlag;
@@ -238,6 +247,8 @@ public final class AgentProfile {
         this.mcpMethod = other.mcpMethod;
         this.mcpConfigTemplate = other.mcpConfigTemplate;
         this.mcpEnvVarName = other.mcpEnvVarName;
+        this.mcpServerName = other.mcpServerName;
+        this.forceMcpInSessionNew = other.forceMcpInSessionNew;
         this.supportsModelFlag = other.supportsModelFlag;
         this.supportsConfigDir = other.supportsConfigDir;
         this.supportsMcpConfigFlag = other.supportsMcpConfigFlag;
@@ -407,6 +418,14 @@ public final class AgentProfile {
 
     public void setMcpServerName(@NotNull String mcpServerName) {
         this.mcpServerName = mcpServerName;
+    }
+
+    public boolean isForceMcpInSessionNew() {
+        return forceMcpInSessionNew;
+    }
+
+    public void setForceMcpInSessionNew(boolean forceMcpInSessionNew) {
+        this.forceMcpInSessionNew = forceMcpInSessionNew;
     }
 
     public boolean isSupportsModelFlag() {

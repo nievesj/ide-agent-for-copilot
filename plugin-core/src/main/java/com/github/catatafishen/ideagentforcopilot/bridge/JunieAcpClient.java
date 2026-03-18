@@ -60,13 +60,16 @@ public class JunieAcpClient extends AcpClient {
         p.setInstallUrl("https://junie.jetbrains.com/docs/junie-cli.html");
         p.setSupportsOAuthSignIn(false);
         p.setAcpArgs(List.of("--acp=true"));
-        p.setMcpMethod(McpInjectionMethod.MCP_LOCATION_FLAG);
+        p.setMcpMethod(McpInjectionMethod.SESSION_NEW);
         p.setSupportsMcpConfigFlag(false);
+        // ACP spec requires array format for mcpServers in session/new
         p.setMcpConfigTemplate(
-            "{\"mcpServers\":{\"agentbridge\":"
-                + "{\"type\":\"stdio\","
+            "{\"mcpServers\":["
+                + "{\"name\":\"agentbridge\","
                 + "\"command\":\"{javaPath}\","
-                + "\"args\":[\"-jar\",\"{mcpJarPath}\",\"--port\",\"{mcpPort}\"]}}}");
+                + "\"args\":[\"-jar\",\"{mcpJarPath}\",\"--port\",\"{mcpPort}\"],"
+                + "\"env\":[]}"
+                + "]}");
         p.setSupportsModelFlag(true);
         p.setSupportsConfigDir(false);
         p.setRequiresResourceDuplication(true);
