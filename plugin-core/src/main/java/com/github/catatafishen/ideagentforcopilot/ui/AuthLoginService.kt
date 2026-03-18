@@ -73,7 +73,7 @@ class AuthLoginService(private val project: Project) {
     }
 
     /** Returns null if GH CLI is installed and authenticated, or an error description. */
-    internal fun ghSetupDiagnostics(billing: BillingManager): String? {
+    internal fun ghSetupDiagnostics(billing: com.github.catatafishen.ideagentforcopilot.ui.BillingManager): String? {
         val ghCli = billing.client.findGhCli()
             ?: return "GitHub CLI (gh) is not installed — it is used to display billing and usage information."
         return if (!billing.client.isGhAuthenticated(ghCli))
@@ -121,10 +121,10 @@ class AuthLoginService(private val project: Project) {
         try {
             val pb = ProcessBuilder(cmd)
             pb.redirectErrorStream(true)
-            
+
             // Configure agent-specific environment (e.g., COPILOT_HOME for copilot CLI)
             configureAuthEnvironment(pb)
-            
+
             process = pb.start()
         } catch (e: Exception) {
             LOG.warn("Inline auth: could not start process, falling back to terminal", e)
@@ -261,7 +261,7 @@ class AuthLoginService(private val project: Project) {
     private fun launchExternalTerminal(command: String, envVars: Map<String, String>) {
         val os = System.getProperty(OS_NAME_PROPERTY).lowercase()
         val fullCommand = buildCommandWithEnvironment(command, envVars)
-        
+
         when {
             os.contains("win") ->
                 ProcessBuilder("cmd", "/c", "start", "cmd", "/k", fullCommand).start()
@@ -291,7 +291,7 @@ class AuthLoginService(private val project: Project) {
         try {
             val agentManager = ActiveAgentManager.getInstance(project)
             val profile = agentManager.getActiveProfile() ?: return
-            
+
             // Use the same environment configuration as agent processes
             val config = ProfileBasedAgentConfig(profile, ToolRegistry.getInstance(project))
             config.configureAgentEnvironment(pb.environment(), project.basePath)
@@ -308,7 +308,7 @@ class AuthLoginService(private val project: Project) {
         return try {
             val agentManager = ActiveAgentManager.getInstance(project)
             val profile = agentManager.getActiveProfile() ?: return emptyMap()
-            
+
             // Get environment configuration as agent processes would use
             val config = ProfileBasedAgentConfig(profile, ToolRegistry.getInstance(project))
             val envMap = mutableMapOf<String, String>()
@@ -326,9 +326,9 @@ class AuthLoginService(private val project: Project) {
      */
     private fun buildCommandWithEnvironment(command: String, envVars: Map<String, String>): String {
         if (envVars.isEmpty()) return command
-        
+
         val isWindows = System.getProperty("os.name").lowercase().contains("win")
-        
+
         return if (isWindows) {
             // Windows cmd: set VAR=value && command
             val exports = envVars.entries.joinToString(" && ") { (key, value) -> "set $key=$value" }

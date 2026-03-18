@@ -177,6 +177,33 @@ public class KiroAcpClient extends AcpClient {
     }
 
     /**
+     * Kiro-specific error formatting that includes error codes and AWS request IDs.
+     * @param errorData the error data JSON object  
+     * @param message the extracted error message
+     * @return formatted error message with Kiro-specific details
+     */
+    @Override
+    protected String formatErrorData(@NotNull JsonObject errorData, @NotNull String message) {
+        StringBuilder detailsBuilder = new StringBuilder(message);
+
+        // Include Kiro-specific error code if present (e.g., AccessDeniedException)
+        if (errorData.has("code") && errorData.get("code").isJsonPrimitive()) {
+            String errorCode = errorData.get("code").getAsString();
+            if (!errorCode.isEmpty() && !message.contains(errorCode)) {
+                detailsBuilder.insert(0, "[" + errorCode + "] ");
+            }
+        }
+
+        // Include AWS request ID if present for debugging
+        if (errorData.has("aws_request_id")) {
+            String requestId = errorData.get("aws_request_id").getAsString();
+            detailsBuilder.append(" (Request ID: ").append(requestId).append(")");
+        }
+
+        return detailsBuilder.toString();
+    }
+
+    /**
      * Parses Kiro-specific error format.
      * Expected format: "Encountered an error in the response stream: request_id: [uuid], error: [error message]"
      */

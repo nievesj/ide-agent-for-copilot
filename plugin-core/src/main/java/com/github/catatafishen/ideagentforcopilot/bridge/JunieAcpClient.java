@@ -97,6 +97,21 @@ public class JunieAcpClient extends AcpClient {
     }
 
     @Override
+    protected String resolveToolId(@Nullable String permKind, @Nullable JsonObject toolCall) {
+        String name = "";
+        if (toolCall != null) {
+            if (toolCall.has("name")) {
+                name = toolCall.get("name").getAsString();
+            } else if (toolCall.has("title")) {
+                name = toolCall.get("title").getAsString();
+            }
+        }
+        name = normalizeToolName(name);
+        String fallback = permKind != null ? permKind : "";
+        return name.isEmpty() ? fallback : name;
+    }
+
+    @Override
     @NotNull
     public List<com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings.FileEntry>
     getDefaultProjectFiles() {

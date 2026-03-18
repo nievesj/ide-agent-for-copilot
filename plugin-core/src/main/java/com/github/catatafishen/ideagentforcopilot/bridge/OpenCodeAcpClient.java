@@ -4,26 +4,35 @@ import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 /**
  * ACP client for OpenCode.
  *
  * <p>Extends the generic {@link AcpClient} for OpenCode-specific behaviour.
- * Currently all OpenCode-specific concerns (built-in tool exclusion, config-JSON permission
- * injection, env-var MCP injection) are handled by the {@link AgentConfig} strategy, so
- * no {@link AgentClient} method overrides are needed yet.</p>
+ * OpenCode sends tool calls without arguments, then follows with tool_call_update containing the actual arguments.
+ * This class handles the deferred emission pattern required by OpenCode's protocol.</p>
  *
- * <p>This class exists as an explicit extension point: future OpenCode-specific
- * {@link AgentClient} overrides belong here rather than in the generic base.</p>
+ * <p>Other OpenCode-specific concerns (built-in tool exclusion, config-JSON permission
+ * injection, env-var MCP injection) are handled by the {@link AgentConfig} strategy.</p>
  */
 public class OpenCodeAcpClient extends AcpClient {
 
+    private static final Logger LOG = Logger.getInstance(OpenCodeAcpClient.class);
+
     public static final String PROFILE_ID = "opencode";
+
+    // Pending tool calls waiting for arguments (OpenCode sends args in tool_call_update, not initial tool_call)
+    private final ConcurrentHashMap<String, JsonObject> pendingToolCalls = new ConcurrentHashMap<>();
 
     private static final String ADDITIONAL_INSTRUCTIONS =
         """
@@ -176,6 +185,55 @@ public class OpenCodeAcpClient extends AcpClient {
         return name.replaceFirst("^agentbridge_", "");
     }
 
+    /**
+     * Override to implement OpenCode's deferred tool call pattern.
+     * OpenCode sends tool calls without arguments, then follows with tool_call_update containing the actual arguments.
+     */
+    @Override
+    protected void handleToolCallEvent(@NotNull JsonObject update, @NotNull Consumer<SessionUpdate> onUpdate) {
+        String toolCallId = update.has(TOOL_CALL_ID_KEY) ? update.get(TOOL_CALL_ID_KEY).getAsString() : "";
+        String args = extractAcpArguments(update);
+        boolean hasArgs = args != null && !args.isEmpty() && !args.equals("{}");
+
+        if (hasArgs) {
+            // Arguments present (standard style) - emit immediately
+            onUpdate.accept(buildToolCallEvent(update));
+        } else {
+            // No arguments (OpenCode style) - defer until we get an update with args
+            LOG.info("[OpenCode tool_call] Deferring toolCallId=" + toolCallId + " (no arguments yet)");
+            pendingToolCalls.put(toolCallId, update);
+        }
+    }
+
+    /**
+     * Override to handle OpenCode's deferred tool call arguments.
+     * If there's a pending deferred tool call, emit it with merged arguments from the update.
+     */
+    @Override
+    protected void handleToolCallUpdateEvent(@NotNull JsonObject update, @NotNull Consumer<SessionUpdate> onUpdate) {
+        String toolCallId = update.has(TOOL_CALL_ID_KEY) ? update.get(TOOL_CALL_ID_KEY).getAsString() : "";
+
+        // Check if we have a deferred tool call waiting for arguments
+        JsonObject pendingCall = pendingToolCalls.remove(toolCallId);
+        if (pendingCall != null) {
+            // Merge arguments from update into the pending call and emit
+            String args = extractAcpArguments(update);
+            if (args != null && !args.isEmpty() && !args.equals("{}")) {
+                // Transfer any argument-like keys found in update to pendingCall
+                for (String key : new String[]{ARGUMENTS_KEY, INPUT_KEY, RAW_INPUT_KEY, CONTENT, TITLE_KEY, KIND_KEY}) {
+                    if (update.has(key)) {
+                        pendingCall.add(key, update.get(key));
+                    }
+                }
+            }
+            LOG.info("[OpenCode tool_call] Emitting deferred toolCallId=" + toolCallId + " with merged info from update");
+            onUpdate.accept(buildToolCallEvent(pendingCall));
+        }
+
+        // Always emit the update
+        onUpdate.accept(buildToolCallUpdateEvent(update));
+    }
+
     @Override
     @NotNull
     public List<com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings.FileEntry>
@@ -186,5 +244,26 @@ public class OpenCodeAcpClient extends AcpClient {
         entries.add(new com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings.FileEntry(
             "Agents", ".agent-work/opencode/agents/*.md", true, "OpenCode"));
         return entries;
+    }
+
+    /**
+     * OpenCode-specific result extraction from rawOutput.output format.
+     */
+    @Override
+    @Nullable
+    protected String extractAgentSpecificResult(@NotNull JsonObject update) {
+        // OpenCode sends results in rawOutput.output
+        if (update.has("rawOutput")) {
+            JsonElement rawOutput = update.get("rawOutput");
+            if (rawOutput.isJsonObject()) {
+                JsonObject rawOutputObj = rawOutput.getAsJsonObject();
+                if (rawOutputObj.has(OUTPUT_KEY)) {
+                    JsonElement output = rawOutputObj.get(OUTPUT_KEY);
+                    if (output.isJsonPrimitive()) return output.getAsString();
+                    if (output.isJsonObject() || output.isJsonArray()) return gson.toJson(output);
+                }
+            }
+        }
+        return null;
     }
 }
