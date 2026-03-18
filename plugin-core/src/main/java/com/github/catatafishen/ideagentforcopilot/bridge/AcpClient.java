@@ -837,7 +837,24 @@ public abstract class AcpClient implements AgentClient {
         String subAgentPrompt = agentType != null ? extractSubAgentField(args, PROMPT) : null;
         LOG.info("[ACP tool_call event] extracted: id=" + toolCallId + ", title=" + title + ", kind=" + kind + ", args=" + args);
 
+        // Allow subclasses to extract and process additional metadata from the tool call
+        onToolCallEventReceived(toolCallId, update, args);
+
         return new SessionUpdate.ToolCall(toolCallId, title, kind, args, filePaths, agentType, subAgentDesc, subAgentPrompt);
+    }
+
+    /**
+     * Hook for subclasses to extract and process metadata from tool call events.
+     * For example, Kiro extracts {@code __tool_use_purpose} from the arguments
+     * to provide as a description in the tool call update.
+     *
+     * @param toolCallId the ID of the tool call
+     * @param update     the raw tool_call event JSON
+     * @param argsJson   the extracted tool arguments as JSON string (may be null)
+     */
+    protected void onToolCallEventReceived(@NotNull String toolCallId, @NotNull JsonObject update,
+                                           @Nullable String argsJson) {
+        // Default implementation does nothing
     }
 
     /**

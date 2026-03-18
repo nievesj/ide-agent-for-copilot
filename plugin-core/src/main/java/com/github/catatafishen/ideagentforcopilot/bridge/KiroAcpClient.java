@@ -5,12 +5,15 @@ import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -20,6 +23,12 @@ import java.util.regex.Pattern;
 public class KiroAcpClient extends AcpClient {
 
     public static final String PROFILE_ID = "kiro";
+
+    /**
+     * Maps tool call IDs to their purposes from {@code __tool_use_purpose} field.
+     * Used to provide descriptions for tool call updates.
+     */
+    private final ConcurrentMap<String, String> toolPurposes = new ConcurrentHashMap<>();
 
     @NotNull
     public static AgentProfile createDefaultProfile() {
@@ -94,6 +103,26 @@ public class KiroAcpClient extends AcpClient {
         return entries;
     }
 
+    @Override
+    protected void onToolCallEventReceived(@NotNull String toolCallId, @NotNull JsonObject update,
+                                           @Nullable String argsJson) {
+        // Extract __tool_use_purpose from tool arguments (Kiro includes this for better UI context)
+        if (argsJson != null && !argsJson.isEmpty()) {
+            try {
+                JsonObject argsObj = JsonParser.parseString(argsJson).getAsJsonObject();
+                if (argsObj.has("__tool_use_purpose")) {
+                    String purpose = argsObj.get("__tool_use_purpose").getAsString();
+                    if (purpose != null && !purpose.isEmpty()) {
+                        storeToolPurpose(toolCallId, purpose);
+                        LOG.debug("Stored tool purpose for " + toolCallId + ": " + purpose.substring(0, Math.min(100, purpose.length())) + "...");
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debug("Failed to extract __tool_use_purpose from args", e);
+            }
+        }
+    }
+
     /**
      * Kiro-specific error response handling.
      * Kiro error data format: "Encountered an error in the response stream: request_id: [uuid], error: [error message]"
@@ -117,6 +146,38 @@ public class KiroAcpClient extends AcpClient {
                 }
             }
         }
+    }
+
+    @NotNull
+    @Override
+    protected SessionUpdate.ToolCallUpdate buildToolCallUpdateEvent(@NotNull JsonObject update) {
+        SessionUpdate.ToolCallUpdate base = super.buildToolCallUpdateEvent(update);
+        String toolCallId = base.toolCallId();
+
+        // For tool calls that completed or failed, try to extract and attach the purpose
+        if (base.status() == SessionUpdate.ToolCallStatus.COMPLETED ||
+            base.status() == SessionUpdate.ToolCallStatus.FAILED) {
+            String purpose = toolPurposes.remove(toolCallId);
+            if (purpose != null && !purpose.isEmpty()) {
+                return new SessionUpdate.ToolCallUpdate(
+                    toolCallId,
+                    base.status(),
+                    base.result(),
+                    base.error(),
+                    purpose  // Use the stored purpose as description
+                );
+            }
+        }
+
+        return base;
+    }
+
+    /**
+     * Stores tool purposes extracted from __tool_use_purpose field for later retrieval.
+     * Called by hook methods when tool events are processed.
+     */
+    protected void storeToolPurpose(@NotNull String toolCallId, @NotNull String purpose) {
+        toolPurposes.put(toolCallId, purpose);
     }
 
     /**
