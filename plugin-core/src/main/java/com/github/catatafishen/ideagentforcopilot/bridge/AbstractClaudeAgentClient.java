@@ -114,13 +114,13 @@ abstract class AbstractClaudeAgentClient implements AgentClient {
 
     /**
      * Strips the MCP server prefix from tool names.
-     * Claude Code uses the format: {@code mcp__intellij-code-tools__tool_name}
+     * Claude Code uses the format: {@code mcp__agentbridge__tool_name}
      */
     @Override
     @NotNull
     public String normalizeToolName(@NotNull String name) {
-        if (name.startsWith("mcp__intellij-code-tools__")) {
-            return name.substring("mcp__intellij-code-tools__".length());
+        if (name.startsWith("mcp__agentbridge__")) {
+            return name.substring("mcp__agentbridge__".length());
         }
         return name;
     }

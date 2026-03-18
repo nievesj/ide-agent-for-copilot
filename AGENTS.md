@@ -23,7 +23,7 @@ BEST PRACTICES:
   NEVER use run_command for git — shell git bypasses IntelliJ's VCS layer and causes editor buffer desync.
 
 6. NATIVE TOOLS: Do NOT use bash, glob, grep, read, write, edit, or run_command. \
-  Use intellij-code-tools equivalents instead to stay in sync with IDE buffers. \
+  Use agentbridge equivalents instead to stay in sync with IDE buffers. \
   Examples: intellij_read_file, intellij_write_file, intellij_search_text, intellij_run_command.
 
   7. GrazieInspection (grammar) does NOT support apply_quickfix → use intellij_write_file instead.
@@ -36,7 +36,7 @@ BEST PRACTICES:
 SUB-AGENT TOOL GUIDANCE:
   Sub-agents do not see these instructions. When launching sub-agents via the Task tool, \
 include relevant tool guidance in the prompt you write for them: \
-                                                                   - All agents: "ONLY use intellij-code-tools_* for file operations, git, terminal, and search — NEVER use bash, glob, grep, read, write, edit, or run_command." \
+                                                                   - All agents: "ONLY use agentbridge_* for file operations, git, terminal, and search — NEVER use bash, glob, grep, read, write, edit, or run_command." \
                                                                    - All sub-agents: "Do NOT use git write commands (git_commit, git_stage, etc.) — only the main agent may write." \
                                                                    - Explore agents: "Use intellij_search_text to search code." \
                                                                    - Task agents: "Use intellij_run_command for shell commands."
@@ -70,11 +70,11 @@ name: ide-explore
 description: "Fast codebase explorer using IntelliJ code intelligence"
 model: claude-haiku-4.5
 tools:
-  - intellij-code-tools/intellij_read_file
-  - intellij-code-tools/search_text
-  - intellij-code-tools/search_symbols
-  - intellij-code-tools/get_file_outline
-  - intellij-code-tools/list_project_files
+  - agentbridge/intellij_read_file
+  - agentbridge/search_text
+  - agentbridge/search_symbols
+  - agentbridge/get_file_outline
+  - agentbridge/list_project_files
 ---
 
 System prompt goes here...
@@ -164,10 +164,10 @@ See [JUNIE-TOOL-WORKAROUND.md](docs/JUNIE-TOOL-WORKAROUND.md).
   "name": "intellij-agent",
   "tools": [
     "web_search",
-    "@intellij-code-tools/*"
+    "@agentbridge/*"
   ],
   "allowedTools": [
-    "@intellij-code-tools/read_file",
+    "@agentbridge/read_file",
     "web_search"
   ]
 }
@@ -183,10 +183,10 @@ See [JUNIE-TOOL-WORKAROUND.md](docs/JUNIE-TOOL-WORKAROUND.md).
 
 | Agent    | MCP Tool Prefix         | Agent Definition Support         | Tool Filtering Format                                      | Permission Requests  | Bundled Agents               | Status                     |
 |----------|-------------------------|----------------------------------|------------------------------------------------------------|----------------------|------------------------------|----------------------------|
-| Copilot  | `intellij-code-tools-`  | ✅ `~/.copilot/agents/*.md`       | YAML array: `tools: [tool1, tool2]`                        | ✅ For write tools    | 2 (ide-explore, ide-task)    | Working (filtering broken) |
-| OpenCode | `intellij-code-tools_`  | ✅ `.opencode/agent/*.md` or JSON | YAML object: `permission: {"*": "deny", "tool1": "allow"}` | ✅ Yes                | 2 (ide-general, ide-explore) | ✅ Working                  |
-| Junie    | `intellij-code-tools-`  | ❌ No support                     | N/A                                                        | ❌ No (auto-executes) | 0                            | Prompt workaround only     |
-| Kiro     | `@intellij-code-tools/` | ✅ `.agent-work/.kiro/agents/`    | JSON: `allowedTools: ["tool1"]`                            | ⚠️ Hangs on prompts  | 1 (intellij-agent)           | ⚠️ Experimental (hangs)    |
+| Copilot  | `agentbridge-`  | ✅ `~/.copilot/agents/*.md`       | YAML array: `tools: [tool1, tool2]`                        | ✅ For write tools    | 2 (ide-explore, ide-task)    | Working (filtering broken) |
+| OpenCode | `agentbridge_`  | ✅ `.opencode/agent/*.md` or JSON | YAML object: `permission: {"*": "deny", "tool1": "allow"}` | ✅ Yes                | 2 (ide-general, ide-explore) | ✅ Working                  |
+| Junie    | `agentbridge-`  | ❌ No support                     | N/A                                                        | ❌ No (auto-executes) | 0                            | Prompt workaround only     |
+| Kiro     | `@agentbridge/` | ✅ `.agent-work/.kiro/agents/`    | JSON: `allowedTools: ["tool1"]`                            | ⚠️ Hangs on prompts  | 1 (intellij-agent)           | ⚠️ Experimental (hangs)    |
 
 See [.agent-work/OPENCODE-AGENT-FINDINGS.md](.agent-work/OPENCODE-AGENT-FINDINGS.md) for detailed OpenCode
 investigation and [.agent-work/KIRO-AGENT-FINDINGS.md](.agent-work/KIRO-AGENT-FINDINGS.md) for Kiro findings.

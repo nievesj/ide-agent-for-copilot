@@ -43,7 +43,7 @@ public class KiroAcpClient extends AcpClient {
         // ACP spec requires: name (required), command, args, env (as array, not object!)
         p.setMcpConfigTemplate(
             "{\"mcpServers\":["
-                + "{\"name\":\"intellij-code-tools\","
+                + "{\"name\":\"agentbridge\","
                 + "\"command\":\"{javaPath}\","
                 + "\"args\":[\"-jar\",\"{mcpJarPath}\",\"--port\",\"{mcpPort}\"],"
                 + "\"env\":[]}"

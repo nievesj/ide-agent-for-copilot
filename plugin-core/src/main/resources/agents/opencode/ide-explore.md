@@ -6,35 +6,35 @@ model: anthropic/claude-haiku-3-5
 permission:
   "*": deny
   # Read-only IntelliJ MCP tools
-  intellij-code-tools/read_file: allow
-  intellij-code-tools/search_text: allow
-  intellij-code-tools/search_symbols: allow
-  intellij-code-tools/list_project_files: allow
-  intellij-code-tools/get_file_outline: allow
-  intellij-code-tools/find_references: allow
-  intellij-code-tools/go_to_declaration: allow
-  intellij-code-tools/get_type_hierarchy: allow
-  intellij-code-tools/find_implementations: allow
-  intellij-code-tools/get_call_hierarchy: allow
-  intellij-code-tools/get_class_outline: allow
-  intellij-code-tools/get_documentation: allow
+  agentbridge/read_file: allow
+  agentbridge/search_text: allow
+  agentbridge/search_symbols: allow
+  agentbridge/list_project_files: allow
+  agentbridge/get_file_outline: allow
+  agentbridge/find_references: allow
+  agentbridge/go_to_declaration: allow
+  agentbridge/get_type_hierarchy: allow
+  agentbridge/find_implementations: allow
+  agentbridge/get_call_hierarchy: allow
+  agentbridge/get_class_outline: allow
+  agentbridge/get_documentation: allow
   # Git read-only
-  intellij-code-tools/git_status: allow
-  intellij-code-tools/git_diff: allow
-  intellij-code-tools/git_log: allow
-  intellij-code-tools/git_blame: allow
+  agentbridge/git_status: allow
+  agentbridge/git_diff: allow
+  agentbridge/git_log: allow
+  agentbridge/git_blame: allow
   # Analysis
-  intellij-code-tools/get_problems: allow
-  intellij-code-tools/get_compilation_errors: allow
+  agentbridge/get_problems: allow
+  agentbridge/get_compilation_errors: allow
   # All write operations denied
-  intellij-code-tools/write_file: deny
-  intellij-code-tools/edit_text: deny
-  intellij-code-tools/create_file: deny
-  intellij-code-tools/delete_file: deny
-  intellij-code-tools/git_commit: deny
-  intellij-code-tools/git_stage: deny
-  intellij-code-tools/run_command: deny
-  intellij-code-tools/build_project: deny
+  agentbridge/write_file: deny
+  agentbridge/edit_text: deny
+  agentbridge/create_file: deny
+  agentbridge/delete_file: deny
+  agentbridge/git_commit: deny
+  agentbridge/git_stage: deny
+  agentbridge/run_command: deny
+  agentbridge/build_project: deny
 ---
 
 You are a fast, read-only code explorer with IntelliJ code intelligence.

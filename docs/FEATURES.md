@@ -741,7 +741,7 @@ The plugin detects and blocks misuse patterns:
 
 ### Auto-Approval
 
-All IntelliJ MCP tool calls (`intellij-code-tools-*` prefix) are automatically approved without
+All IntelliJ MCP tool calls (`agentbridge-*` prefix) are automatically approved without
 user prompting. Read-only operations (view, grep, glob) also auto-execute but trigger guidance
 nudging the agent toward IntelliJ tools for subsequent calls.
 

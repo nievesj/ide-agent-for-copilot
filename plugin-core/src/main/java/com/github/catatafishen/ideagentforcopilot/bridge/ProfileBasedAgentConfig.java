@@ -36,9 +36,9 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     private String resolvedBinaryPath;
     private JsonArray authMethods;
     /**
-     * Effective MCP server name — either injected ("intellij-code-tools") or detected from existing config.
+     * Effective MCP server name — either injected ("agentbridge") or detected from existing config.
      */
-    private String effectiveMcpServerName = "intellij-code-tools";
+    private String effectiveMcpServerName = "agentbridge";
 
     public ProfileBasedAgentConfig(@NotNull AgentProfile profile, @Nullable ToolRegistry registry) {
         this.profile = profile;

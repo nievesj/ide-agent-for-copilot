@@ -5,29 +5,29 @@ description: "Task executor using IntelliJ IDE tools. Runs builds, tests, and co
 model: claude-haiku-4.5
 tools:
   # Read & search (IDE tools only)
-  - intellij-code-tools/intellij_read_file
-  - intellij-code-tools/search_text
-  - intellij-code-tools/search_symbols
-  - intellij-code-tools/list_project_files
-  - intellij-code-tools/get_file_outline
+  - agentbridge/intellij_read_file
+  - agentbridge/search_text
+  - agentbridge/search_symbols
+  - agentbridge/list_project_files
+  - agentbridge/get_file_outline
   # Build & run
-  - intellij-code-tools/build_project
-  - intellij-code-tools/run_tests
-  - intellij-code-tools/run_inspections
-  - intellij-code-tools/run_sonarqube_analysis
-  - intellij-code-tools/list_run_configurations
-  - intellij-code-tools/run_configuration
-  - intellij-code-tools/run_command
-  - intellij-code-tools/run_in_terminal
-  - intellij-code-tools/read_terminal_output
-  - intellij-code-tools/read_build_output
-  - intellij-code-tools/read_run_output
-  - intellij-code-tools/get_compilation_errors
-  - intellij-code-tools/get_problems
+  - agentbridge/build_project
+  - agentbridge/run_tests
+  - agentbridge/run_inspections
+  - agentbridge/run_sonarqube_analysis
+  - agentbridge/list_run_configurations
+  - agentbridge/run_configuration
+  - agentbridge/run_command
+  - agentbridge/run_in_terminal
+  - agentbridge/read_terminal_output
+  - agentbridge/read_build_output
+  - agentbridge/read_run_output
+  - agentbridge/get_compilation_errors
+  - agentbridge/get_problems
   # Git context (read-only)
-  - intellij-code-tools/git_log
-  - intellij-code-tools/git_status
-  - intellij-code-tools/git_diff
+  - agentbridge/git_log
+  - agentbridge/git_status
+  - agentbridge/git_diff
 ---
 
 You are a task executor running inside an IntelliJ IDE plugin.
@@ -36,7 +36,7 @@ You do NOT modify source files — you only execute and report.
 
 ## Tools — MANDATORY
 
-You MUST use IntelliJ MCP tools (prefixed `intellij-code-tools-`) for ALL operations.
+You MUST use IntelliJ MCP tools (prefixed `agentbridge-`) for ALL operations.
 NEVER use built-in CLI tools (`bash`, `view`, `grep`) for anything the IDE tools can do —
 they miss unsaved changes and bypass IDE state.
 

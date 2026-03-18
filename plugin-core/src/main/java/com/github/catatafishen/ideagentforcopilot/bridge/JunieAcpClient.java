@@ -63,7 +63,7 @@ public class JunieAcpClient extends AcpClient {
         p.setMcpMethod(McpInjectionMethod.MCP_LOCATION_FLAG);
         p.setSupportsMcpConfigFlag(false);
         p.setMcpConfigTemplate(
-            "{\"mcpServers\":{\"intellij-code-tools\":"
+            "{\"mcpServers\":{\"agentbridge\":"
                 + "{\"type\":\"stdio\","
                 + "\"command\":\"{javaPath}\","
                 + "\"args\":[\"-jar\",\"{mcpJarPath}\",\"--port\",\"{mcpPort}\"]}}}");
@@ -89,7 +89,7 @@ public class JunieAcpClient extends AcpClient {
     @NotNull
     public String normalizeToolName(@NotNull String name) {
         return name.trim()
-            .replaceFirst("Tool: intellij-code-tools/", "")
+            .replaceFirst("Tool: agentbridge/", "")
             .replaceFirst("Tool: ", "");
     }
 

@@ -137,7 +137,7 @@ Built-in Copilot file operations are denied so all writes go through IntelliJ's 
 
 ```
 Copilot CLI ──stdio──► MCP Server (JAR) ──HTTP──► PsiBridgeService
-                       intellij-code-tools         (IntelliJ process)
+                       agentbridge         (IntelliJ process)
 ```
 
 - **MCP Server** (`mcp-server/`): Standalone JAR, stdio protocol, routes tool calls to PSI bridge

@@ -60,7 +60,7 @@ public final class AgentProfile {
     private McpInjectionMethod mcpMethod;
     private String mcpConfigTemplate;
     private String mcpEnvVarName = "";
-    private String mcpServerName = "intellij-code-tools";
+    private String mcpServerName = "agentbridge";
 
     // ── Feature Flags ────────────────────────────────────────────────────────
 

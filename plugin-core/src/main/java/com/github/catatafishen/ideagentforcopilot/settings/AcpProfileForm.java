@@ -94,7 +94,7 @@ final class AcpProfileForm {
         modelUsageFieldField = new JBTextField();
         modelUsageFieldField.getEmptyText().setText("e.g. copilotUsage");
         toolNameRegexField = new JBTextField();
-        toolNameRegexField.getEmptyText().setText("Regex to match tool name (e.g. ^intellij-code-tools-(.*)$)");
+        toolNameRegexField.getEmptyText().setText("Regex to match tool name (e.g. ^agentbridge-(.*)$)");
         toolNameReplacementField = new JBTextField();
         toolNameReplacementField.getEmptyText().setText("Replacement string (e.g. $1)");
     }

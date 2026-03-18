@@ -5,23 +5,23 @@ description: "Fast codebase explorer using IntelliJ code intelligence. Answers q
 model: claude-haiku-4.5
 tools:
   # Read & search (IDE tools only — no built-in read/grep/glob)
-  - intellij-code-tools/intellij_read_file
-  - intellij-code-tools/search_text
-  - intellij-code-tools/search_symbols
-  - intellij-code-tools/find_references
-  - intellij-code-tools/list_project_files
+  - agentbridge/intellij_read_file
+  - agentbridge/search_text
+  - agentbridge/search_symbols
+  - agentbridge/find_references
+  - agentbridge/list_project_files
   # Code intelligence
-  - intellij-code-tools/get_file_outline
-  - intellij-code-tools/get_class_outline
-  - intellij-code-tools/go_to_declaration
-  - intellij-code-tools/get_type_hierarchy
-  - intellij-code-tools/get_documentation
+  - agentbridge/get_file_outline
+  - agentbridge/get_class_outline
+  - agentbridge/go_to_declaration
+  - agentbridge/get_type_hierarchy
+  - agentbridge/get_documentation
   # Project & git context (read-only)
-  - intellij-code-tools/get_project_info
-  - intellij-code-tools/git_log
-  - intellij-code-tools/git_diff
-  - intellij-code-tools/git_blame
-  - intellij-code-tools/git_status
+  - agentbridge/get_project_info
+  - agentbridge/git_log
+  - agentbridge/git_diff
+  - agentbridge/git_blame
+  - agentbridge/git_status
 ---
 
 You are a fast, focused codebase explorer running inside an IntelliJ IDE plugin.
@@ -30,7 +30,7 @@ and summarize what you find. You do NOT modify anything.
 
 ## Tools — MANDATORY
 
-You MUST use IntelliJ MCP tools (prefixed `intellij-code-tools-`) for ALL operations.
+You MUST use IntelliJ MCP tools (prefixed `agentbridge-`) for ALL operations.
 NEVER use built-in CLI tools (`view`, `grep`, `glob`, `bash`, `read`) — they read stale
 disk files instead of live editor buffers and miss unsaved changes.
 

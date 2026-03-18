@@ -734,7 +734,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     private Path writeMcpConfigIfNeeded() throws AcpException {
         if (mcpPort <= 0) return null;
         try {
-            String json = "{\"mcpServers\":{\"intellij-code-tools\":{"
+            String json = "{\"mcpServers\":{\"agentbridge\":{"
                 + "\"type\":\"http\","
                 + "\"url\":\"http://localhost:" + mcpPort + "/mcp\"}}}";
             Path tmp = Files.createTempFile("ide-agent-mcp-", ".json");

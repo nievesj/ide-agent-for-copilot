@@ -54,15 +54,15 @@ private static final Set<String> DENIED_PERMISSION_KINDS = Set.of(
 **Retry Message:**
 
 ```
-❌ Tool denied. Use tools with 'intellij-code-tools-' prefix instead.
+❌ Tool denied. Use tools with 'agentbridge-' prefix instead.
 ```
 
 ### Why This Works
 
 1. Agent tries CLI built-in tool (e.g., `view`)
 2. Plugin denies permission request
-3. Agent receives simple guidance: "Use intellij-code-tools- prefix"
-4. Agent retries with correct tool (e.g., `intellij-code-tools-intellij_read_file`)
+3. Agent receives simple guidance: "Use agentbridge- prefix"
+4. Agent retries with correct tool (e.g., `agentbridge-intellij_read_file`)
 
 ### Benefits of IntelliJ Tools
 

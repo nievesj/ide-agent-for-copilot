@@ -106,7 +106,7 @@ plugin when launching the Copilot CLI.
 ```json
 {
   "mcpServers": {
-    "intellij-code-tools": {
+    "agentbridge": {
       "command": "java",
       "args": [
         "-cp",

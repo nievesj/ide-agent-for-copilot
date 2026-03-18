@@ -97,15 +97,15 @@ public abstract class AcpClient implements AgentClient {
     protected final AgentSettings agentSettings;
     protected final int mcpPort;
     /**
-     * Prefix used to strip the MCP server name from incoming tool-call names (e.g. "intellij-code-tools-").
+     * Prefix used to strip the MCP server name from incoming tool-call names (e.g. "agentbridge-").
      */
-    protected volatile String effectiveMcpPrefix = "intellij-code-tools-";
+    protected volatile String effectiveMcpPrefix = "agentbridge-";
 
     /**
      * Prefix used when identifying tool calls in the log or for permission mapping.
      * Default matches GitHub Copilot style.
      */
-    protected String logMcpPrefix = "intellij-code-tools-";
+    protected String logMcpPrefix = "agentbridge-";
     private Process process;
     private BufferedWriter writer;
     private Thread readerThread;

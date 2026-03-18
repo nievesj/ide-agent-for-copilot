@@ -69,7 +69,7 @@ public class OpenCodeAcpClient extends AcpClient {
     private static String buildConfigTemplate() {
         return "{"
             + "\"default_agent\":\"ide-general\","
-            + "\"mcp\":{\"intellij-code-tools\":"
+            + "\"mcp\":{\"agentbridge\":"
             + "{\"type\":\"local\","
             + "\"command\":[\"{javaPath}\",\"-jar\",\"{mcpJarPath}\","
             + "\"--port\",\"{mcpPort}\"]}},"
@@ -90,24 +90,24 @@ public class OpenCodeAcpClient extends AcpClient {
             + "\"description\":\"General-purpose agent for IntelliJ projects. Uses IntelliJ MCP tools for file operations, git, search, and testing.\","
             + "\"mode\":\"primary\","
             + "\"prompt\":\"You are working in an IntelliJ IDEA project with access to IDE-native tools via MCP.\\n\\n"
-            + "CRITICAL: ALWAYS use IntelliJ MCP tools (intellij-code-tools/*) for file operations, git, search, and terminal. "
+            + "CRITICAL: ALWAYS use IntelliJ MCP tools (agentbridge/*) for file operations, git, search, and terminal. "
             + "Built-in tools (read, write, edit, bash, glob, grep) are disabled.\\n\\n"
-            + "Git: Use intellij-code-tools/git_* tools exclusively — shell git bypasses VCS integration.\\n\\n"
+            + "Git: Use agentbridge/git_* tools exclusively — shell git bypasses VCS integration.\\n\\n"
             + "File editing: Use edit_text for surgical edits, write_file for full rewrites. "
             + "Set auto_format_and_optimize_imports=false for sequential edits.\\n\\n"
             + "Verification: Check auto-highlights in responses, use get_problems, build_project.\\n\\n"
             + "Workspace: Write temp files to .agent-work/ directory.\","
             + "\"permission\":{"
             + "\"*\":\"ask\","
-            + "\"intellij-code-tools/read_file\":\"allow\","
-            + "\"intellij-code-tools/search_text\":\"allow\","
-            + "\"intellij-code-tools/search_symbols\":\"allow\","
-            + "\"intellij-code-tools/list_project_files\":\"allow\","
-            + "\"intellij-code-tools/get_file_outline\":\"allow\","
-            + "\"intellij-code-tools/git_status\":\"allow\","
-            + "\"intellij-code-tools/git_diff\":\"allow\","
-            + "\"intellij-code-tools/git_log\":\"allow\","
-            + "\"intellij-code-tools/get_problems\":\"allow\","
+            + "\"agentbridge/read_file\":\"allow\","
+            + "\"agentbridge/search_text\":\"allow\","
+            + "\"agentbridge/search_symbols\":\"allow\","
+            + "\"agentbridge/list_project_files\":\"allow\","
+            + "\"agentbridge/get_file_outline\":\"allow\","
+            + "\"agentbridge/git_status\":\"allow\","
+            + "\"agentbridge/git_diff\":\"allow\","
+            + "\"agentbridge/git_log\":\"allow\","
+            + "\"agentbridge/get_problems\":\"allow\","
             + "\"read\":\"deny\","
             + "\"write\":\"deny\","
             + "\"edit\":\"deny\","
@@ -139,24 +139,24 @@ public class OpenCodeAcpClient extends AcpClient {
             + "FORMAT: Be concise, include file:line refs, show 5-10 line snippets.\","
             + "\"permission\":{"
             + "\"*\":\"deny\","
-            + "\"intellij-code-tools/read_file\":\"allow\","
-            + "\"intellij-code-tools/search_text\":\"allow\","
-            + "\"intellij-code-tools/search_symbols\":\"allow\","
-            + "\"intellij-code-tools/list_project_files\":\"allow\","
-            + "\"intellij-code-tools/get_file_outline\":\"allow\","
-            + "\"intellij-code-tools/find_references\":\"allow\","
-            + "\"intellij-code-tools/go_to_declaration\":\"allow\","
-            + "\"intellij-code-tools/get_type_hierarchy\":\"allow\","
-            + "\"intellij-code-tools/find_implementations\":\"allow\","
-            + "\"intellij-code-tools/get_call_hierarchy\":\"allow\","
-            + "\"intellij-code-tools/get_class_outline\":\"allow\","
-            + "\"intellij-code-tools/get_documentation\":\"allow\","
-            + "\"intellij-code-tools/git_status\":\"allow\","
-            + "\"intellij-code-tools/git_diff\":\"allow\","
-            + "\"intellij-code-tools/git_log\":\"allow\","
-            + "\"intellij-code-tools/git_blame\":\"allow\","
-            + "\"intellij-code-tools/get_problems\":\"allow\","
-            + "\"intellij-code-tools/get_compilation_errors\":\"allow\""
+            + "\"agentbridge/read_file\":\"allow\","
+            + "\"agentbridge/search_text\":\"allow\","
+            + "\"agentbridge/search_symbols\":\"allow\","
+            + "\"agentbridge/list_project_files\":\"allow\","
+            + "\"agentbridge/get_file_outline\":\"allow\","
+            + "\"agentbridge/find_references\":\"allow\","
+            + "\"agentbridge/go_to_declaration\":\"allow\","
+            + "\"agentbridge/get_type_hierarchy\":\"allow\","
+            + "\"agentbridge/find_implementations\":\"allow\","
+            + "\"agentbridge/get_call_hierarchy\":\"allow\","
+            + "\"agentbridge/get_class_outline\":\"allow\","
+            + "\"agentbridge/get_documentation\":\"allow\","
+            + "\"agentbridge/git_status\":\"allow\","
+            + "\"agentbridge/git_diff\":\"allow\","
+            + "\"agentbridge/git_log\":\"allow\","
+            + "\"agentbridge/git_blame\":\"allow\","
+            + "\"agentbridge/get_problems\":\"allow\","
+            + "\"agentbridge/get_compilation_errors\":\"allow\""
             + "}}";
     }
 
@@ -166,19 +166,19 @@ public class OpenCodeAcpClient extends AcpClient {
                              @Nullable String projectBasePath,
                              int mcpPort) {
         super(config, settings, registry, projectBasePath, mcpPort);
-        this.logMcpPrefix = "intellij-code-tools_";
+        this.logMcpPrefix = "agentbridge_";
     }
 
     @Override
     @NotNull
     public String normalizeToolName(@NotNull String name) {
-        return name.replaceFirst("^intellij-code-tools_", "");
+        return name.replaceFirst("^agentbridge_", "");
     }
 
     @Override
     @NotNull
     public List<com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings.FileEntry>
-        getDefaultProjectFiles() {
+    getDefaultProjectFiles() {
         List<com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings.FileEntry> entries = new ArrayList<>();
         entries.add(new com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings.FileEntry(
             "Config", ".agent-work/opencode/opencode.json", false, "OpenCode"));

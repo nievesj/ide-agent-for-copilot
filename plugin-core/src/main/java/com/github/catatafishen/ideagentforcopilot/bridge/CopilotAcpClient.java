@@ -54,7 +54,7 @@ public class CopilotAcpClient extends AcpClient {
         p.setMcpMethod(McpInjectionMethod.CONFIG_FLAG);
         p.setSupportsMcpConfigFlag(true);
         p.setMcpConfigTemplate(
-            "{\"mcpServers\":{\"intellij-code-tools\":"
+            "{\"mcpServers\":{\"agentbridge\":"
                 + "{\"type\":\"http\","
                 + "\"url\":\"http://localhost:{mcpPort}/mcp\"}}}");
         p.setSupportsModelFlag(true);
@@ -108,7 +108,7 @@ public class CopilotAcpClient extends AcpClient {
     @Override
     @NotNull
     public String normalizeToolName(@NotNull String name) {
-        return name.replaceFirst("^intellij-code-tools-", "");
+        return name.replaceFirst("^agentbridge-", "");
     }
 
     @Override

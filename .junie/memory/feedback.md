@@ -18,8 +18,8 @@
 {
     "TYPE": "correction",
     "CATEGORY": "Tool name mapping failure",
-    "EXPECTATION": "Junie should display mapped, human-friendly tool names instead of raw MCP IDs like 'intellij-code-tools/search_text'.",
-    "NEW INSTRUCTION": "WHEN tool chip contains 'intellij-code-tools/' THEN display mapped friendly tool name without namespace"
+    "EXPECTATION": "Junie should display mapped, human-friendly tool names instead of raw MCP IDs like 'agentbridge/search_text'.",
+    "NEW INSTRUCTION": "WHEN tool chip contains 'agentbridge/' THEN display mapped friendly tool name without namespace"
 }
 
 [2026-03-16 12:30] - Updated by Junie
@@ -50,7 +50,7 @@
 {
     "TYPE": "correction",
     "CATEGORY": "Junie tool name normalization",
-    "EXPECTATION": "JunieAcpClient should map MCP plugin tool IDs (e.g., 'intellij-code-tools/edit_text') to the same friendly tool names used by other agents so UI renderers resolve correctly and labels look consistent.",
+    "EXPECTATION": "JunieAcpClient should map MCP plugin tool IDs (e.g., 'agentbridge/edit_text') to the same friendly tool names used by other agents so UI renderers resolve correctly and labels look consistent.",
     "NEW INSTRUCTION": "WHEN normalizing Junie MCP plugin tool IDs THEN map to shared friendly names used by other agents"
 }
 
@@ -90,7 +90,7 @@
 {
     "TYPE": "correction",
     "CATEGORY": "Junie naming schema",
-    "EXPECTATION": "Only normalize Junie’s actual tool IDs (e.g., intellij-code-tools/intellij_read_file); double-underscore patterns are not used.",
+    "EXPECTATION": "Only normalize Junie’s actual tool IDs (e.g., agentbridge/intellij_read_file); double-underscore patterns are not used.",
     "NEW INSTRUCTION": "WHEN normalizing tool names in JunieAcpClient THEN map only Junie slash-prefixed IDs from tools list"
 }
 
@@ -138,7 +138,7 @@
 {
     "TYPE": "correction",
     "CATEGORY": "Tool chip label and mapping",
-    "EXPECTATION": "UI should not prefix tool chips with 'Tool: ' and JunieAcpClient must map 'intellij-code-tools/git_commit' to a friendly name via normalizeToolName.",
+    "EXPECTATION": "UI should not prefix tool chips with 'Tool: ' and JunieAcpClient must map 'agentbridge/git_commit' to a friendly name via normalizeToolName.",
     "NEW INSTRUCTION": "WHEN rendering tool chips in UI THEN do not prefix labels with 'Tool: '"
 }
 
@@ -146,7 +146,7 @@
 {
     "TYPE": "correction",
     "CATEGORY": "Tool chip prefix + mapping",
-    "EXPECTATION": "Tool chips should not show the 'Tool: ' prefix and JunieAcpClient.normalizeToolName must map 'intellij-code-tools/git_commit' to a friendly name.",
+    "EXPECTATION": "Tool chips should not show the 'Tool: ' prefix and JunieAcpClient.normalizeToolName must map 'agentbridge/git_commit' to a friendly name.",
     "NEW INSTRUCTION": "WHEN rendering chat tool chips THEN remove any leading 'Tool: ' from labels"
 }
 
@@ -154,7 +154,7 @@
 {
     "TYPE": "correction",
     "CATEGORY": "Tool title prefix",
-    "EXPECTATION": "Titles from Junie like 'Tool: intellij-code-tools/list_project_files' should have the 'Tool: ' prefix stripped before display and normalization.",
+    "EXPECTATION": "Titles from Junie like 'Tool: agentbridge/list_project_files' should have the 'Tool: ' prefix stripped before display and normalization.",
     "NEW INSTRUCTION": "WHEN request_permission title starts with 'Tool: ' THEN strip prefix before mapping and display"
 }
 
@@ -298,8 +298,8 @@
 {
     "TYPE": "correction",
     "CATEGORY": "Tool prefix requirement",
-    "EXPECTATION": "Use the IDE MCP tools with the 'intellij-code-tools-' prefix; non-prefixed calls were denied.",
-    "NEW INSTRUCTION": "WHEN invoking any tool in this workspace THEN use names starting with 'intellij-code-tools-'"
+    "EXPECTATION": "Use the IDE MCP tools with the 'agentbridge-' prefix; non-prefixed calls were denied.",
+    "NEW INSTRUCTION": "WHEN invoking any tool in this workspace THEN use names starting with 'agentbridge-'"
 }
 
 [2026-03-17 13:42] - Updated by Junie
@@ -386,8 +386,8 @@
 {
     "TYPE": "correction",
     "CATEGORY": "Tool prefix requirement",
-    "EXPECTATION": "Use the IDE MCP tools with the 'intellij-code-tools-' prefix for all actions.",
-    "NEW INSTRUCTION": "WHEN invoking any tool in this workspace THEN use names starting with 'intellij-code-tools-'"
+    "EXPECTATION": "Use the IDE MCP tools with the 'agentbridge-' prefix for all actions.",
+    "NEW INSTRUCTION": "WHEN invoking any tool in this workspace THEN use names starting with 'agentbridge-'"
 }
 
 [2026-03-17 19:08] - Updated by Junie
@@ -402,8 +402,8 @@
 {
     "TYPE": "correction",
     "CATEGORY": "Tool prefix requirement",
-    "EXPECTATION": "All tool calls must use the 'intellij-code-tools-' prefix to avoid being denied.",
-    "NEW INSTRUCTION": "WHEN invoking any tool here THEN use names starting with 'intellij-code-tools-'"
+    "EXPECTATION": "All tool calls must use the 'agentbridge-' prefix to avoid being denied.",
+    "NEW INSTRUCTION": "WHEN invoking any tool here THEN use names starting with 'agentbridge-'"
 }
 
 [2026-03-17 19:12] - Updated by Junie
@@ -498,7 +498,7 @@
 {
     "TYPE": "correction",
     "CATEGORY": "Tool prefix requirement",
-    "EXPECTATION": "Use only IDE MCP tools whose names start with 'intellij-code-tools-' so calls are not denied.",
-    "NEW INSTRUCTION": "WHEN invoking any tool in this workspace THEN use names starting with 'intellij-code-tools-'"
+    "EXPECTATION": "Use only IDE MCP tools whose names start with 'agentbridge-' so calls are not denied.",
+    "NEW INSTRUCTION": "WHEN invoking any tool in this workspace THEN use names starting with 'agentbridge-'"
 }
 
