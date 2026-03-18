@@ -103,10 +103,38 @@ public final class ProjectFilesSettings implements PersistentStateComponent<Proj
 
     public static List<FileEntry> getDefaults() {
         List<FileEntry> entries = new ArrayList<>();
-        entries.add(new FileEntry("Instructions", ".copilot/copilot-instructions.md", false));
-        entries.add(new FileEntry("Instructions (GitHub)", ".github/copilot-instructions.md", false));
+
+        // Project-level config files
         entries.add(new FileEntry("TODO", "TODO.md", false));
+        entries.add(new FileEntry("CLAUDE.md", "CLAUDE.md", false));
+
+        // Claude agent files
+        entries.add(new FileEntry("Claude Settings", ".agent-work/claude/settings.json", false));
+        entries.add(new FileEntry("Claude Instructions", ".copilot/copilot-instructions.md", false));
+
+        // Junie agent files (Junie expects .junie/ in project root)
+        entries.add(new FileEntry("Junie Guidelines", ".junie/guidelines.md", false));
+        entries.add(new FileEntry("Junie Agents", ".junie/AGENTS.md", false));
+
+        // Kiro agent files
+        entries.add(new FileEntry("Kiro Settings", ".agent-work/kiro/settings/cli.json", false));
+        entries.add(new FileEntry("Kiro Steering", ".agent-work/kiro/steering/*.md", true));
+
+        // GitHub Copilot agent files
+        entries.add(new FileEntry("Copilot Settings", ".agent-work/copilot/config.json", false));
+        entries.add(new FileEntry("Copilot Instructions", ".github/copilot-instructions.md", false));
+        entries.add(new FileEntry("Copilot Project Settings", ".github/copilot/settings.local.json", false));
+
+        // OpenCode agent files
+        entries.add(new FileEntry("OpenCode Config", ".agent-work/opencode/opencode.json", false));
+
+        // Shared agent definitions
         entries.add(new FileEntry("Agent Definitions", ".github/agents/*.md", true));
+        entries.add(new FileEntry("Claude Agents", ".agent-work/claude/agents/*.md", true));
+        entries.add(new FileEntry("Kiro Agents", ".agent-work/kiro/agents/*.md", true));
+        entries.add(new FileEntry("Copilot Agents", ".agent-work/copilot/agents/*.md", true));
+        entries.add(new FileEntry("OpenCode Agents", ".agent-work/opencode/agents/*.md", true));
+
         return entries;
     }
 }

@@ -139,6 +139,9 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         // Inject captured shell environment (includes nvm, sdkman, etc.)
         pb.environment().putAll(com.github.catatafishen.ideagentforcopilot.settings.ShellEnvironment.getEnvironment());
 
+        // Set agent-specific config directory environment variables
+        setAgentConfigDirEnvVars(pb, projectBasePath);
+
         if (profile.getMcpMethod() == McpInjectionMethod.ENV_VAR && mcpPort > 0) {
             injectMcpViaEnvVar(pb, mcpPort);
         }
@@ -168,9 +171,35 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
 
     private void addConfigDirIfSupported(@NotNull List<String> cmd, @Nullable String projectBasePath) {
         if (!profile.isSupportsConfigDir() || projectBasePath == null) return;
-        Path agentWorkPath = Path.of(projectBasePath, ".agent-work");
+        // Use per-agent subdirectory to avoid cross-contamination
+        String agentId = profile.getId();
+        Path agentWorkPath = Path.of(projectBasePath, ".agent-work", agentId);
         cmd.add("--config-dir");
         cmd.add(agentWorkPath.toString());
+    }
+
+    /**
+     * Sets agent-specific config directory environment variables for agents that require them.
+     * Each agent gets its own subdirectory under .agent-work/<agent-id>/
+     */
+    private void setAgentConfigDirEnvVars(@NotNull ProcessBuilder pb, @Nullable String projectBasePath) {
+        if (projectBasePath == null) return;
+        String agentId = profile.getId();
+        String agentWorkDir = Path.of(projectBasePath, ".agent-work", agentId).toString();
+
+        switch (agentId) {
+            case "claude" -> pb.environment().put("CLAUDE_CONFIG_DIR", agentWorkDir);
+            case "copilot" -> pb.environment().put("COPILOT_HOME", agentWorkDir);
+            case "opencode" -> {
+                // OpenCode uses OPENCODE_CONFIG pointing to the config.json file
+                String configJsonPath = Path.of(agentWorkDir, "opencode.json").toString();
+                pb.environment().put("OPENCODE_CONFIG", configJsonPath);
+            }
+            default -> {
+                // Kiro uses --config-dir flag instead
+                // Junie reads from .junie/ in project root (no env var support)
+            }
+        }
     }
 
     private void injectMcpViaEnvVar(@NotNull ProcessBuilder pb, int mcpPort) {
