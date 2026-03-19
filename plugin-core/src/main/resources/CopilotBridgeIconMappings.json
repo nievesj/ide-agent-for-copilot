@@ -1,8 +1,7 @@
 {
   "icons": {
     "expui": {
-      "copilot.svg": "icons/copilot.svg",
-      "copilot_v2.svg": "icons/copilot_v2.svg"
+      "agentbridge.svg": "icons/agentbridge.svg"
     }
   }
 }

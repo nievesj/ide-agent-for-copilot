@@ -234,7 +234,7 @@
     <toolWindow id="AgentBridge"
                 secondary="false"
                 anchor="right"
-                icon="/icons/copilot.svg"
+                icon="/icons/agentbridge.svg"
                 factoryClass="com.github.catatafishen.ideagentforcopilot.ui.ChatToolWindowFactory"/>
 
     <!-- Application Services -->
