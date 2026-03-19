@@ -818,7 +818,7 @@ class ChatToolWindowContent(
 
     /** Dropdown toolbar button with restart and disconnect options. */
     private inner class RestartSessionGroup : AnAction(
-        "Restart Session", "Restart the agent session",
+        "Session", "Manage agent session",
         AllIcons.Actions.Restart
     ) {
         init {
@@ -843,13 +843,14 @@ class ChatToolWindowContent(
 
         override fun update(e: AnActionEvent) {
             val isConnected = agentManager.isConnected
+            val profile = agentManager.activeProfile
             val icon = if (isConnected) {
-                val profileId = agentManager.getActiveProfileId()
-                AgentIconProvider.getIconForProfile(profileId)
+                AgentIconProvider.getIconForProfile(profile.id)
             } else {
                 AgentIconProvider.getDefaultIcon()
             }
             e.presentation.icon = icon
+            e.presentation.setText(profile.displayName, true)
         }
 
         override fun actionPerformed(e: AnActionEvent) {
