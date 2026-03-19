@@ -146,6 +146,14 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         // Set agent-specific config directory environment variables
         setAgentConfigDirEnvVars(pb, projectBasePath);
 
+        // Write OpenCode config file and set env var if needed
+        if ("opencode".equals(profile.getId()) && mcpPort > 0 && projectBasePath != null) {
+            writeOpenCodeConfigFile(projectBasePath, mcpPort);
+            // Set OPENCODE_CONFIG env var pointing to the config file
+            String configPath = Path.of(projectBasePath, ".agent-work", "opencode", "opencode.json").toString();
+            pb.environment().put("OPENCODE_CONFIG", configPath);
+        }
+
         if (profile.getMcpMethod() == McpInjectionMethod.ENV_VAR && mcpPort > 0) {
             injectMcpViaEnvVar(pb, mcpPort);
         }
@@ -193,8 +201,8 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     /**
      * Configures agent-specific environment variables for the given environment map.
      * This can be used both for ACP agent processes and for auth commands.
-     * 
-     * @param environment The environment map to configure (e.g., from ProcessBuilder)
+     *
+     * @param environment     The environment map to configure (e.g., from ProcessBuilder)
      * @param projectBasePath The project base path, null if not available
      */
     public void configureAgentEnvironment(@NotNull Map<String, String> environment, @Nullable String projectBasePath) {
@@ -211,13 +219,61 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
             }
             case "opencode" -> {
                 // OpenCode uses OPENCODE_CONFIG pointing to the config.json file
-                String configJsonPath = Path.of(agentWorkDir, "opencode.json").toString();
-                environment.put("OPENCODE_CONFIG", configJsonPath);
+                // This is now handled in buildAcpProcess as it needs mcpPort
             }
             default -> {
                 // Kiro uses --config-dir flag instead
                 // Junie reads from .junie/ in project root (no env var support)
             }
+        }
+    }
+
+    /**
+     * Writes the OpenCode config file to disk so OpenCode can read it via OPENCODE_CONFIG env var.
+     * This includes MCP server config and tool permissions.
+     */
+    private void writeOpenCodeConfigFile(@Nullable String projectBasePath, int mcpPort) {
+        if (projectBasePath == null || mcpPort <= 0) {
+            LOG.warn("Failed to write OpenCode config file: projectBasePath=" + projectBasePath + ", mcpPort=" + mcpPort);
+            return;
+        }
+
+        try {
+            String agentWorkDir = Path.of(projectBasePath, ".agent-work", "opencode").toString();
+            Path configPath = Path.of(agentWorkDir, "opencode.json");
+
+            // Create directory if it doesn't exist
+            Files.createDirectories(Path.of(agentWorkDir));
+
+            // Resolve MCP config template with permissions
+            String resolved = resolveMcpTemplate(mcpPort);
+            if (resolved == null || resolved.isEmpty()) {
+                LOG.warn("Failed to resolve MCP config template for OpenCode (null or empty)");
+                return;
+            }
+
+            // Merge permissions into the config
+            String configWithPermissions = mergePermissionsIntoConfig(resolved);
+
+            // OpenCode expects "mcp" as an object, not "mcpServers" as an array
+            String finalConfig = fixOpenCodeConfigForFile(configWithPermissions);
+
+            // Pretty-print the JSON for readability
+            String formattedConfig;
+            try {
+                formattedConfig = new com.google.gson.GsonBuilder()
+                    .setPrettyPrinting()
+                    .create()
+                    .toJson(JsonParser.parseString(finalConfig));
+            } catch (Exception e) {
+                LOG.warn("Failed to format OpenCode config JSON (invalid JSON?), using raw content. Config: " + finalConfig, e);
+                formattedConfig = finalConfig;
+            }
+
+            Files.writeString(configPath, formattedConfig, StandardCharsets.UTF_8);
+            LOG.info("OpenCode config written to " + configPath + " (length: " + formattedConfig.length() + ")");
+        } catch (Exception e) {
+            LOG.warn("Failed to write OpenCode config file", e);
         }
     }
 
@@ -449,10 +505,16 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     private String detectExistingMcpRegistration(int mcpPort) {
         String targetUrl = "http://127.0.0.1:" + mcpPort + "/mcp";
         String userHome = System.getProperty("user.home", "");
-        List<Path> candidates = List.of(
+        List<Path> candidates = new ArrayList<>(List.of(
             Path.of(userHome, ".copilot", "mcp-config.json"),
             Path.of(userHome, ".config", "github-copilot", "mcp.json")
-        );
+        ));
+
+        // For OpenCode, also check ~/.config/opencode/opencode.json
+        if ("opencode".equals(profile.getId())) {
+            candidates.add(Path.of(userHome, ".config", "opencode", "opencode.json"));
+        }
+
         for (Path configPath : candidates) {
             String found = scanConfigFileForMcpRegistration(configPath, targetUrl);
             if (found != null) {
@@ -466,15 +528,20 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     }
 
     @Nullable
-    private static String scanConfigFileForMcpRegistration(Path configPath, String targetUrl) {
+    private String scanConfigFileForMcpRegistration(Path configPath, String targetUrl) {
         if (!configPath.toFile().exists()) return null;
         try {
             String content = Files.readString(configPath);
             JsonObject root = JsonParser.parseString(content).getAsJsonObject();
-            // User config files use object format: {"mcpServers": {"name": {...}}}
-            JsonObject servers = root.has(MCP_SERVERS_KEY) && root.get(MCP_SERVERS_KEY).isJsonObject()
-                ? root.getAsJsonObject(MCP_SERVERS_KEY)
-                : root;
+
+            // OpenCode uses "mcp", others use "mcpServers" or root
+            String mcpKey = "opencode".equals(profile.getId()) ? "mcp" : MCP_SERVERS_KEY;
+
+            JsonObject servers = root.has(mcpKey) && root.get(mcpKey).isJsonObject()
+                ? root.getAsJsonObject(mcpKey)
+                : (root.has(MCP_SERVERS_KEY) && root.get(MCP_SERVERS_KEY).isJsonObject()
+                    ? root.getAsJsonObject(MCP_SERVERS_KEY) : root);
+
             for (Map.Entry<String, JsonElement> entry : servers.entrySet()) {
                 if (!entry.getValue().isJsonObject()) continue;
                 JsonObject server = entry.getValue().getAsJsonObject();
@@ -634,6 +701,35 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     public boolean requiresMcpInSessionNew() {
         return profile.getMcpMethod() == McpInjectionMethod.SESSION_NEW
             || profile.isForceMcpInSessionNew();
+    }
+
+    /**
+     * Converts "mcpServers" array to "mcp" object for OpenCode's opencode.json.
+     */
+    @NotNull
+    private String fixOpenCodeConfigForFile(@NotNull String configJson) {
+        if (!"opencode".equals(profile.getId())) return configJson;
+        try {
+            JsonObject root = JsonParser.parseString(configJson).getAsJsonObject();
+            if (root.has(MCP_SERVERS_KEY) && root.get(MCP_SERVERS_KEY).isJsonArray()) {
+                JsonArray servers = root.getAsJsonArray(MCP_SERVERS_KEY);
+                JsonObject mcp = new JsonObject();
+                for (JsonElement el : servers) {
+                    if (!el.isJsonObject()) continue;
+                    JsonObject s = el.getAsJsonObject();
+                    String name = s.has("name") ? s.get("name").getAsString() : "agentbridge";
+                    JsonObject entry = s.deepCopy();
+                    entry.remove("name"); // OpenCode uses name as key
+                    mcp.add(name, entry);
+                }
+                root.remove(MCP_SERVERS_KEY);
+                root.add("mcp", mcp);
+            }
+            return new com.google.gson.Gson().toJson(root);
+        } catch (Exception e) {
+            LOG.warn("Failed to fix OpenCode config structure", e);
+            return configJson;
+        }
     }
 
     @Override

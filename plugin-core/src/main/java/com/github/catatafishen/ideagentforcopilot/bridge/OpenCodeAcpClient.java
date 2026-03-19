@@ -54,7 +54,9 @@ public class OpenCodeAcpClient extends AcpClient {
         p.setBinaryName(PROFILE_ID);
         p.setInstallHint("Install with: npm i -g opencode-ai");
         p.setAcpArgs(List.of("acp"));
-        p.setMcpMethod(McpInjectionMethod.SESSION_NEW);
+        // MCP is registered via config file (OPENCODE_CONFIG env var → opencode.json).
+        // OpenCode's session/new only accepts type: "http"/"sse", not local stdio servers.
+        p.setMcpMethod(McpInjectionMethod.NONE);
         p.setMcpConfigTemplate(buildConfigTemplate());
         p.setSupportsMcpConfigFlag(false);
         p.setSupportsModelFlag(false);
@@ -77,10 +79,12 @@ public class OpenCodeAcpClient extends AcpClient {
     private static String buildConfigTemplate() {
         return "{"
             + "\"mcpServers\":["
-            + "{\"name\":\"agentbridge\","
-            + "\"command\":\"{javaPath}\","
-            + "\"args\":[\"-jar\",\"{mcpJarPath}\",\"--port\",\"{mcpPort}\"],"
-            + "\"env\":[]}"
+            + "{"
+            + "\"name\":\"agentbridge\","
+            + "\"type\":\"local\","
+            + "\"command\":[\"{javaPath}\",\"-jar\",\"{mcpJarPath}\",\"--port\",\"{mcpPort}\"],"
+            + "\"enabled\":true"
+            + "}"
             + "],"
             + "\"default_agent\":\"ide-general\","
             + "\"agent\":{"
@@ -183,6 +187,17 @@ public class OpenCodeAcpClient extends AcpClient {
     @NotNull
     public String normalizeToolName(@NotNull String name) {
         return name.replaceFirst("^agentbridge_", "");
+    }
+
+    /**
+     * OpenCode requires {@code mcpServers} to be present as an array in {@code session/new}
+     * even when MCP is registered via the config file. Send an empty array so validation passes.
+     */
+    @Override
+    protected void addExtraSessionParams(@NotNull JsonObject params) {
+        if (!params.has("mcpServers")) {
+            params.add("mcpServers", new com.google.gson.JsonArray());
+        }
     }
 
     /**

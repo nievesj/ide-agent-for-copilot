@@ -335,6 +335,15 @@ public abstract class AcpClient implements AgentClient {
     }
 
     /**
+     * Hook for subclasses to inject extra parameters into the {@code session/new} request.
+     * Called after all standard parameters (cwd, mcpServers) have been set.
+     * Default implementation does nothing.
+     */
+    protected void addExtraSessionParams(@NotNull JsonObject params) {
+        // no-op by default
+    }
+
+    /**
      * Create a new ACP session. Returns the session ID and populates available models.
      */
     @NotNull
@@ -413,6 +422,8 @@ public abstract class AcpClient implements AgentClient {
         } else {
             LOG.info("Creating session (MCP servers configured via CLI or filesystem)");
         }
+
+        addExtraSessionParams(params);
 
         JsonObject result;
         try {
