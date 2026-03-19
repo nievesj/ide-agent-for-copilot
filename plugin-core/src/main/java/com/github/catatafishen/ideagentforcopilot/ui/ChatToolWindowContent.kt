@@ -167,6 +167,7 @@ class ChatToolWindowContent(
         }
         cardLayout.show(mainPanel, CARD_CHAT)
         agentManager.isConnected = true
+        restartSessionGroup?.updateIconForActiveAgent()
         updatePromptPlaceholder()
     }
 
@@ -816,15 +817,47 @@ class ChatToolWindowContent(
     }
 
     /** Dropdown toolbar button with restart and disconnect options. */
-    private inner class RestartSessionGroup : DefaultActionGroup(
-        "Restart Session", true
+    private inner class RestartSessionGroup : AnAction(
+        "Restart Session", "Restart the agent session",
+        AllIcons.Actions.Restart
     ) {
         init {
-            updateIconForActiveAgent()
-            templatePresentation.text = "Restart Session"
-            templatePresentation.description = "Restart the agent session"
+            // Listen for agent switches and update icon
+            agentManager.addSwitchListener {
+                updateIconForActiveAgent()
+            }
+        }
 
-            add(object : AnAction(
+        fun updateIconForActiveAgent() {
+            ApplicationManager.getApplication().invokeLater {
+                // This triggers update() to be called on the toolbar button
+                controlsToolbar.updateActionsAsync()
+            }
+        }
+
+        fun updateIconForDisconnect() {
+            updateIconForActiveAgent()
+        }
+
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun update(e: AnActionEvent) {
+            val isConnected = agentManager.isConnected
+            val icon = if (isConnected) {
+                val profileId = agentManager.getActiveProfileId()
+                AgentIconProvider.getIconForProfile(profileId)
+            } else {
+                AgentIconProvider.getDefaultIcon()
+            }
+            e.presentation.icon = icon
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val inputEvent = e.inputEvent ?: return
+            val component = inputEvent.source as? Component ?: return
+
+            val group = DefaultActionGroup()
+            group.add(object : AnAction(
                 "Restart (Keep History)",
                 "Start a new agent session while keeping the conversation visible",
                 AllIcons.Actions.Restart
@@ -833,7 +866,7 @@ class ChatToolWindowContent(
                 override fun actionPerformed(e: AnActionEvent) = resetSessionKeepingHistory()
             })
 
-            add(object : AnAction(
+            group.add(object : AnAction(
                 "Clear and Restart",
                 "Clear the conversation and start a completely fresh session",
                 AllIcons.Actions.GC
@@ -842,9 +875,9 @@ class ChatToolWindowContent(
                 override fun actionPerformed(e: AnActionEvent) = resetSession()
             })
 
-            addSeparator()
+            group.addSeparator()
 
-            add(object : AnAction(
+            group.add(object : AnAction(
                 "Disconnect",
                 "Stop the ACP process and return to the connection screen",
                 AllIcons.Actions.Cancel
@@ -853,27 +886,12 @@ class ChatToolWindowContent(
                 override fun actionPerformed(e: AnActionEvent) = disconnectFromAgent()
             })
 
-            // Listen for agent switches and update icon
-            agentManager.addSwitchListener {
-                updateIconForActiveAgent()
-            }
+            val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createActionGroupPopup(
+                null, group, e.dataContext,
+                com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
+            )
+            popup.showUnderneathOf(component)
         }
-
-        private fun updateIconForActiveAgent() {
-            if (!agentManager.isConnected) {
-                updateIconForDisconnect()
-                return
-            }
-            val profileId = agentManager.getActiveProfileId()
-            val agentIcon = AgentIconProvider.getIconForProfile(profileId)
-            templatePresentation.icon = agentIcon ?: AllIcons.Actions.Restart
-        }
-
-        fun updateIconForDisconnect() {
-            templatePresentation.icon = AgentIconProvider.getDefaultIcon() ?: AllIcons.Actions.Restart
-        }
-
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
     }
 
     /** Toolbar button that opens the plugin settings. */
@@ -1621,6 +1639,7 @@ class ChatToolWindowContent(
         modelsStatusText = "Unavailable"
         if (isCLINotFoundError(lastError)) {
             agentManager.isConnected = false
+            restartSessionGroup?.updateIconForDisconnect()
             connectPanel.showError(errorMsg)
             cardLayout.show(mainPanel, CARD_CONNECT)
         } else {
