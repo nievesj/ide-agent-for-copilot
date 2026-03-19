@@ -62,10 +62,14 @@ public class KiroAcpClient extends AcpClient {
         p.setSupportsModelFlag(true);
         p.setSupportsConfigDir(false);
         p.setRequiresResourceDuplication(false);
-        p.setExcludeAgentBuiltInTools(false);
+        p.setExcludeAgentBuiltInTools(true);
         p.setUsePluginPermissions(true);
         p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
         p.setSupportsSessionMessage(true);
+        p.setAdditionalInstructions("⚠ IMPORTANT: Do NOT use your built-in tools (view, read, edit, write, grep, glob, bash, execute). " +
+            "These tools bypass IntelliJ's editor buffer and cause desync. " +
+            "Instead, ALWAYS use the tools with '@agentbridge/' prefix (e.g., '@agentbridge/read_file', '@agentbridge/search_text'). " +
+            "IntelliJ MCP tools are faster and always stay in sync with the IDE.");
         return p;
     }
 
@@ -178,7 +182,7 @@ public class KiroAcpClient extends AcpClient {
 
     /**
      * Kiro-specific error formatting that includes error codes and AWS request IDs.
-     * @param errorData the error data JSON object  
+     * @param errorData the error data JSON object
      * @param message the extracted error message
      * @return formatted error message with Kiro-specific details
      */

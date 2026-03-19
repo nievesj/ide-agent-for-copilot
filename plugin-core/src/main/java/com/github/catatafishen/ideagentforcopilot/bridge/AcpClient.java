@@ -337,10 +337,28 @@ public abstract class AcpClient implements AgentClient {
     /**
      * Hook for subclasses to inject extra parameters into the {@code session/new} request.
      * Called after all standard parameters (cwd, mcpServers) have been set.
-     * Default implementation does nothing.
      */
     protected void addExtraSessionParams(@NotNull JsonObject params) {
-        // no-op by default
+        if (agentConfig.denyBuiltInToolsViaPermissions()) {
+            JsonArray excluded = new JsonArray();
+            for (String toolId : ToolRegistry.getBuiltInToolIds()) {
+                excluded.add(toolId);
+            }
+            // Primary key used by older Copilot CLI versions
+            params.add("excludedTools", excluded);
+
+            // New structured toolFilter key - more compatible with newer agents like Junie (JUNIE-1842)
+            JsonObject toolFilter = new JsonObject();
+            toolFilter.add("denyList", excluded);
+            params.add("toolFilter", toolFilter);
+
+            // AllowList-based system (explicit deny)
+            JsonObject allowList = new JsonObject();
+            allowList.add("deny", excluded);
+            params.add("allowList", allowList);
+
+            LOG.info("Excluding built-in tools from session (keys: excludedTools, toolFilter.denyList, allowList.deny): " + excluded);
+        }
     }
 
     /**

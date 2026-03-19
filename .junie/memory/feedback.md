@@ -502,3 +502,67 @@
     "NEW INSTRUCTION": "WHEN invoking any tool in this workspace THEN use names starting with 'agentbridge-'"
 }
 
+[2026-03-19 07:37] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Tool chip icon mapping",
+    "EXPECTATION": "Tool chips should show the correct per-tool icon instead of always falling back to the default; icons should be selected via the normalized tool ID.",
+    "NEW INSTRUCTION": "WHEN rendering chip icon in ChatToolWindowContent THEN select icon by normalized tool ID, else default"
+}
+
+[2026-03-19 08:34] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Toolbar icon regression",
+    "EXPECTATION": "After removing the dropdown indicator, the Restart Session button should still display the per-agent custom icon instead of the default.",
+    "NEW INSTRUCTION": "WHEN modifying RestartSessionGroup toolbar button THEN set presentation.icon via AgentIconProvider for active agent and refresh on agent changes"
+}
+
+[2026-03-19 09:30] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Diagnose startup failure",
+    "EXPECTATION": "Investigate why OpenCode failed to start by checking IDE logs after the config-write change.",
+    "NEW INSTRUCTION": "WHEN OpenCode fails to start THEN use agentbridge-read_ide_log with filters to find errors"
+}
+
+[2026-03-19 09:33] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "OpenCode config schema",
+    "EXPECTATION": "The written OpenCode config must match OpenCode’s expected schema; keys like \"mcpServers\" are invalid and should be validated before startup.",
+    "NEW INSTRUCTION": "WHEN OpenCode stderr says 'Unrecognized key' THEN fix config keys and restart agent"
+}
+
+[2026-03-19 09:43] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "OpenCode config schema",
+    "EXPECTATION": "OpenCode must start with a valid opencode.json; use correct MCP config keys and structure (not mcpServers, not dotted keys like mcp.agentbridge).",
+    "NEW INSTRUCTION": "WHEN generating opencode.json THEN define mcp as object with key 'agentbridge' (no dots)"
+}
+
+[2026-03-19 09:45] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Spec verification required",
+    "EXPECTATION": "They want the OpenCode config schema verified from authoritative online sources and any recommendations backed by citations, not assumptions.",
+    "NEW INSTRUCTION": "WHEN asked to verify config format or specs THEN perform web search and cite sources"
+}
+
+[2026-03-19 10:22] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Kiro tool permissions",
+    "EXPECTATION": "Tool permission settings should be enforced for Kiro’s native tools, not only MCP tools.",
+    "NEW INSTRUCTION": "WHEN agent is Kiro AND dispatching a native tool call THEN enforce configured permission map and block or ask accordingly"
+}
+
+[2026-03-19 10:38] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Enforcement mismatch",
+    "EXPECTATION": "User expects code changes that enforce Junie to use MCP plugin tools (agentbridge-*) and exclude built-ins; docs-only updates are insufficient. Kiro naming was reverted and works as-is.",
+    "NEW INSTRUCTION": "WHEN claiming Junie built-ins are excluded THEN implement code changes and verify runtime uses agentbridge-* tools"
+}
+
