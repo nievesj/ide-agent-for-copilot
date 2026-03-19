@@ -81,7 +81,6 @@ public class JunieAcpClient extends AcpClient {
             TOOL USAGE:
             You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.
             CRITICAL: ALWAYS use IntelliJ MCP tools (agentbridge/*) for file operations, git, search, and terminal.
-            Built-in tools (view, read, grep, glob, list, bash, edit, write) are DISABLED.
             If a built-in tool is blocked, retry using the corresponding agentbridge/* tool.""");
         return p;
     }
