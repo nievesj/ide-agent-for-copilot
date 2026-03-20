@@ -677,9 +677,9 @@ public abstract class AcpClient implements AgentConnector {
             ? obj.get(key).getAsString() : "";
     }
 
-    private void handleAgentRequest(long id, JsonRpcTransport.IncomingRequest request) {
+    private void handleAgentRequest(JsonElement id, JsonRpcTransport.IncomingRequest request) {
         switch (request.method()) {
-            case "session/request_permission" -> handlePermissionRequest(id);
+            case "session/request_permission" -> handlePermissionRequest(id, request.params());
             case "fs/read_text_file", "fs/write_text_file",
                  "terminal/create", "terminal/output" ->
                 transport.sendError(id, JsonRpcErrorCodes.INTERNAL_ERROR, request.method() + " not yet implemented");
@@ -690,7 +690,7 @@ public abstract class AcpClient implements AgentConnector {
         }
     }
 
-    private void handlePermissionRequest(long id) {
+    private void handlePermissionRequest(JsonElement id, @Nullable JsonObject params) {
         JsonObject result = new JsonObject();
         JsonObject outcome = new JsonObject();
         outcome.addProperty("optionId", "allow_once");

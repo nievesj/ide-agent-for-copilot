@@ -62,7 +62,7 @@ public class JsonRpcTransport {
     private @Nullable Thread readerThread;
     private @Nullable Thread stderrThread;
 
-    private @Nullable BiConsumer<Long, IncomingRequest> requestHandler;
+    private @Nullable BiConsumer<JsonElement, IncomingRequest> requestHandler;
     private @Nullable Consumer<IncomingNotification> notificationHandler;
     private @Nullable Consumer<String> stderrHandler;
 
@@ -82,9 +82,10 @@ public class JsonRpcTransport {
 
     /**
      * Register handler for incoming requests (agent → client).
-     * Called with (requestId, request).
+     * Called with (requestId, request) — requestId is the raw JSON element
+     * (may be numeric or a UUID string depending on the agent).
      */
-    public void onRequest(BiConsumer<Long, IncomingRequest> handler) {
+    public void onRequest(BiConsumer<JsonElement, IncomingRequest> handler) {
         this.requestHandler = handler;
     }
 
@@ -194,26 +195,28 @@ public class JsonRpcTransport {
 
     /**
      * Send a successful response to an incoming request.
+     * The {@code id} must be the exact {@link JsonElement} received in the request.
      */
-    public void sendResponse(long id, @Nullable JsonElement result) {
+    public void sendResponse(JsonElement id, @Nullable JsonElement result) {
         JsonObject msg = new JsonObject();
         msg.addProperty(KEY_JSONRPC, JSONRPC_VERSION);
-        msg.addProperty(KEY_ID, id);
+        msg.add(KEY_ID, id);
         msg.add(KEY_RESULT, result != null ? result : new JsonObject());
         writeLine(gson.toJson(msg));
     }
 
     /**
      * Send an error response to an incoming request.
+     * The {@code id} must be the exact {@link JsonElement} received in the request.
      */
-    public void sendError(long id, int code, String message) {
+    public void sendError(JsonElement id, int code, String message) {
         JsonObject error = new JsonObject();
         error.addProperty(KEY_CODE, code);
         error.addProperty(KEY_MESSAGE, message);
 
         JsonObject msg = new JsonObject();
         msg.addProperty(KEY_JSONRPC, JSONRPC_VERSION);
-        msg.addProperty(KEY_ID, id);
+        msg.add(KEY_ID, id);
         msg.add(KEY_ERROR, error);
         writeLine(gson.toJson(msg));
     }
@@ -292,7 +295,7 @@ public class JsonRpcTransport {
             LOG.warn("No request handler registered, ignoring: " + obj.get(KEY_METHOD));
             return;
         }
-        long id = obj.get(KEY_ID).getAsLong();
+        JsonElement id = obj.get(KEY_ID);
         String method = obj.get(KEY_METHOD).getAsString();
         JsonObject params = obj.has(KEY_PARAMS) ? obj.getAsJsonObject(KEY_PARAMS) : null;
         requestHandler.accept(id, new IncomingRequest(method, params));
