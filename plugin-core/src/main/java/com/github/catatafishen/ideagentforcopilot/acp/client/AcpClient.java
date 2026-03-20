@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.acp.client;
 
 import com.github.catatafishen.ideagentforcopilot.acp.model.ContentBlock;
+import com.github.catatafishen.ideagentforcopilot.acp.model.ContentBlockSerializer;
 import com.github.catatafishen.ideagentforcopilot.acp.model.InitializeRequest;
 import com.github.catatafishen.ideagentforcopilot.acp.model.InitializeResponse;
 import com.github.catatafishen.ideagentforcopilot.acp.model.Location;
