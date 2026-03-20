@@ -546,10 +546,15 @@ public abstract class AcpClient implements AgentConnector {
 
     /**
      * Normalize the raw {@code session/update} notification params before parsing.
-     * Override in agent subclasses that wrap the update payload in a non-standard envelope.
-     * The default implementation returns {@code params} unchanged (standard ACP format).
+     * Both Copilot and Junie wrap the actual payload in a nested {@code update} sub-object:
+     * {@code {sessionId, update: {sessionUpdate, content, ...}}}
+     * The base implementation unwraps that envelope. Override only if an agent uses a
+     * genuinely different structure.
      */
     protected JsonObject normalizeSessionUpdateParams(JsonObject params) {
+        if (params.has("update") && params.get("update").isJsonObject()) {
+            return params.getAsJsonObject("update");
+        }
         return params;
     }
 
@@ -559,7 +564,10 @@ public abstract class AcpClient implements AgentConnector {
     private @Nullable SessionUpdate parseSessionUpdate(JsonObject params) {
         String type = params.has(KEY_SESSION_UPDATE)
             ? params.get(KEY_SESSION_UPDATE).getAsString() : null;
-        if (type == null) return null;
+        if (type == null) {
+            LOG.debug(displayName() + ": session/update has no '" + KEY_SESSION_UPDATE + "' field after normalization");
+            return null;
+        }
 
         return switch (type) {
             case "agent_message_chunk" -> parseMessageChunk(params);
@@ -570,7 +578,7 @@ public abstract class AcpClient implements AgentConnector {
             case "turn_usage" -> parseTurnUsage(params);
             case "banner" -> parseBanner(params);
             default -> {
-                LOG.debug("Unknown session update type: " + type);
+                LOG.debug(displayName() + ": unknown session update type: '" + type + "'");
                 yield null;
             }
         };
