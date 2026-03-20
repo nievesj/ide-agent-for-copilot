@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Each test reproduces a specific bug that was found during manual testing.
  */
 @SuppressWarnings("java:S2925") // Thread.sleep is necessary for async protocol test synchronization
-class AcpProtocolRegressionTest {
+class SessionUpdateProtocolRegressionTest {
 
     /**
      * Regression: Agent-to-client requests (which have both "id" and "method")
