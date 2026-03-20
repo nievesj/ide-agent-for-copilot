@@ -81,40 +81,20 @@ public class KiroAcpClient extends AcpClient {
                          int mcpPort) {
         super(config, settings, registry, projectBasePath, mcpPort);
     }
-    @Override
-    protected boolean isBlackListed(JsonObject toolCall) {
-        var title = toolCall.get("title").getAsString().trim().toLowerCase();
-        return Stream.of("read", "glob", "grep", "write", "shell", "aws", "code")
-            .anyMatch(title::contains);
-    }
 
     @Override
     @NotNull
-    public String getToolId(@NotNull JsonObject toolCall) {
-        return toolCall.get("title").getAsString().trim().replaceFirst("^Running: @agentbridge/", "");
+    public String getToolId(@NotNull SessionUpdate.Protocol.ToolCall protocolCall) {
+        return protocolCall.title.trim().replaceFirst("^Running: @agentbridge/", "");
     }
 
     @Override
-    @NotNull
-    public List<com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings.FileEntry>
-    getDefaultProjectFiles() {
-        List<com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings.FileEntry> entries = new ArrayList<>();
-        entries.add(new com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings.FileEntry(
-            "Settings", ".agent-work/kiro/settings/cli.json", false, "Kiro"));
-        entries.add(new com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings.FileEntry(
-            "Steering", ".agent-work/kiro/steering/*.md", true, "Kiro"));
-        entries.add(new com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings.FileEntry(
-            "Agents", ".agent-work/kiro/agents/*.md", true, "Kiro"));
-        return entries;
-    }
-
-    @Override
-    protected void onToolCallEventReceived(@NotNull String toolCallId, @NotNull JsonObject update,
+    protected void onToolCallEventReceived(@NotNull String toolCallId, @NotNull SessionUpdate.Protocol.ToolCall protocolCall,
                                            @Nullable String argsJson) {
         // Extract __tool_use_purpose from tool arguments (Kiro includes this for better UI context)
         if (argsJson != null && !argsJson.isEmpty()) {
             try {
-                JsonObject argsObj = JsonParser.parseString(argsJson).getAsJsonObject();
+                com.google.gson.JsonObject argsObj = com.google.gson.JsonParser.parseString(argsJson).getAsJsonObject();
                 if (argsObj.has("__tool_use_purpose")) {
                     String purpose = argsObj.get("__tool_use_purpose").getAsString();
                     if (purpose != null && !purpose.isEmpty()) {
@@ -155,8 +135,8 @@ public class KiroAcpClient extends AcpClient {
 
     @NotNull
     @Override
-    protected SessionUpdate.ToolCallUpdate buildToolCallUpdateEvent(@NotNull JsonObject update) {
-        SessionUpdate.ToolCallUpdate base = super.buildToolCallUpdateEvent(update);
+    protected SessionUpdate.ToolCallUpdate buildToolCallUpdateEvent(@NotNull SessionUpdate.Protocol.ToolCallUpdate protocolUpdate) {
+        SessionUpdate.ToolCallUpdate base = super.buildToolCallUpdateEvent(protocolUpdate);
         String toolCallId = base.toolCallId();
 
         // For tool calls that completed or failed, try to extract and attach the purpose

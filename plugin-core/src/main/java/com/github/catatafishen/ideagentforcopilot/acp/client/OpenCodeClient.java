@@ -47,7 +47,7 @@ public final class OpenCodeClient extends AcpClient {
     }
 
     @Override
-    protected boolean requiresInlineReferences() {
+    public boolean requiresInlineReferences() {
         return true;
     }
 

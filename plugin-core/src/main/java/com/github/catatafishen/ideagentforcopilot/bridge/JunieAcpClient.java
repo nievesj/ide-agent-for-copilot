@@ -91,42 +91,17 @@ public class JunieAcpClient extends AcpClient {
         super(config, settings, registry, projectBasePath, mcpPort);
     }
 
-    @Override
-    protected void addExtraSessionParams(@NotNull JsonObject params) {
-        // NOTE: As of Junie v888.212, there is no verified protocol-level parameter
-        // for tool filtering (e.g., 'excludedTools', 'denyList', 'toolFilter' are NOT supported).
-        // Tool filtering is handled internally by Junie's CapabilityFilterAgentTask.
-    }
-
-    @Override
-    protected boolean isBlackListed(JsonObject toolCall) {
-        var title = toolCall.get("title").getAsString().trim().toLowerCase();
-        return Stream.of("execute", "read_file", "write_file", "list_files",
-                "view_file", "grep", "glob", "bash", "run_command").anyMatch(title::contains);
-    }
 
     @Override
     @NotNull
-    public String getToolId(@NotNull JsonObject toolCall) {
-        return toolCall.get("title").getAsString().trim().replaceFirst("Tool: agentbridge/", "");
-    }
-
-    @Override
-    @NotNull
-    public List<com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings.FileEntry>
-    getDefaultProjectFiles() {
-        List<com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings.FileEntry> entries = new ArrayList<>();
-        entries.add(new com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings.FileEntry(
-            "Guidelines", ".junie/guidelines.md", false, "Junie"));
-        entries.add(new com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings.FileEntry(
-            "Agents", ".junie/AGENTS.md", false, "Junie"));
-        return entries;
+    public String getToolId(@NotNull SessionUpdate.Protocol.ToolCall protocolCall) {
+        return protocolCall.title.trim().replaceFirst("Tool: agentbridge/", "");
     }
 
     @NotNull
     @Override
-    protected SessionUpdate.ToolCallUpdate buildToolCallUpdateEvent(@NotNull JsonObject update) {
-        SessionUpdate.ToolCallUpdate base = super.buildToolCallUpdateEvent(update);
+    protected SessionUpdate.ToolCallUpdate buildToolCallUpdateEvent(@NotNull SessionUpdate.Protocol.ToolCallUpdate protocolUpdate) {
+        SessionUpdate.ToolCallUpdate base = super.buildToolCallUpdateEvent(protocolUpdate);
         String toolCallId = base.toolCallId();
         String naturalLanguageSummary = base.result();
         String description = base.description();
@@ -143,7 +118,11 @@ public class JunieAcpClient extends AcpClient {
 
         // COMPLETED: Try to correlate with actual MCP execution to get raw result
         if (naturalLanguageSummary != null && !naturalLanguageSummary.isEmpty()) {
-            String toolId = getToolId(update);
+            String toolId = toolCallIdToTitle.get(toolCallId);
+            if (toolId == null) {
+                // Fallback: try to guess if possible, or just skip correlation
+                LOG.debug("No stored tool title for " + toolCallId + " - correlation skipped");
+            }
 
             // Look up the matching tool execution
             if (projectBasePath != null) {

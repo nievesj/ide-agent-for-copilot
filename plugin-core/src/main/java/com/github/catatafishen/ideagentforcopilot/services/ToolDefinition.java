@@ -105,10 +105,11 @@ public interface ToolDefinition {
      * Called during {@code session/request_permission} handling before the
      * normal allow/deny/ask flow.
      *
-     * @param toolCall the {@code toolCall} JSON object from the permission request
+     * @param toolCall the {@code toolCall} POJO ({@link com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.Protocol.ToolCall})
+     *                 or JSON object from the permission request
      * @return a human-readable abuse description if detected, null if clean
      */
-    default @Nullable String detectPermissionAbuse(@Nullable JsonObject toolCall) {
+    default @Nullable String detectPermissionAbuse(@Nullable Object toolCall) {
         return null;
     }
 

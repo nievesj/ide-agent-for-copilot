@@ -62,4 +62,22 @@ public sealed interface SessionUpdate {
             List<NewSessionResponse.AvailableMode> modes,
             @Nullable String activeSlug
     ) implements SessionUpdate {}
+
+    /**
+     * Turn-level token and cost statistics.
+     */
+    record TurnUsage(
+            int inputTokens,
+            int outputTokens,
+            double costUsd
+    ) implements SessionUpdate {}
+
+    /**
+     * Agent-initiated banner notification.
+     */
+    record Banner(
+            String message,
+            String level,
+            @Nullable String clearOn
+    ) implements SessionUpdate {}
 }

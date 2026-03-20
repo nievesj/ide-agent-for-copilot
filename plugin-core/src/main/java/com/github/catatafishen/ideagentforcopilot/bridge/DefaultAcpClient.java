@@ -20,7 +20,7 @@ public class DefaultAcpClient extends AcpClient {
     }
 
     @Override
-    public @NotNull String getToolId(@NotNull JsonObject toolCall) {
-        return toolCall.toString();
+    public @NotNull String getToolId(@NotNull SessionUpdate.Protocol.ToolCall protocolCall) {
+        return protocolCall.title != null ? protocolCall.title : "unknown";
     }
 }

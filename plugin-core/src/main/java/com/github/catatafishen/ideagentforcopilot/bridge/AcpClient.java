@@ -797,7 +797,12 @@ public abstract class AcpClient implements AgentClient {
         if (AgentClient.SessionUpdateType.AGENT_MESSAGE_CHUNK.value().equals(updateType)
             || AgentClient.SessionUpdateType.MESSAGE_CHUNK.value().equals(updateType)
             || AgentClient.SessionUpdateType.TEXT_CHUNK.value().equals(updateType)) {
-            handleAgentMessageChunk(update, onChunk);
+            if (onChunk != null) {
+                String text = extractContentText(update);
+                if (text != null) {
+                    onChunk.accept(text);
+                }
+            }
         }
 
         if (onUpdate == null) return;
@@ -811,55 +816,61 @@ public abstract class AcpClient implements AgentClient {
                 String text = extractContentText(update);
                 if (text != null && !text.isEmpty()) onUpdate.accept(new SessionUpdate.AgentThought(text));
             }
-            case PLAN -> onUpdate.accept(new SessionUpdate.Plan(extractPlanEntries(update)));
+            case PLAN -> handlePlanEvent(update, onUpdate);
             default -> { /* AGENT_MESSAGE_CHUNK handled above; TURN_USAGE and BANNER come from Claude clients */ }
         }
     }
 
-    private void handleAgentMessageChunk(@NotNull JsonObject update, @Nullable Consumer<String> onChunk) {
-        if (onChunk == null) return;
-        String text = extractContentText(update);
-        if (text != null) {
-            onChunk.accept(text);
+    /**
+     * Extracts a plan from an ACP update.
+     */
+    protected void handlePlanEvent(@NotNull JsonObject update, @NotNull Consumer<SessionUpdate> onUpdate) {
+        LOG.info("[ACP plan event] raw: " + update);
+        SessionUpdate.Protocol.Plan protocolPlan = gson.fromJson(update, SessionUpdate.Protocol.Plan.class);
+        if (protocolPlan != null) {
+            onUpdate.accept(new SessionUpdate.Plan(protocolPlan));
         }
     }
-
-    /**
-     * Handle tool_call events. OpenCode sends arguments in tool_call_update, not initial tool_call,
-     * so we defer emitting the ToolCall until we receive an update with populated arguments.
-     */
     protected void handleToolCallEvent(@NotNull JsonObject update, @NotNull Consumer<SessionUpdate> onUpdate) {
-        // Emit tool call event immediately (default behavior)
-        onUpdate.accept(buildToolCallEvent(update));
+        LOG.info("[ACP tool_call event] raw: " + update);
+        SessionUpdate.Protocol.ToolCall protocolCall = gson.fromJson(update, SessionUpdate.Protocol.ToolCall.class);
+        onUpdate.accept(buildToolCallEvent(protocolCall));
     }
 
     /**
      * Handle tool_call_update events.
      */
     protected void handleToolCallUpdateEvent(@NotNull JsonObject update, @NotNull Consumer<SessionUpdate> onUpdate) {
-        // Emit tool call update event
-        onUpdate.accept(buildToolCallUpdateEvent(update));
+        LOG.info("[ACP tool_call_update event] raw: " + update);
+        SessionUpdate.Protocol.ToolCallUpdate protocolUpdate = gson.fromJson(update, SessionUpdate.Protocol.ToolCallUpdate.class);
+        onUpdate.accept(buildToolCallUpdateEvent(protocolUpdate));
     }
 
+    /**
+     * Maps tool call IDs to their titles for correlation.
+     */
+    protected final java.util.Map<String, String> toolCallIdToTitle = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Extracts a new tool call from an ACP tool_call event.
+     */
     @NotNull
-    protected SessionUpdate.ToolCall buildToolCallEvent(@NotNull JsonObject update) {
-        LOG.info("[ACP tool_call event] raw: " + update);
-        String toolCallId = update.has(TOOL_CALL_ID_KEY) ? update.get(TOOL_CALL_ID_KEY).getAsString() : "";
-        String toolId = getToolId(update);
+    protected SessionUpdate.ToolCall buildToolCallEvent(@NotNull SessionUpdate.Protocol.ToolCall protocolCall) {
+        String toolCallId = protocolCall.toolCallId != null ? protocolCall.toolCallId : "";
+        String toolId = getToolId(protocolCall);
+        toolCallIdToTitle.put(toolCallId, toolId);
+
         // Use protocol's kind if present and specific, otherwise get from tool registry.
-        // Some ACP implementations (e.g., OpenCode) send "kind":"other" for all tools.
-        String kindStr = update.has(KIND_KEY) ? update.get(KIND_KEY).getAsString() : null;
-        SessionUpdate.ToolKind kind = kindStr != null
-            ? SessionUpdate.ToolKind.fromString(kindStr)
-            : SessionUpdate.ToolKind.OTHER;
+        SessionUpdate.ToolKind kind = protocolCall.kind != null ? protocolCall.kind : SessionUpdate.ToolKind.OTHER;
         if (kind == SessionUpdate.ToolKind.OTHER && registry != null) {
             ToolDefinition tool = registry.findById(toolId);
             if (tool != null) {
                 kind = SessionUpdate.ToolKind.fromCategory(tool.category());
             }
         }
-        String args = extractAcpArguments(update);
-        List<String> filePaths = extractFilePaths(update, toolId);
+
+        String args = extractAcpArguments(protocolCall);
+        List<String> filePaths = extractFilePaths(protocolCall, toolId);
         String agentType = extractSubAgentField(args, AGENT_TYPE_KEY);
 
         // Update active agent label in settings if a sub-agent is active
@@ -872,7 +883,7 @@ public abstract class AcpClient implements AgentClient {
         LOG.info("[ACP tool_call event] extracted: id=" + toolCallId + ", toolId=" + toolId + ", kind=" + kind + ", args=" + args);
 
         // Allow subclasses to extract and process additional metadata from the tool call
-        onToolCallEventReceived(toolCallId, update, args);
+        onToolCallEventReceived(toolCallId, protocolCall, args);
 
         return new SessionUpdate.ToolCall(toolCallId, toolId, kind, args, filePaths, agentType, subAgentDesc, subAgentPrompt);
     }
@@ -882,11 +893,11 @@ public abstract class AcpClient implements AgentClient {
      * For example, Kiro extracts {@code __tool_use_purpose} from the arguments
      * to provide as a description in the tool call update.
      *
-     * @param toolCallId the ID of the tool call
-     * @param update     the raw tool_call event JSON
-     * @param argsJson   the extracted tool arguments as JSON string (may be null)
+     * @param toolCallId   the ID of the tool call
+     * @param protocolCall the parsed tool_call event
+     * @param argsJson     the extracted tool arguments as JSON string (may be null)
      */
-    protected void onToolCallEventReceived(@NotNull String toolCallId, @NotNull JsonObject update,
+    protected void onToolCallEventReceived(@NotNull String toolCallId, @NotNull SessionUpdate.Protocol.ToolCall protocolCall,
                                            @Nullable String argsJson) {
         // Default implementation does nothing
     }
@@ -920,19 +931,32 @@ public abstract class AcpClient implements AgentClient {
         }
     }
 
+    /**
+     * Extracts a tool call update from an ACP tool_call_update event.
+     */
     @NotNull
     protected SessionUpdate.ToolCallUpdate buildToolCallUpdateEvent(@NotNull JsonObject update) {
         LOG.info("[ACP tool_call_update event] raw: " + update);
-        String toolCallId = update.has(TOOL_CALL_ID_KEY) ? update.get(TOOL_CALL_ID_KEY).getAsString() : "";
-        SessionUpdate.ToolCallStatus status = SessionUpdate.ToolCallStatus.fromString(update.has(STATUS_KEY) ? update.get(STATUS_KEY).getAsString() : null);
-        String result = extractAcpResult(update);
-        String error = update.has(ERROR) ? update.get(ERROR).getAsString() : null;
+        SessionUpdate.Protocol.ToolCallUpdate protocolUpdate = gson.fromJson(update, SessionUpdate.Protocol.ToolCallUpdate.class);
+        return buildToolCallUpdateEvent(protocolUpdate);
+    }
+
+    /**
+     * Extracts a tool call update from an ACP tool_call_update event.
+     */
+    @NotNull
+    protected SessionUpdate.ToolCallUpdate buildToolCallUpdateEvent(@NotNull SessionUpdate.Protocol.ToolCallUpdate protocolUpdate) {
+        String toolCallId = protocolUpdate.toolCallId != null ? protocolUpdate.toolCallId : "";
+        SessionUpdate.ToolCallStatus status = protocolUpdate.status != null ? protocolUpdate.status : SessionUpdate.ToolCallStatus.COMPLETED;
+
+        String result = extractAcpResult(protocolUpdate);
+        String error = protocolUpdate.error;
         int resultLen = result != null ? result.length() : 0;
 
         // If the tool call was denied by our permission system, ensure the UI clearly shows it
-        String description = null;
+        String description = protocolUpdate.description;
         if (deniedToolCallIds.contains(toolCallId)) {
-            description = "(Denied)";
+            description = (description != null && !description.isEmpty()) ? description + " (Denied)" : "(Denied)";
             if (status == SessionUpdate.ToolCallStatus.COMPLETED) {
                 // If it was denied but somehow marked completed, force it to failed status for the UI
                 status = SessionUpdate.ToolCallStatus.FAILED;
@@ -940,23 +964,23 @@ public abstract class AcpClient implements AgentClient {
         }
 
         LOG.info("[ACP tool_call_update event] extracted: id=" + toolCallId + ", status=" + status + ", resultLen=" + resultLen + ", result=" + (result != null ? result.substring(0, Math.min(200, result.length())) : null));
-        if (resultLen == 0 && error == null) {
-            LOG.warn("Tool update with empty result: " + update);
+        if (resultLen == 0 && error == null && status != SessionUpdate.ToolCallStatus.IN_PROGRESS) {
+            LOG.warn("Tool update with empty result: " + toolCallId);
         }
         return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error, description);
     }
 
     @Nullable
-    protected String extractAcpArguments(@NotNull JsonObject update) {
-        for (String key : new String[]{ARGUMENTS_KEY, INPUT_KEY, RAW_INPUT_KEY}) {
-            if (!update.has(key)) continue;
-            com.google.gson.JsonElement el = update.get(key);
-            if (el.isJsonPrimitive()) return el.getAsString();
-            if (el.isJsonObject() || el.isJsonArray()) return gson.toJson(el);
+    protected String extractAcpArguments(@NotNull SessionUpdate.Protocol.ToolCall protocolCall) {
+        if (protocolCall.arguments != null) {
+            Object args = protocolCall.arguments;
+            if (args instanceof String) return (String) args;
+            return gson.toJson(args);
         }
+
         // Fallback: look in content for JSON-formatted arguments (common for Junie)
-        if (update.has(CONTENT)) {
-            String text = extractContentText(update);
+        if (protocolCall.content != null) {
+            String text = extractContentText(protocolCall.content);
             if (text != null && !text.isEmpty()) {
                 String trimmed = text.trim();
                 if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
@@ -968,20 +992,16 @@ public abstract class AcpClient implements AgentClient {
     }
 
     @NotNull
-    private List<String> extractFilePaths(@NotNull JsonObject update, @NotNull String title) {
+    private List<String> extractFilePaths(@NotNull SessionUpdate.Protocol.ToolCall protocolCall, @NotNull String title) {
         List<String> paths = new java.util.ArrayList<>();
-        if (update.has("locations")) {
-            com.google.gson.JsonArray locations = update.getAsJsonArray("locations");
-            for (com.google.gson.JsonElement loc : locations) {
-                if (loc.isJsonObject()) {
-                    com.google.gson.JsonElement path = loc.getAsJsonObject().get("path");
-                    if (path != null && path.isJsonPrimitive()) paths.add(path.getAsString());
-                }
+        if (protocolCall.locations != null) {
+            for (SessionUpdate.Protocol.ToolCall.Location loc : protocolCall.locations) {
+                if (loc.path != null) paths.add(loc.path);
             }
         }
         if (paths.isEmpty()) {
             // Look into arguments
-            String argsJson = extractAcpArguments(update);
+            String argsJson = protocolCall.arguments instanceof String ? (String) protocolCall.arguments : gson.toJson(protocolCall.arguments);
             if (argsJson != null) {
                 for (String key : new String[]{"path", "file", "filename", "filepath"}) {
                     String val = extractSubAgentField(argsJson, key);
@@ -1002,22 +1022,24 @@ public abstract class AcpClient implements AgentClient {
     }
 
     @Nullable
-    protected String extractAcpResult(@NotNull JsonObject update) {
+    protected String extractAcpResult(@NotNull SessionUpdate.Protocol.ToolCallUpdate protocolUpdate) {
         // Check for agent-specific result extraction first
-        String agentSpecificResult = extractAgentSpecificResult(update);
+        String agentSpecificResult = extractAgentSpecificResult(protocolUpdate);
         if (agentSpecificResult != null) {
             return agentSpecificResult;
         }
 
-        // Try various keys that different agents use for tool results
-        for (String key : new String[]{RESULT, CONTENT, OUTPUT_KEY, TOOL_RESULT_KEY, "result_text", "resultText",
-            "text", "response", "data", "value", "message", "rawInput"}) {
-            if (!update.has(key)) continue;
-            if (CONTENT.equals(key)) return extractContentText(update);
-            com.google.gson.JsonElement el = update.get(key);
-            if (el.isJsonPrimitive()) return el.getAsString();
-            if (el.isJsonObject() || el.isJsonArray()) return gson.toJson(el);
+        if (protocolUpdate.result != null) {
+            Object result = protocolUpdate.result;
+            if (result instanceof String) return (String) result;
+            return gson.toJson(result);
         }
+
+        // Fallback: content field
+        if (protocolUpdate.content != null) {
+            return extractContentText(protocolUpdate.content);
+        }
+
         return null;
     }
 
@@ -1025,11 +1047,11 @@ public abstract class AcpClient implements AgentClient {
      * Hook for agent-specific result extraction.
      * Base implementation returns null; subclasses can override for custom formats.
      *
-     * @param update the tool call update JSON
+     * @param protocolUpdate the parsed tool call update POJO
      * @return extracted result or null if no agent-specific format found
      */
     @Nullable
-    protected String extractAgentSpecificResult(@NotNull JsonObject update) {
+    protected String extractAgentSpecificResult(@NotNull SessionUpdate.Protocol.ToolCallUpdate protocolUpdate) {
         return null;
     }
 
@@ -1046,12 +1068,23 @@ public abstract class AcpClient implements AgentClient {
     }
 
     @Nullable
-    protected String extractContentText(@NotNull JsonObject update) {
-        if (!update.has(CONTENT)) return null;
-        com.google.gson.JsonElement el = update.get(CONTENT);
-        if (el.isJsonPrimitive()) return el.getAsString();
-        if (el.isJsonObject()) return extractTextFromObject(el.getAsJsonObject());
-        if (el.isJsonArray()) return extractTextFromArray(el.getAsJsonArray());
+    protected String extractContentText(@Nullable Object content) {
+        if (content == null) return null;
+        if (content instanceof String) return (String) content;
+        if (content instanceof JsonElement el) {
+            if (el.isJsonPrimitive()) return el.getAsString();
+            if (el.isJsonObject()) return extractTextFromObject(el.getAsJsonObject());
+            if (el.isJsonArray()) return extractTextFromArray(el.getAsJsonArray());
+        }
+        // If it's some other object (Map, List from Gson's generic parsing), convert to JSON element first
+        try {
+            JsonElement el = gson.toJsonTree(content);
+            if (el.isJsonPrimitive()) return el.getAsString();
+            if (el.isJsonObject()) return extractTextFromObject(el.getAsJsonObject());
+            if (el.isJsonArray()) return extractTextFromArray(el.getAsJsonArray());
+        } catch (Exception e) {
+            // ignore
+        }
         return null;
     }
 
@@ -1088,26 +1121,12 @@ public abstract class AcpClient implements AgentClient {
         return sb.isEmpty() ? null : sb.toString();
     }
 
-    @NotNull
-    private List<SessionUpdate.Plan.PlanEntry> extractPlanEntries(@NotNull JsonObject update) {
-        if (!update.has("entries")) return List.of();
-        List<SessionUpdate.Plan.PlanEntry> result = new java.util.ArrayList<>();
-        for (com.google.gson.JsonElement el : update.getAsJsonArray("entries")) {
-            if (!el.isJsonObject()) continue;
-            JsonObject obj = el.getAsJsonObject();
-            String content = obj.has(CONTENT) ? obj.get(CONTENT).getAsString() : "Step";
-            String status = obj.has(STATUS_KEY) ? obj.get(STATUS_KEY).getAsString() : "pending";
-            String priority = obj.has("priority") ? obj.get("priority").getAsString() : "";
-            result.add(new SessionUpdate.Plan.PlanEntry(content, status, priority));
-        }
-        return result;
-    }
 
     /**
      * Normalize tool name before checking permissions or displaying it.
      */
     @NotNull
-    public abstract String getToolId(@NotNull JsonObject toolCall);
+    public abstract String getToolId(@NotNull SessionUpdate.Protocol.ToolCall protocolCall);
 
     // Note: interceptBuiltInToolCall and classifyBuiltInTool were removed — session/message
     // notifications never reach sub-agents (they run in their own CLI context). Tested with
@@ -1448,8 +1467,7 @@ public abstract class AcpClient implements AgentClient {
 
     private void handleResponseMessage(JsonObject msg) {
         long id = msg.get("id").getAsLong();
-        LOG.info("ACP response: id=" + id + " keys=" + msg.keySet()
-            + (msg.has(RESULT) ? " result_keys=" + msg.getAsJsonObject(RESULT).keySet() : ""));
+        LOG.info("ACP response: " + msg.getAsString());
         CompletableFuture<JsonObject> future = pendingRequests.remove(id);
         if (future != null) {
             if (msg.has(ERROR)) {
@@ -1532,7 +1550,7 @@ public abstract class AcpClient implements AgentClient {
 
     private void handleNotificationMessage(JsonObject msg) {
         String method = msg.has(METHOD) ? msg.get(METHOD).getAsString() : UNKNOWN;
-        LOG.info("ACP notification: method=" + method + " keys=" + msg.keySet());
+        LOG.info("ACP notification: " + msg.getAsString());
         if (method.contains("usage") || method.contains("quota") || method.contains("billing")
             || method.contains("premium") || method.contains("stats") || method.contains("turn")) {
             LOG.info("ACP notification (quota-related) FULL: " + msg);
@@ -1603,23 +1621,22 @@ public abstract class AcpClient implements AgentClient {
      */
     private void handlePermissionRequest(JsonElement reqId, @Nullable JsonObject reqParams) {
         String reqIdStr = reqId != null ? reqId.toString().replace("\"", "") : "";
-        String permKind = "";
-        String permTitle = "";
-        JsonObject toolCall = null;
 
+        SessionUpdate.Protocol.ToolCall toolCall = null;
         if (reqParams != null && reqParams.has(TOOL_CALL_KEY)) {
-            toolCall = reqParams.getAsJsonObject(TOOL_CALL_KEY);
-            permKind = toolCall.has("kind") ? toolCall.get("kind").getAsString() : "";
-            permTitle = toolCall.has(TITLE_KEY) ? toolCall.get(TITLE_KEY).getAsString() : "";
+            toolCall = gson.fromJson(reqParams.getAsJsonObject(TOOL_CALL_KEY), SessionUpdate.Protocol.ToolCall.class);
         }
+
+        String permKind = toolCall != null && toolCall.kind != null ? toolCall.kind.name().toLowerCase() : "";
+        String permTitle = toolCall != null && toolCall.title != null ? toolCall.title : "";
+
         LOG.info("ACP request_permission: id=" + reqIdStr + " kind=" + permKind + " title=" + permTitle + " params=" + reqParams);
         lastActivityTimestamp = System.currentTimeMillis();
         toolCallsInTurn.incrementAndGet();
 
-        String toolCallId = toolCall != null && toolCall.has(TOOL_CALL_ID_KEY)
-            ? toolCall.get(TOOL_CALL_ID_KEY).getAsString() : "";
+        String toolCallId = toolCall != null && toolCall.toolCallId != null ? toolCall.toolCallId : "";
 
-        if (checkAbuseAndDeny(reqId, reqParams, toolCall, toolCallId)) return;
+        if (checkAbuseAndDeny(reqId, reqParams, toolCall)) return;
 
         String toolId = getToolId(toolCall);
         ToolPermission perm = resolveEffectivePermission(toolCall);
@@ -1654,20 +1671,22 @@ public abstract class AcpClient implements AgentClient {
      * </ol>
      */
     private boolean checkAbuseAndDeny(JsonElement reqId, @Nullable JsonObject reqParams,
-                                      @Nullable JsonObject toolCall, String toolCallId) {
+                                      @Nullable SessionUpdate.Protocol.ToolCall toolCall) {
+        if (toolCall == null) return false;
+        String toolCallId = toolCall.toolCallId != null ? toolCall.toolCallId : "";
         String toolId = getToolId(toolCall);
         ToolDefinition tool = registry != null ? registry.findById(toolId) : null;
 
         // 1. Tool-specific abuse detection (e.g., RunCommandTool detects shell abuse)
         if (tool != null) {
-            String abuse = tool.detectPermissionAbuse(toolCall);
+            String abuse = tool.detectPermissionAbuse((Object) toolCall);
             if (abuse != null) {
                 denyForAbuse(reqId, reqParams, "Tool abuse (" + toolId + "): " + abuse,
                     RUN_COMMAND_ABUSE_PREFIX + abuse, toolCallId);
                 return true;
             }
         } else {
-            // Fallback: check command abuse on raw JSON for unregistered tools (e.g., bash built-in)
+            // Fallback: check command abuse on POJO for unregistered tools (e.g., bash built-in)
             String commandAbuse = detectCommandAbuse(toolCall);
             if (commandAbuse != null) {
                 denyForAbuse(reqId, reqParams, "run_command abuse: " + commandAbuse,
@@ -1818,11 +1837,11 @@ public abstract class AcpClient implements AgentClient {
         sendPermissionResponse(reqId, allowOptionId);
     }
 
-    protected boolean isBlackListed(JsonObject tooCall) {
-        return false;
+    protected boolean isBlackListed(@NotNull SessionUpdate.Protocol.ToolCall protocolCall) {
+        return protocolCall.kind != SessionUpdate.ToolKind.FETCH; // Only fetch is allowed by default
     }
 
-    protected boolean isWhiteListed(JsonObject tooCall) {
+    protected boolean isWhiteListed(@NotNull SessionUpdate.Protocol.ToolCall protocolCall) {
         return false;
     }
 
@@ -1830,67 +1849,53 @@ public abstract class AcpClient implements AgentClient {
      * Look up the effective ToolPermission for a tool call.
      * For file tools, checks inside/outside-project sub-permission when a path is present.
      */
-    protected ToolPermission resolveEffectivePermission(@NotNull JsonObject toolCall) {
+    protected ToolPermission resolveEffectivePermission(@NotNull SessionUpdate.Protocol.ToolCall protocolCall) {
         // Deny agent built-in tools via permission system when configured.
         // This forces agents to use IntelliJ MCP tools instead of their built-ins (view, edit, bash, etc.)
-        if (isAgentBridgeTool(toolCall)) {
-            return agentSettings.getToolPermission(getToolId(toolCall));
+        if (isAgentBridgeTool(protocolCall)) {
+            return agentSettings.getToolPermission(getToolId(protocolCall));
         }
-        if (isWhiteListed(toolCall)) {
+        if (isWhiteListed(protocolCall)) {
             return ToolPermission.ALLOW;
         }
-        if (isBlackListed(toolCall)) {
+        if (isBlackListed(protocolCall)) {
             return ToolPermission.DENY;
         }
         return ToolPermission.ASK;
     }
 
-    public boolean isAgentBridgeTool(@NotNull JsonObject toolCall) {
-        return toolCall.get("title").getAsString().trim().toLowerCase().contains("agentbridge");
+    public boolean isAgentBridgeTool(@NotNull SessionUpdate.Protocol.ToolCall protocolCall) {
+        if (protocolCall.title == null) return false;
+        return protocolCall.title.trim().toLowerCase().contains("agentbridge");
     }
 
-    /**
-     * Returns the first path-like value found in the given JSON object, or null if none.
-     */
-    private static @Nullable String findPathInJson(@NotNull JsonObject obj) {
-        for (String key : new String[]{"path", "file", "file1", "file2"}) {
-            if (obj.has(key) && obj.get(key).isJsonPrimitive()) {
-                return obj.get(key).getAsString();
-            }
-        }
-        return null;
-    }
 
     /**
      * Detect if run_command or the bash built-in tool is being abused to do something
      * we have a dedicated tool for. Returns abuse type if detected, null otherwise.
      */
-    private String detectCommandAbuse(JsonObject toolCall) {
-        if (toolCall == null) return null;
+    private String detectCommandAbuse(SessionUpdate.Protocol.ToolCall protocolCall) {
+        if (protocolCall == null) return null;
 
-        String toolName = toolCall.has("name") ? toolCall.get("name").getAsString() : "";
-        String permKind = toolCall.has("kind") ? toolCall.get("kind").getAsString() : "";
-        String toolId = getToolId(toolCall);
+        String permKind = protocolCall.kind != null ? protocolCall.kind.name().toLowerCase() : "";
+        String toolId = getToolId(protocolCall);
 
         boolean isRunCommand = "run_command".equals(toolId);
         // Also intercept the bash built-in tool (kind=execute or kind=bash)
         boolean isBashTool = KIND_BASH.equals(permKind) || KIND_EXECUTE.equals(permKind)
-            || KIND_BASH.equals(toolName);
+            || KIND_BASH.equals(protocolCall.title);
 
         if (!isRunCommand && !isBashTool) return null;
 
-        String command = extractCommand(toolCall);
-        if (command.isEmpty()) return null;
+        String args = extractAcpArguments(protocolCall);
+        if (args == null || args.isEmpty()) return null;
 
-        return detectAbusePattern(command);
+        String command = extractSubAgentField(args, COMMAND);
+        if (command == null || command.isEmpty()) return null;
+
+        return detectAbusePattern(command.toLowerCase());
     }
 
-    private String extractCommand(JsonObject toolCall) {
-        if (!toolCall.has(PARAMETERS_KEY)) return "";
-        JsonObject params = toolCall.getAsJsonObject(PARAMETERS_KEY);
-        if (!params.has(COMMAND)) return "";
-        return params.get(COMMAND).getAsString().toLowerCase().trim();
-    }
 
     private String detectAbusePattern(String command) {
         return com.github.catatafishen.ideagentforcopilot.psi.ToolUtils.detectCommandAbuseType(command);
@@ -1909,10 +1914,10 @@ public abstract class AcpClient implements AgentClient {
      * so we must deny unconditionally — the denial itself is the only signal
      * the sub-agent receives.
      */
-    private String detectSubAgentWriteTool(JsonObject toolCall) {
-        if (!subAgentActive || toolCall == null) return null;
+    private String detectSubAgentWriteTool(SessionUpdate.Protocol.ToolCall protocolCall) {
+        if (!subAgentActive || protocolCall == null) return null;
 
-        String kind = toolCall.has("kind") ? toolCall.get("kind").getAsString() : "";
+        String kind = protocolCall.kind != null ? protocolCall.kind.name().toLowerCase() : "";
         return BUILTIN_WRITE_TOOLS.contains(kind) ? kind : null;
     }
 

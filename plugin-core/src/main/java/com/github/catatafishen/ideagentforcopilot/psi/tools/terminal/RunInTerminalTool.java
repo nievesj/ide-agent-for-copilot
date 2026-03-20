@@ -61,9 +61,9 @@ public final class RunInTerminalTool extends TerminalTool {
     }
 
     @Override
-    public @Nullable String detectPermissionAbuse(@Nullable JsonObject toolCall) {
-        if (toolCall == null) return null;
-        String command = extractCommand(toolCall);
+    public @Nullable String detectPermissionAbuse(@Nullable Object toolCall) {
+        if (!(toolCall instanceof JsonObject jsonToolCall)) return null;
+        String command = extractCommand(jsonToolCall);
         if (command == null) return null;
         return ToolUtils.detectCommandAbuseType(command);
     }
@@ -94,8 +94,7 @@ public final class RunInTerminalTool extends TerminalTool {
 
         // Flush all editor buffers to disk so terminal commands see current content
         EdtUtil.invokeAndWait(() ->
-            com.intellij.openapi.application.WriteAction.run(() ->
-                com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments()));
+            com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments());
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
 

@@ -81,12 +81,6 @@ public class CopilotAcpClient extends AcpClient {
         super(config, settings, registry, projectBasePath, mcpPort);
     }
 
-    @Override
-    protected boolean isBlackListed(JsonObject toolCall) {
-        var title = toolCall.get("title").getAsString().trim().toLowerCase();
-        return Stream.of("execute", "read", "edit", "search")
-            .anyMatch(title::contains);
-    }
     /**
      * Copilot bills by premium-request multiplier, not by token count.
      */
@@ -117,8 +111,8 @@ public class CopilotAcpClient extends AcpClient {
 
     @Override
     @NotNull
-    public String getToolId(@NotNull JsonObject toolCall) {
-        return toolCall.get("title").getAsString().trim().replaceFirst("^agentbridge-", "");
+    public String getToolId(@NotNull SessionUpdate.Protocol.ToolCall protocolCall) {
+        return protocolCall.title.trim().replaceFirst("^agentbridge-", "");
     }
 
     @Override

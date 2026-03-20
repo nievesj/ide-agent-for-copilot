@@ -69,12 +69,14 @@ public class JsonRpcTransport {
     /**
      * An incoming JSON-RPC request from the agent.
      */
-    public record IncomingRequest(String method, @Nullable JsonObject params) {}
+    public record IncomingRequest(String method, @Nullable JsonObject params) {
+    }
 
     /**
      * An incoming JSON-RPC notification from the agent.
      */
-    public record IncomingNotification(String method, @Nullable JsonObject params) {}
+    public record IncomingNotification(String method, @Nullable JsonObject params) {
+    }
 
     // ─── Handler Registration ─────────────────────────
 
@@ -112,8 +114,8 @@ public class JsonRpcTransport {
 
         this.process = agentProcess;
         this.writer = new PrintWriter(
-                new OutputStreamWriter(agentProcess.getOutputStream(), StandardCharsets.UTF_8),
-                true
+            new OutputStreamWriter(agentProcess.getOutputStream(), StandardCharsets.UTF_8),
+            true
         );
 
         this.readerThread = new Thread(this::readLoop, "jsonrpc-reader");
@@ -134,7 +136,7 @@ public class JsonRpcTransport {
         }
 
         pendingRequests.forEach((id, future) ->
-                future.completeExceptionally(new IOException("Transport stopped")));
+            future.completeExceptionally(new IOException("Transport stopped")));
         pendingRequests.clear();
 
         if (readerThread != null) {
@@ -171,7 +173,7 @@ public class JsonRpcTransport {
         pendingRequests.put(id, future);
 
         future.orTimeout(timeout, unit)
-                .whenComplete((result, error) -> pendingRequests.remove(id));
+            .whenComplete((result, error) -> pendingRequests.remove(id));
 
         writeLine(gson.toJson(buildRequest(id, method, params)));
         return future;
@@ -221,7 +223,7 @@ public class JsonRpcTransport {
     private void readLoop() {
         Process proc = Objects.requireNonNull(this.process, "Process not started");
         try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
+            new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while (alive.get() && (line = reader.readLine()) != null) {
                 if (!line.isBlank()) {
@@ -304,7 +306,7 @@ public class JsonRpcTransport {
     private void stderrLoop() {
         Process proc = Objects.requireNonNull(this.process, "Process not started");
         try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(proc.getErrorStream(), StandardCharsets.UTF_8))) {
+            new InputStreamReader(proc.getErrorStream(), StandardCharsets.UTF_8))) {
             String line;
             while (alive.get() && (line = reader.readLine()) != null) {
                 if (stderrHandler != null) {

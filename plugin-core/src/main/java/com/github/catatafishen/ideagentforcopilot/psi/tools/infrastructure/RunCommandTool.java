@@ -67,9 +67,9 @@ public final class RunCommandTool extends InfrastructureTool {
     }
 
     @Override
-    public @Nullable String detectPermissionAbuse(@Nullable com.google.gson.JsonObject toolCall) {
-        if (toolCall == null) return null;
-        String command = extractCommandFromToolCall(toolCall);
+    public @Nullable String detectPermissionAbuse(@Nullable Object toolCall) {
+        if (!(toolCall instanceof com.google.gson.JsonObject jsonToolCall)) return null;
+        String command = extractCommandFromToolCall(jsonToolCall);
         if (command == null) return null;
         return ToolUtils.detectCommandAbuseType(command);
     }
@@ -102,8 +102,7 @@ public final class RunCommandTool extends InfrastructureTool {
         if (abuseType != null) return ToolUtils.getCommandAbuseMessage(abuseType);
 
         EdtUtil.invokeAndWait(() ->
-            com.intellij.openapi.application.WriteAction.run(() ->
-                com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments()));
+            com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments());
 
         String title = args.has(JSON_TITLE) ? args.get(JSON_TITLE).getAsString() : null;
         String basePath = project.getBasePath();

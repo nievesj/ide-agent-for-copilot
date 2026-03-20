@@ -46,7 +46,7 @@ public final class CopilotClient extends AcpClient {
     }
 
     @Override
-    protected boolean requiresInlineReferences() {
+    public boolean requiresInlineReferences() {
         return true;
     }
 

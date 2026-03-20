@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.bridge;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.GenericSettings;
 import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
-import com.google.gson.JsonObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -21,58 +20,60 @@ class JunieAcpClientWhitelistTest {
         client = new JunieAcpClient(config, settings, null, null, 0);
     }
 
-    private JsonObject createToolCall(String title) {
-        JsonObject toolCall = new JsonObject();
-        toolCall.addProperty("title", title);
+    private SessionUpdate.Protocol.ToolCall createToolCall(String title) {
+        SessionUpdate.Protocol.ToolCall toolCall = new SessionUpdate.Protocol.ToolCall();
+        toolCall.toolCallId = "id";
+        toolCall.title = title;
+        toolCall.kind = SessionUpdate.ToolKind.OTHER;
         return toolCall;
     }
 
     @Test
     void testWhitelistAllowsAgentBridgeTools() {
-        JsonObject toolCall = createToolCall("Tool: agentbridge/read_file");
-        assertEquals(ToolPermission.ALLOW, client.resolveEffectivePermission("read_file", toolCall),
+        SessionUpdate.Protocol.ToolCall toolCall = createToolCall("Tool: agentbridge/read_file");
+        assertEquals(ToolPermission.ALLOW, client.resolveEffectivePermission(toolCall),
             "Should allow agentbridge- prefixed tools");
 
-        JsonObject toolCall2 = createToolCall("Tool: agentbridge/search_text");
-        assertEquals(ToolPermission.ALLOW, client.resolveEffectivePermission("search_text", toolCall2),
+        SessionUpdate.Protocol.ToolCall toolCall2 = createToolCall("Tool: agentbridge/search_text");
+        assertEquals(ToolPermission.ALLOW, client.resolveEffectivePermission(toolCall2),
             "Should allow agentbridge- prefixed tools");
     }
 
     @Test
     void testWhitelistDeniesKnownBuiltIns() {
-        JsonObject toolCall = createToolCall("Tool: bash");
-        assertEquals(ToolPermission.DENY, client.resolveEffectivePermission("bash", toolCall),
+        SessionUpdate.Protocol.ToolCall toolCall = createToolCall("Tool: bash");
+        assertEquals(ToolPermission.DENY, client.resolveEffectivePermission(toolCall),
             "Should deny built-in bash tool");
 
-        JsonObject toolCall2 = createToolCall("Tool: read_file");
-        assertEquals(ToolPermission.DENY, client.resolveEffectivePermission("read_file", toolCall2),
+        SessionUpdate.Protocol.ToolCall toolCall2 = createToolCall("Tool: read_file");
+        assertEquals(ToolPermission.DENY, client.resolveEffectivePermission(toolCall2),
             "Should deny built-in read_file tool");
 
-        JsonObject toolCall3 = createToolCall("Tool: execute");
-        assertEquals(ToolPermission.DENY, client.resolveEffectivePermission("execute", toolCall3),
+        SessionUpdate.Protocol.ToolCall toolCall3 = createToolCall("Tool: execute");
+        assertEquals(ToolPermission.DENY, client.resolveEffectivePermission(toolCall3),
             "Should deny built-in execute tool");
     }
 
     @Test
     void testWhitelistDeniesUnknownTools() {
-        JsonObject toolCall = createToolCall("Tool: unknown_tool");
-        assertEquals(ToolPermission.DENY, client.resolveEffectivePermission("unknown_tool", toolCall),
+        SessionUpdate.Protocol.ToolCall toolCall = createToolCall("Tool: unknown_tool");
+        assertEquals(ToolPermission.DENY, client.resolveEffectivePermission(toolCall),
             "Should deny unknown tools by default");
 
-        JsonObject toolCall2 = createToolCall("Tool: some_random_builtin");
-        assertEquals(ToolPermission.DENY, client.resolveEffectivePermission("some_random_builtin", toolCall2),
+        SessionUpdate.Protocol.ToolCall toolCall2 = createToolCall("Tool: some_random_builtin");
+        assertEquals(ToolPermission.DENY, client.resolveEffectivePermission(toolCall2),
             "Should deny unknown built-in tools");
     }
 
     @Test
     void testGetToolId() {
-        JsonObject toolCall = createToolCall("Tool: agentbridge/read_file");
+        SessionUpdate.Protocol.ToolCall toolCall = createToolCall("Tool: agentbridge/read_file");
         assertEquals("read_file", client.getToolId(toolCall));
 
-        JsonObject toolCall2 = createToolCall("Tool: read_file");
+        SessionUpdate.Protocol.ToolCall toolCall2 = createToolCall("Tool: read_file");
         assertEquals("read_file", client.getToolId(toolCall2));
 
-        JsonObject toolCall3 = createToolCall("bash");
+        SessionUpdate.Protocol.ToolCall toolCall3 = createToolCall("bash");
         assertEquals("bash", client.getToolId(toolCall3));
     }
 }

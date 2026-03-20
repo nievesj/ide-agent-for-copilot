@@ -1,12 +1,14 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
+import com.google.gson.annotations.SerializedName;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.Map;
 
 /**
- * Sealed type hierarchy for structured agent → UI update events.
+ * Sealed type hierarchy for structured agent → UI update events and raw wire protocol entities.
  *
  * <p>Replaces the previous ad-hoc {@link com.google.gson.JsonObject} payloads, giving each
  * event a well-typed shape that the UI can pattern-match exhaustively.  The concrete type
@@ -26,11 +28,15 @@ public sealed interface SessionUpdate
      * Functional category of a tool call, used for UI styling.
      */
     enum ToolKind {
-        READ("read"),
-        EDIT("edit"),
-        EXECUTE("execute"),
-        SEARCH("search"),
-        OTHER("other");
+        @SerializedName("read") READ("read"),
+        @SerializedName("edit") EDIT("edit"),
+        @SerializedName("delete") DELETE("delete"),
+        @SerializedName("move") MOVE("move"),
+        @SerializedName("search") SEARCH("search"),
+        @SerializedName("execute") EXECUTE("execute"),
+        @SerializedName("think") THINK("think"),
+        @SerializedName("fetch") FETCH("fetch"),
+        @SerializedName("other") OTHER("other");
 
         private final String value;
 
@@ -51,7 +57,7 @@ public sealed interface SessionUpdate
         public static ToolKind fromString(@Nullable String s) {
             if (s == null) return OTHER;
             for (ToolKind k : values()) {
-                if (k.value.equalsIgnoreCase(s)) return k;
+                if (k.value.equalsIgnoreCase(s) || k.name().equalsIgnoreCase(s)) return k;
             }
             return OTHER;
         }
@@ -77,9 +83,10 @@ public sealed interface SessionUpdate
      * Terminal outcome of a tool call.
      */
     enum ToolCallStatus {
-        COMPLETED("completed"),
-        FAILED("failed"),
-        IN_PROGRESS("in_progress");
+        @SerializedName("completed") COMPLETED("completed"),
+        @SerializedName("failed") FAILED("failed"),
+        @SerializedName("pending") PENDING("in_progress"),
+        @SerializedName("in_progress") IN_PROGRESS("in_progress");
 
         private final String value;
 
@@ -97,7 +104,7 @@ public sealed interface SessionUpdate
         public static ToolCallStatus fromString(@Nullable String s) {
             if (s == null) return FAILED;
             for (ToolCallStatus st : values()) {
-                if (st.value.equalsIgnoreCase(s)) return st;
+                if (st.value.equalsIgnoreCase(s) || st.name().equalsIgnoreCase(s)) return st;
             }
             if ("success".equalsIgnoreCase(s) || "succeeded".equalsIgnoreCase(s)) return COMPLETED;
             if ("in-progress".equalsIgnoreCase(s) || "in_progress".equalsIgnoreCase(s) || "running".equalsIgnoreCase(s))
@@ -255,11 +262,24 @@ public sealed interface SessionUpdate
     }
 
     /**
-     * A plan update from the ACP agent, carrying a list of plan entries.
+     * Extracts a plan update from an ACP agent, carrying a list of plan entries.
      *
-     * @param entries the current plan entry list
+     * @param plan the current plan
      */
-    record Plan(@NotNull List<PlanEntry> entries) implements SessionUpdate {
+    record Plan(@NotNull Protocol.Plan plan) implements SessionUpdate {
+
+        /**
+         * Returns the list of plan entries.
+         */
+        public @NotNull List<PlanEntry> entries() {
+            return plan.entries != null ? plan.entries.stream()
+                .map(e -> new PlanEntry(
+                    e.content != null ? e.content : "Step",
+                    e.status != null ? e.status : "pending",
+                    e.priority != null ? e.priority : ""
+                ))
+                .toList() : List.of();
+        }
 
         /**
          * A single entry in the agent plan.
@@ -275,6 +295,136 @@ public sealed interface SessionUpdate
             @NotNull String status,
             @NotNull String priority
         ) {
+        }
+    }
+
+    // ── Raw protocol classes ──────────────────────────────────────────────────
+
+    /**
+     * POJO classes for Agent Client Protocol (ACP) entities.
+     * See https://agentclientprotocol.com/protocol/tool-calls
+     */
+    final class Protocol {
+
+        /**
+         * A tool call event from the agent.
+         */
+        public static class ToolCall {
+            @SerializedName(value = "toolCallId", alternate = {"id"})
+            public String toolCallId;
+
+            @SerializedName("title")
+            public String title;
+
+            @SerializedName("kind")
+            public ToolKind kind;
+
+            /**
+             * The arguments for the tool call. Can be a JSON object, array, or string depending on the tool.
+             * Maps to "arguments", "input", or "rawInput".
+             */
+            @SerializedName(value = "arguments", alternate = {"input", "rawInput"})
+            public Object arguments;
+
+            /**
+             * Thinking/reasoning from the agent.
+             */
+            @SerializedName("content")
+            public Object content;
+
+            /**
+             * Metadata about the sub-agent if this is a task tool.
+             */
+            @SerializedName("metadata")
+            public Map<String, Object> metadata;
+
+            @SerializedName("locations")
+            public List<Location> locations;
+
+            public static class Location {
+                @SerializedName("path")
+                public String path;
+                @SerializedName("range")
+                public Range range;
+            }
+
+            public static class Range {
+                @SerializedName("start")
+                public Position start;
+                @SerializedName("end")
+                public Position end;
+            }
+
+            public static class Position {
+                @SerializedName("line")
+                public int line;
+                @SerializedName("character")
+                public int character;
+            }
+        }
+
+        /**
+         * A tool call update event (result or error).
+         */
+        public static class ToolCallUpdate {
+            @SerializedName(value = "toolCallId", alternate = {"id"})
+            public String toolCallId;
+
+            @SerializedName("status")
+            public ToolCallStatus status;
+
+            /**
+             * The result of the tool call.
+             * Maps to "result" or "output".
+             */
+            @SerializedName(value = "result", alternate = {"output", "toolResult"})
+            public Object result;
+
+            /**
+             * OpenCode specific nested result.
+             */
+            @SerializedName("rawOutput")
+            public RawOutput rawOutput;
+
+            public static class RawOutput {
+                @SerializedName("output")
+                public Object output;
+            }
+
+            /**
+             * Error message if the tool call failed.
+             */
+            @SerializedName("error")
+            public String error;
+
+            /**
+             * Optional natural language explanation of the result.
+             */
+            @SerializedName("description")
+            public String description;
+
+            /**
+             * Thinking/reasoning from the agent during the update.
+             */
+            @SerializedName("content")
+            public Object content;
+        }
+
+        /**
+         * A plan update from the ACP agent, carrying a list of plan entries.
+         */
+        public static class Plan {
+            @SerializedName("entries")
+            public List<PlanEntry> entries;
+
+            public static class PlanEntry {
+                @SerializedName("content")
+                public String content;
+                @SerializedName("status")
+                public String status;
+                @SerializedName("priority")
+                public String priority;
+            }
         }
     }
 }

@@ -73,13 +73,6 @@ public class OpenCodeAcpClient extends AcpClient {
         return p;
     }
 
-    @Override
-    protected boolean isBlackListed(JsonObject toolCall) {
-        var title = toolCall.get("title").getAsString().trim().toLowerCase();
-        return Stream.of("bash", "edit", "write", "read", "grep", "glob", "list", "lsp", "patch", "question")
-                .anyMatch(title::contains);
-    }
-
     /**
      * Builds the OpenCode config JSON template with bundled agents.
      * Includes ACP-standard mcpServers array + custom IDE-aware agent definitions.
@@ -194,19 +187,9 @@ public class OpenCodeAcpClient extends AcpClient {
 
     @Override
     @NotNull
-    public String getToolId(@NotNull JsonObject toolCall) {
-        return toolCall.get("title").getAsString().trim().replaceFirst("^agentbridge_", "");
-    }
-
-    /**
-     * OpenCode requires {@code mcpServers} to be present as an array in {@code session/new}
-     * even when MCP is registered via the config file. Send an empty array so validation passes.
-     */
-    @Override
-    protected void addExtraSessionParams(@NotNull JsonObject params) {
-        if (!params.has("mcpServers")) {
-            params.add("mcpServers", new com.google.gson.JsonArray());
-        }
+    public String getToolId(@NotNull SessionUpdate.Protocol.ToolCall protocolCall) {
+        String title = protocolCall.title != null ? protocolCall.title : "unknown";
+        return title.trim().replaceFirst("^agentbridge_", "");
     }
 
     /**
@@ -215,13 +198,15 @@ public class OpenCodeAcpClient extends AcpClient {
      */
     @Override
     protected void handleToolCallEvent(@NotNull JsonObject update, @NotNull Consumer<SessionUpdate> onUpdate) {
-        String toolCallId = update.has(TOOL_CALL_ID_KEY) ? update.get(TOOL_CALL_ID_KEY).getAsString() : "";
-        String args = extractAcpArguments(update);
-        boolean hasArgs = args != null && !args.isEmpty() && !args.equals("{}");
+        LOG.info("[ACP tool_call event] raw: " + update);
+        SessionUpdate.Protocol.ToolCall protocolCall = gson.fromJson(update, SessionUpdate.Protocol.ToolCall.class);
+        String toolCallId = protocolCall.toolCallId != null ? protocolCall.toolCallId : "";
+        String args = protocolCall.arguments instanceof String ? (String) protocolCall.arguments : gson.toJson(protocolCall.arguments);
+        boolean hasArgs = args != null && !args.isEmpty() && !args.equals("{}") && !args.equals("null");
 
         if (hasArgs) {
             // Arguments present (standard style) - emit immediately
-            onUpdate.accept(buildToolCallEvent(update));
+            onUpdate.accept(buildToolCallEvent(protocolCall));
         } else {
             // No arguments (OpenCode style) - defer until we get an update with args
             LOG.info("[OpenCode tool_call] Deferring toolCallId=" + toolCallId + " (no arguments yet)");
@@ -235,15 +220,20 @@ public class OpenCodeAcpClient extends AcpClient {
      */
     @Override
     protected void handleToolCallUpdateEvent(@NotNull JsonObject update, @NotNull Consumer<SessionUpdate> onUpdate) {
-        String toolCallId = update.has(TOOL_CALL_ID_KEY) ? update.get(TOOL_CALL_ID_KEY).getAsString() : "";
+        LOG.info("[ACP tool_call_update event] raw: " + update);
+        SessionUpdate.Protocol.ToolCallUpdate protocolUpdate = gson.fromJson(update, SessionUpdate.Protocol.ToolCallUpdate.class);
+        String toolCallId = protocolUpdate.toolCallId != null ? protocolUpdate.toolCallId : "";
 
         // Check if we have a deferred tool call waiting for arguments
         JsonObject pendingCall = pendingToolCalls.remove(toolCallId);
         if (pendingCall != null) {
             // Merge arguments from update into the pending call and emit
-            String args = extractAcpArguments(update);
-            if (args != null && !args.isEmpty() && !args.equals("{}")) {
-                // Transfer any argument-like keys found in update to pendingCall
+            // Note: We still use JsonObject for merging because buildToolCallEvent(JsonObject) was removed,
+            // but we can just use the protocolUpdate's result/arguments if it's what we need.
+            // OpenCode protocol is a bit non-standard here.
+
+            // To be safe, let's just parse the merged JSON back to SessionUpdate.Protocol.ToolCall
+            if (update.has(ARGUMENTS_KEY) || update.has(INPUT_KEY) || update.has(RAW_INPUT_KEY)) {
                 for (String key : new String[]{ARGUMENTS_KEY, INPUT_KEY, RAW_INPUT_KEY, CONTENT, TITLE_KEY, KIND_KEY}) {
                     if (update.has(key)) {
                         pendingCall.add(key, update.get(key));
@@ -251,11 +241,11 @@ public class OpenCodeAcpClient extends AcpClient {
                 }
             }
             LOG.info("[OpenCode tool_call] Emitting deferred toolCallId=" + toolCallId + " with merged info from update");
-            onUpdate.accept(buildToolCallEvent(pendingCall));
+            onUpdate.accept(buildToolCallEvent(gson.fromJson(pendingCall, SessionUpdate.Protocol.ToolCall.class)));
         }
 
         // Always emit the update
-        onUpdate.accept(buildToolCallUpdateEvent(update));
+        onUpdate.accept(buildToolCallUpdateEvent(protocolUpdate));
     }
 
     @Override
@@ -275,18 +265,11 @@ public class OpenCodeAcpClient extends AcpClient {
      */
     @Override
     @Nullable
-    protected String extractAgentSpecificResult(@NotNull JsonObject update) {
-        // OpenCode sends results in rawOutput.output
-        if (update.has("rawOutput")) {
-            JsonElement rawOutput = update.get("rawOutput");
-            if (rawOutput.isJsonObject()) {
-                JsonObject rawOutputObj = rawOutput.getAsJsonObject();
-                if (rawOutputObj.has(OUTPUT_KEY)) {
-                    JsonElement output = rawOutputObj.get(OUTPUT_KEY);
-                    if (output.isJsonPrimitive()) return output.getAsString();
-                    if (output.isJsonObject() || output.isJsonArray()) return gson.toJson(output);
-                }
-            }
+    protected String extractAgentSpecificResult(@NotNull SessionUpdate.Protocol.ToolCallUpdate protocolUpdate) {
+        if (protocolUpdate.rawOutput != null && protocolUpdate.rawOutput.output != null) {
+            Object out = protocolUpdate.rawOutput.output;
+            if (out instanceof String) return (String) out;
+            return gson.toJson(out);
         }
         return null;
     }

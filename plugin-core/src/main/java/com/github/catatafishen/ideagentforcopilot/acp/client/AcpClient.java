@@ -1,18 +1,13 @@
 package com.github.catatafishen.ideagentforcopilot.acp.client;
 
-import com.github.catatafishen.ideagentforcopilot.acp.model.InitializeRequest;
-import com.github.catatafishen.ideagentforcopilot.acp.model.InitializeResponse;
-import com.github.catatafishen.ideagentforcopilot.acp.model.Model;
-import com.github.catatafishen.ideagentforcopilot.acp.model.NewSessionResponse;
-import com.github.catatafishen.ideagentforcopilot.acp.model.PromptRequest;
-import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
-import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
+import com.github.catatafishen.ideagentforcopilot.acp.model.*;
 import com.github.catatafishen.ideagentforcopilot.acp.transport.JsonRpcTransport;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentConnector;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentPromptException;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentSessionException;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentStartException;
 import com.github.catatafishen.ideagentforcopilot.permissions.PermissionDefaults;
+import com.github.catatafishen.ideagentforcopilot.services.McpServerControl;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -35,8 +30,8 @@ import java.util.function.Consumer;
 /**
  * Abstract ACP protocol client.
  * <p>
- * Manages: initialization, authentication, sessions, prompts.
- * Agent-specific behavior via abstract/overridable methods in subclasses.
+ * Manages: process lifecycle, initialization, authentication, sessions, prompt streaming.
+ * Agent-specific behavior is provided by abstract/overridable methods in subclasses.
  * Each concrete subclass IS the agent definition — no separate profile needed.
  *
  * @see <a href="https://agentclientprotocol.com">Agent Client Protocol</a>
@@ -55,6 +50,10 @@ public abstract class AcpClient implements AgentConnector {
     private static final String CLIENT_NAME = "AgentBridge";
     private static final String CLIENT_VERSION = "2.0.0";
     private static final String KEY_SESSION_ID = "sessionId";
+    private static final String KEY_SESSION_UPDATE = "sessionUpdate";
+    private static final String KEY_CONTENT = "content";
+    private static final String KEY_STATUS = "status";
+    private static final String KEY_RESULT = "result";
 
     protected final Gson gson = new GsonBuilder().create();
     protected final JsonRpcTransport transport = new JsonRpcTransport();
@@ -64,6 +63,7 @@ public abstract class AcpClient implements AgentConnector {
     private @Nullable InitializeResponse capabilities;
     private @Nullable String currentSessionId;
     private final List<Model> availableModels = new ArrayList<>();
+    private volatile @Nullable Consumer<SessionUpdate> updateConsumer;
 
     protected AcpClient(Project project) {
         this.project = project;
@@ -97,6 +97,7 @@ public abstract class AcpClient implements AgentConnector {
         capabilities = null;
         currentSessionId = null;
         availableModels.clear();
+        updateConsumer = null;
     }
 
     @Override
@@ -145,9 +146,10 @@ public abstract class AcpClient implements AgentConnector {
     public final PromptResponse sendPrompt(PromptRequest request,
                                            Consumer<SessionUpdate> onUpdate) throws AgentPromptException {
         try {
+            updateConsumer = onUpdate;
             JsonObject params = gson.toJsonTree(request).getAsJsonObject();
             CompletableFuture<JsonElement> future = transport.sendRequest(
-                    "session/prompt", params, PROMPT_TIMEOUT_SECONDS, TimeUnit.SECONDS
+                "session/prompt", params, PROMPT_TIMEOUT_SECONDS, TimeUnit.SECONDS
             );
             JsonElement result = future.get(PROMPT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             return gson.fromJson(result, PromptResponse.class);
@@ -156,6 +158,8 @@ public abstract class AcpClient implements AgentConnector {
             throw new AgentPromptException("Prompt interrupted for " + displayName(), e);
         } catch (Exception e) {
             throw new AgentPromptException("Prompt failed for " + displayName(), e);
+        } finally {
+            updateConsumer = null;
         }
     }
 
@@ -178,7 +182,7 @@ public abstract class AcpClient implements AgentConnector {
     protected final void sendSessionMessage(String sessionId, String text) {
         JsonObject msg = new JsonObject();
         msg.addProperty("role", "user");
-        msg.addProperty("content", text);
+        msg.addProperty(KEY_CONTENT, text);
 
         JsonArray messages = new JsonArray();
         messages.add(msg);
@@ -194,22 +198,23 @@ public abstract class AcpClient implements AgentConnector {
     // Abstract/overridable methods — subclass hooks
     // ═══════════════════════════════════════════════════
 
-    /** Build the command line to launch this agent process. */
+    /**
+     * Build the command line to launch this agent process.
+     */
     protected abstract List<String> buildCommand(String cwd, int mcpPort);
 
     /**
      * Extra environment variables for the agent process.
-     * Override to add agent-specific env vars.
      *
      * @param mcpPort the MCP server port for this session
      */
-    protected Map<String, String> buildEnvironment(@SuppressWarnings("unused") int mcpPort) {
+    @SuppressWarnings("unused")
+    protected Map<String, String> buildEnvironment(int mcpPort) {
         return Map.of();
     }
 
     /**
      * Customize the session/new request parameters.
-     * Override to add MCP servers, metadata, etc.
      *
      * @param cwd     working directory for the session
      * @param mcpPort the MCP server port
@@ -222,7 +227,6 @@ public abstract class AcpClient implements AgentConnector {
 
     /**
      * Called after a session is successfully created.
-     * Override to inject instructions, etc.
      *
      * @param sessionId the created session ID
      */
@@ -241,7 +245,7 @@ public abstract class AcpClient implements AgentConnector {
     /**
      * Whether context references must be inlined as text.
      */
-    protected boolean requiresInlineReferences() {
+    public boolean requiresInlineReferences() {
         return false;
     }
 
@@ -252,15 +256,37 @@ public abstract class AcpClient implements AgentConnector {
         return update;
     }
 
-    /** Default permission levels for each tool category. */
+    /**
+     * Default permission levels for each tool category.
+     */
     protected PermissionDefaults permissionDefaults() {
         return PermissionDefaults.STANDARD;
     }
 
+    // ═══════════════════════════════════════════════════
+    // MCP port resolution
+    // ═══════════════════════════════════════════════════
+
     /**
-     * Resolve the MCP server port. Override to connect to MCP.
+     * Resolve the MCP server port, starting the server if needed.
      */
     protected int resolveMcpPort() {
+        McpServerControl mcpServer = McpServerControl.getInstance(project);
+        if (mcpServer != null) {
+            if (mcpServer.isRunning() && mcpServer.getPort() > 0) {
+                return mcpServer.getPort();
+            }
+            try {
+                mcpServer.start();
+                if (mcpServer.isRunning() && mcpServer.getPort() > 0) {
+                    LOG.info("Auto-started MCP server on port " + mcpServer.getPort());
+                    return mcpServer.getPort();
+                }
+            } catch (Exception e) {
+                LOG.warn("Failed to auto-start MCP server: " + e.getMessage());
+            }
+        }
+        LOG.warn("No MCP server available — IntelliJ tools will be unavailable.");
         return 0;
     }
 
@@ -290,27 +316,27 @@ public abstract class AcpClient implements AgentConnector {
 
     private InitializeResponse initialize() throws Exception {
         InitializeRequest request = new InitializeRequest(
-                PROTOCOL_VERSION,
-                new InitializeRequest.ClientInfo(CLIENT_NAME, CLIENT_VERSION),
-                InitializeRequest.ClientCapabilities.standard()
+            PROTOCOL_VERSION,
+            new InitializeRequest.ClientInfo(CLIENT_NAME, CLIENT_VERSION),
+            InitializeRequest.ClientCapabilities.standard()
         );
 
         JsonObject params = gson.toJsonTree(request).getAsJsonObject();
         CompletableFuture<JsonElement> future = transport.sendRequest(
-                "initialize", params, INITIALIZE_TIMEOUT_SECONDS, TimeUnit.SECONDS
+            "initialize", params, INITIALIZE_TIMEOUT_SECONDS, TimeUnit.SECONDS
         );
 
         JsonElement result = future.get(INITIALIZE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         InitializeResponse response = gson.fromJson(result, InitializeResponse.class);
 
         LOG.info(displayName() + " initialized: " + response.agentInfo().name()
-                + " v" + response.agentInfo().version());
+            + " v" + response.agentInfo().version());
         return response;
     }
 
     private void authenticate() throws Exception {
         if (capabilities == null || capabilities.authMethods() == null
-                || capabilities.authMethods().isEmpty()) {
+            || capabilities.authMethods().isEmpty()) {
             return;
         }
 
@@ -319,7 +345,7 @@ public abstract class AcpClient implements AgentConnector {
         params.addProperty("methodId", methodId);
 
         CompletableFuture<JsonElement> future = transport.sendRequest(
-                "authenticate", params, AUTH_TIMEOUT_SECONDS, TimeUnit.SECONDS
+            "authenticate", params, AUTH_TIMEOUT_SECONDS, TimeUnit.SECONDS
         );
         future.get(AUTH_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         LOG.info(displayName() + " authenticated with method: " + methodId);
@@ -335,12 +361,180 @@ public abstract class AcpClient implements AgentConnector {
         transport.onRequest(this::handleAgentRequest);
 
         transport.onStderr(line ->
-                LOG.info("[" + agentId() + " stderr] " + line));
+            LOG.info("[" + agentId() + " stderr] " + line));
     }
 
     private void handleSessionUpdate(@Nullable JsonObject params) {
         if (params == null) return;
-        LOG.debug("Session update: " + params);
+
+        Consumer<SessionUpdate> consumer = updateConsumer;
+        if (consumer == null) {
+            LOG.debug("Session update received but no consumer registered");
+            return;
+        }
+
+        SessionUpdate update = parseSessionUpdate(params);
+        if (update != null) {
+            update = processUpdate(update);
+            consumer.accept(update);
+        }
+    }
+
+    /**
+     * Parse a session/update notification into a typed SessionUpdate.
+     */
+    private @Nullable SessionUpdate parseSessionUpdate(JsonObject params) {
+        String type = params.has(KEY_SESSION_UPDATE)
+            ? params.get(KEY_SESSION_UPDATE).getAsString() : null;
+        if (type == null) return null;
+
+        return switch (type) {
+            case "agent_message_chunk" -> parseMessageChunk(params);
+            case "agent_thought_chunk" -> parseThoughtChunk(params);
+            case "tool_call" -> parseToolCall(params);
+            case "tool_call_update" -> parseToolCallUpdate(params);
+            case "plan" -> parsePlan(params);
+            case "turn_usage" -> parseTurnUsage(params);
+            case "banner" -> parseBanner(params);
+            default -> {
+                LOG.debug("Unknown session update type: " + type);
+                yield null;
+            }
+        };
+    }
+
+    private SessionUpdate.AgentMessageChunk parseMessageChunk(JsonObject params) {
+        List<ContentBlock> blocks = parseContentBlocks(params);
+        return new SessionUpdate.AgentMessageChunk(blocks);
+    }
+
+    private SessionUpdate.AgentThoughtChunk parseThoughtChunk(JsonObject params) {
+        List<ContentBlock> blocks = parseContentBlocks(params);
+        return new SessionUpdate.AgentThoughtChunk(blocks);
+    }
+
+    private SessionUpdate.ToolCall parseToolCall(JsonObject params) {
+        String toolCallId = getStringOrEmpty(params, "toolCallId");
+        String title = getStringOrEmpty(params, "title");
+        String resolvedTitle = resolveToolId(title);
+
+        ToolKind kind = null;
+        if (params.has("kind")) {
+            try {
+                kind = ToolKind.valueOf(params.get("kind").getAsString().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                kind = ToolKind.OTHER;
+            }
+        }
+
+        String arguments = params.has("arguments") ? params.get("arguments").toString() : null;
+
+        List<Location> locations = null;
+        if (params.has("locations")) {
+            locations = new ArrayList<>();
+            for (JsonElement locEl : params.getAsJsonArray("locations")) {
+                JsonObject locObj = locEl.getAsJsonObject();
+                String uri = getStringOrEmpty(locObj, "uri");
+                if (uri.isEmpty()) uri = getStringOrEmpty(locObj, "path");
+                locations.add(new Location(uri, null));
+            }
+        }
+
+        return new SessionUpdate.ToolCall(toolCallId, resolvedTitle, kind, arguments, locations);
+    }
+
+    private SessionUpdate.ToolCallUpdate parseToolCallUpdate(JsonObject params) {
+        String toolCallId = getStringOrEmpty(params, "toolCallId");
+
+        ToolCallStatus status = ToolCallStatus.COMPLETED;
+        if (params.has(KEY_STATUS)) {
+            try {
+                status = ToolCallStatus.valueOf(params.get(KEY_STATUS).getAsString().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                // keep default
+            }
+        }
+
+        String error = params.has("error") ? params.get("error").getAsString() : null;
+        List<ToolCallContent> content = extractToolCallContent(params);
+
+        return new SessionUpdate.ToolCallUpdate(toolCallId, status, content, error);
+    }
+
+    private List<ToolCallContent> extractToolCallContent(JsonObject params) {
+        if (params.has(KEY_CONTENT)) {
+            return List.of(new ToolCallContent.Content(parseContentBlocks(params)));
+        }
+        if (params.has(KEY_RESULT)) {
+            String resultText = params.get(KEY_RESULT).isJsonPrimitive()
+                ? params.get(KEY_RESULT).getAsString()
+                : params.get(KEY_RESULT).toString();
+            return List.of(new ToolCallContent.Content(
+                List.of(new ContentBlock.Text(resultText))
+            ));
+        }
+        return List.of();
+    }
+
+    private SessionUpdate.Plan parsePlan(JsonObject params) {
+        List<PlanEntry> entries = new ArrayList<>();
+        if (params.has("entries")) {
+            for (JsonElement entryEl : params.getAsJsonArray("entries")) {
+                JsonObject entryObj = entryEl.getAsJsonObject();
+                String content = getStringOrEmpty(entryObj, KEY_CONTENT);
+                String status = entryObj.has(KEY_STATUS) ? entryObj.get(KEY_STATUS).getAsString() : null;
+                entries.add(new PlanEntry(content, status));
+            }
+        }
+        return new SessionUpdate.Plan(entries);
+    }
+
+    private SessionUpdate.TurnUsage parseTurnUsage(JsonObject params) {
+        int inputTokens = params.has("inputTokens") ? params.get("inputTokens").getAsInt() : 0;
+        int outputTokens = params.has("outputTokens") ? params.get("outputTokens").getAsInt() : 0;
+        double costUsd = params.has("costUsd") ? params.get("costUsd").getAsDouble() : 0.0;
+        return new SessionUpdate.TurnUsage(inputTokens, outputTokens, costUsd);
+    }
+
+    private SessionUpdate.Banner parseBanner(JsonObject params) {
+        String message = getStringOrEmpty(params, "message");
+        String level = params.has("level") ? params.get("level").getAsString() : "warning";
+        String clearOn = params.has("clearOn") ? params.get("clearOn").getAsString() : null;
+        return new SessionUpdate.Banner(message, level, clearOn);
+    }
+
+    private List<ContentBlock> parseContentBlocks(JsonObject params) {
+        if (params.has(KEY_CONTENT) && params.get(KEY_CONTENT).isJsonArray()) {
+            return parseContentArray(params.getAsJsonArray(KEY_CONTENT));
+        }
+        if (params.has(KEY_CONTENT) && params.get(KEY_CONTENT).isJsonPrimitive()) {
+            return List.of(new ContentBlock.Text(params.get(KEY_CONTENT).getAsString()));
+        }
+        if (params.has("text")) {
+            return List.of(new ContentBlock.Text(params.get("text").getAsString()));
+        }
+        return List.of();
+    }
+
+    private List<ContentBlock> parseContentArray(JsonArray array) {
+        List<ContentBlock> blocks = new ArrayList<>();
+        for (JsonElement el : array) {
+            if (el.isJsonObject()) {
+                JsonObject block = el.getAsJsonObject();
+                String blockType = block.has("type") ? block.get("type").getAsString() : "text";
+                if ("text".equals(blockType) && block.has("text")) {
+                    blocks.add(new ContentBlock.Text(block.get("text").getAsString()));
+                }
+            } else if (el.isJsonPrimitive()) {
+                blocks.add(new ContentBlock.Text(el.getAsString()));
+            }
+        }
+        return blocks;
+    }
+
+    private static String getStringOrEmpty(JsonObject obj, String key) {
+        return obj.has(key) && obj.get(key).isJsonPrimitive()
+            ? obj.get(key).getAsString() : "";
     }
 
     private void handleAgentRequest(long id, JsonRpcTransport.IncomingRequest request) {
@@ -348,7 +542,7 @@ public abstract class AcpClient implements AgentConnector {
             case "session/request_permission" -> handlePermissionRequest(id);
             case "fs/read_text_file", "fs/write_text_file",
                  "terminal/create", "terminal/output" ->
-                    transport.sendError(id, -32603, request.method() + " not yet implemented");
+                transport.sendError(id, -32603, request.method() + " not yet implemented");
             default -> {
                 LOG.warn("Unknown agent request: " + request.method());
                 transport.sendError(id, -32601, "Method not found: " + request.method());

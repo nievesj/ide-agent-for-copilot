@@ -1,6 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.services;
 
-import com.github.catatafishen.ideagentforcopilot.bridge.AcpClient;
+import com.github.catatafishen.ideagentforcopilot.agent.AgentClientAdapter;
+import com.github.catatafishen.ideagentforcopilot.agent.AgentConnector;
+import com.github.catatafishen.ideagentforcopilot.agent.AgentRegistry;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentSettings;
@@ -296,18 +298,24 @@ public final class ActiveAgentManager implements Disposable {
     }
 
     /**
-     * Instantiates the appropriate {@link AcpClient} subclass for the given profile ID.
-     * Each built-in ACP profile has a dedicated subclass that encapsulates any
-     * profile-specific {@link com.github.catatafishen.ideagentforcopilot.bridge.AgentClient}
-     * overrides. User-created profiles fall back to the generic {@link AcpClient}.
+     * Instantiates the appropriate {@link AgentClient} for the given profile ID.
+     * Tries the new AgentBridge2 clients first for ACP agents, falling back to legacy
+     * if the profile ID is not in the new {@link AgentRegistry}.
      */
     @NotNull
-    private static AcpClient createAcpClient(@NotNull String profileId,
-                                             @NotNull AgentConfig config,
-                                             @NotNull AgentSettings settings,
-                                             @NotNull ToolRegistry registry,
-                                             @Nullable String projectBasePath,
-                                             int mcpPort) {
+    private AgentClient createAcpClient(@NotNull String profileId,
+                                        @NotNull AgentConfig config,
+                                        @NotNull AgentSettings settings,
+                                        @NotNull ToolRegistry registry,
+                                        @Nullable String projectBasePath,
+                                        int mcpPort) {
+        AgentConnector connector = AgentRegistry.create(profileId, project);
+        if (connector != null) {
+            LOG.info("Using AgentBridge2 client for profile: " + profileId);
+            return new AgentClientAdapter(connector);
+        }
+
+        LOG.info("Falling back to legacy AcpClient for profile: " + profileId);
         return switch (profileId) {
             case AgentProfileManager.COPILOT_PROFILE_ID ->
                 new CopilotAcpClient(config, settings, registry, projectBasePath, mcpPort);
