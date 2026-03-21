@@ -1,8 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.bridge.AnthropicKeyStore;
-import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
-import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.HyperlinkLabel;
@@ -21,6 +19,9 @@ import java.awt.*;
  * Shows only the Anthropic API key — no binary or ACP settings needed.
  */
 public final class AnthropicDirectClientConfigurable implements Configurable {
+
+    /** Agent ID used as the credential store key for Claude Code. */
+    private static final String CLAUDE_CODE_AGENT_ID = "claude-api";
 
     @SuppressWarnings("unused")
     public AnthropicDirectClientConfigurable(@NotNull Project ignoredProject) {
@@ -69,15 +70,14 @@ public final class AnthropicDirectClientConfigurable implements Configurable {
     public boolean isModified() {
         if (apiKeyField == null) return false;
         String current = new String(apiKeyField.getPassword()).trim();
-        String stored = storedKey();
-        return !current.equals(stored);
+        return !current.equals(storedKey());
     }
 
     @Override
     public void apply() {
         if (apiKeyField == null) return;
         String key = new String(apiKeyField.getPassword()).trim();
-        AnthropicKeyStore.setApiKey(AgentProfileManager.CLAUDE_CODE_PROFILE_ID, key.isEmpty() ? null : key);
+        AnthropicKeyStore.setApiKey(CLAUDE_CODE_AGENT_ID, key.isEmpty() ? null : key);
         refreshStatus();
     }
 
@@ -109,9 +109,7 @@ public final class AnthropicDirectClientConfigurable implements Configurable {
 
     @NotNull
     private String storedKey() {
-        AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.CLAUDE_CODE_PROFILE_ID);
-        if (p == null) return "";
-        String key = AnthropicKeyStore.getApiKey(p.getId());
+        String key = AnthropicKeyStore.getApiKey(CLAUDE_CODE_AGENT_ID);
         return key != null ? key : "";
     }
 }

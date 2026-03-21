@@ -1,13 +1,13 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
-import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
-import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
+import com.github.catatafishen.ideagentforcopilot.acp.client.AcpClient;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.HyperlinkLabel;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
+import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
@@ -19,11 +19,7 @@ import java.awt.*;
 
 public final class CopilotClientConfigurable implements Configurable {
 
-    private static final int SECTIONS =
-        AcpProfileForm.SECTION_BINARY | AcpProfileForm.SECTION_ACP_ARGS
-            | AcpProfileForm.SECTION_MCP | AcpProfileForm.SECTION_PRE_LAUNCH
-            | AcpProfileForm.SECTION_AGENT_DIR | AcpProfileForm.SECTION_PERMISSIONS
-            | AcpProfileForm.SECTION_FLAGS;
+    private static final String AGENT_ID = "copilot";
 
     @SuppressWarnings("unused")
     public CopilotClientConfigurable(@NotNull Project ignoredProject) {
@@ -35,12 +31,16 @@ public final class CopilotClientConfigurable implements Configurable {
     }
 
     private JBLabel statusLabel;
-    private AcpProfileForm form;
+    private JBTextField binaryPathField;
     private BillingConfigurable billingConfigurable;
 
     @Override
     public @NotNull JComponent createComponent() {
         statusLabel = new JBLabel();
+
+        binaryPathField = new JBTextField();
+        binaryPathField.getEmptyText().setText("Auto-detect (leave empty)");
+        binaryPathField.setToolTipText("Absolute path to the copilot binary. Leave empty to find it on PATH.");
 
         HyperlinkLabel installLink = new HyperlinkLabel("Install from github.com/github/copilot-cli");
         installLink.setHyperlinkTarget("https://github.com/github/copilot-cli#installation");
@@ -50,22 +50,18 @@ public final class CopilotClientConfigurable implements Configurable {
         installNote.setForeground(UIUtil.getContextHelpForeground());
         installNote.setFont(JBUI.Fonts.smallFont());
 
-        JPanel statusPanel = FormBuilder.createFormBuilder()
+        JPanel configPanel = FormBuilder.createFormBuilder()
             .addLabeledComponent("Status:", statusLabel)
             .addComponent(installNote, 2)
             .addComponent(installLink, 2)
             .addSeparator(8)
+            .addLabeledComponent("Copilot binary:", binaryPathField)
+            .addTooltip("Leave empty to auto-detect on PATH.")
+            .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
+        configPanel.setBorder(JBUI.Borders.empty(8));
 
-        form = new AcpProfileForm(SECTIONS);
-        JPanel configPanel = form.buildPanel();
-
-        JPanel configWithStatus = new JPanel(new BorderLayout(0, 8));
-        configWithStatus.add(statusPanel, BorderLayout.NORTH);
-        configWithStatus.add(configPanel, BorderLayout.CENTER);
-        configWithStatus.setBorder(JBUI.Borders.empty(8));
-
-        JBScrollPane configScroll = new JBScrollPane(configWithStatus);
+        JBScrollPane configScroll = new JBScrollPane(configPanel);
         configScroll.setBorder(null);
 
         billingConfigurable = new BillingConfigurable();
@@ -80,31 +76,25 @@ public final class CopilotClientConfigurable implements Configurable {
 
     @Override
     public boolean isModified() {
-        if (form == null) return false;
-        AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.COPILOT_PROFILE_ID);
-        return (p != null && form.isModified(p))
-            || (billingConfigurable != null && billingConfigurable.isModified());
+        String stored = nullToEmpty(AcpClient.loadCustomBinaryPath(AGENT_ID));
+        boolean binaryChanged = binaryPathField != null
+            && !binaryPathField.getText().trim().equals(stored);
+        return binaryChanged || (billingConfigurable != null && billingConfigurable.isModified());
     }
 
     @Override
     public void apply() {
-        if (form != null) {
-            AgentProfileManager mgr = AgentProfileManager.getInstance();
-            AgentProfile p = mgr.getProfile(AgentProfileManager.COPILOT_PROFILE_ID);
-            if (p != null) {
-                form.save(p);
-                mgr.updateProfile(p);
-            }
+        if (binaryPathField != null) {
+            AcpClient.saveCustomBinaryPath(AGENT_ID, binaryPathField.getText().trim());
         }
         if (billingConfigurable != null) billingConfigurable.apply();
     }
 
     @Override
     public void reset() {
-        if (form != null) {
+        if (binaryPathField != null) {
             refreshStatusAsync();
-            AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.COPILOT_PROFILE_ID);
-            if (p != null) form.load(p);
+            binaryPathField.setText(nullToEmpty(AcpClient.loadCustomBinaryPath(AGENT_ID)));
         }
         if (billingConfigurable != null) billingConfigurable.reset();
     }
@@ -112,7 +102,7 @@ public final class CopilotClientConfigurable implements Configurable {
     @Override
     public void disposeUIResources() {
         statusLabel = null;
-        form = null;
+        binaryPathField = null;
         if (billingConfigurable != null) {
             billingConfigurable.disposeUIResources();
             billingConfigurable = null;
@@ -125,10 +115,9 @@ public final class CopilotClientConfigurable implements Configurable {
         statusLabel.setForeground(UIUtil.getLabelForeground());
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.COPILOT_PROFILE_ID);
-            String binary = p != null ? p.getBinaryName() : "copilot";
-            String[] alternates = p != null ? p.getAlternateNames().toArray(new String[0]) : new String[]{"copilot-cli"};
-            String version = BinaryDetector.detectBinaryVersion(binary, alternates);
+            String customPath = AcpClient.loadCustomBinaryPath(AGENT_ID);
+            String binary = customPath != null ? customPath : "copilot";
+            String version = BinaryDetector.detectBinaryVersion(binary, new String[]{"copilot-cli"});
             SwingUtilities.invokeLater(() -> {
                 if (statusLabel == null) return;
                 if (version != null) {
@@ -140,5 +129,10 @@ public final class CopilotClientConfigurable implements Configurable {
                 }
             });
         });
+    }
+
+    @NotNull
+    private static String nullToEmpty(String s) {
+        return s != null ? s : "";
     }
 }

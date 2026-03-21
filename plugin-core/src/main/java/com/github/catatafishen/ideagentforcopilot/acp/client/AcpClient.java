@@ -29,6 +29,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -466,18 +467,52 @@ public abstract class AcpClient implements AgentConnector {
         return pb.start();
     }
 
+    // ─── Per-agent binary path settings (application-level) ────────────────
+
+    private static final String PROP_CUSTOM_BINARY = "agentbridge.%s.customBinary";
+
+    /**
+     * Returns the user-configured binary path for the given agent ID,
+     * or {@code null} if not set (auto-detect will be used instead).
+     */
+    public static @Nullable String loadCustomBinaryPath(String agentId) {
+        String stored = PropertiesComponent.getInstance()
+            .getValue(PROP_CUSTOM_BINARY.formatted(agentId), "").trim();
+        return stored.isEmpty() ? null : stored;
+    }
+
+    /**
+     * Persists a custom binary path for the given agent ID.
+     * Pass {@code null} or blank to clear the override and use auto-detection.
+     */
+    public static void saveCustomBinaryPath(String agentId, @Nullable String path) {
+        PropertiesComponent.getInstance()
+            .setValue(PROP_CUSTOM_BINARY.formatted(agentId), path != null ? path.trim() : "", "");
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+
     private List<String> resolveCommand(List<String> command) {
         if (command.isEmpty()) {
             return command;
         }
         String binaryName = command.getFirst();
+
+        // User-configured override takes priority over auto-detection
+        String customPath = loadCustomBinaryPath(agentId());
+        if (customPath != null) {
+            List<String> resolved = new ArrayList<>(command);
+            resolved.set(0, customPath);
+            return resolved;
+        }
+
         // Already absolute — no resolution needed
         if (binaryName.startsWith("/") || binaryName.startsWith("./")) {
             return command;
         }
         String absolutePath = com.github.catatafishen.ideagentforcopilot.settings.BinaryDetector.findBinaryPath(binaryName);
         if (absolutePath != null && !absolutePath.isEmpty()) {
-            List<String> resolved = new java.util.ArrayList<>(command);
+            List<String> resolved = new ArrayList<>(command);
             resolved.set(0, absolutePath);
             return resolved;
         }

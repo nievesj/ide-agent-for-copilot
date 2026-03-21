@@ -1,13 +1,13 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
-import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
-import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
+import com.github.catatafishen.ideagentforcopilot.acp.client.AcpClient;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.HyperlinkLabel;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
+import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
@@ -19,14 +19,11 @@ import java.awt.*;
 
 /**
  * Settings page for the OpenCode client (ACP transport).
- * Shows binary discovery, ACP args, MCP injection, permissions, and feature flags.
+ * Shows binary discovery status and optional binary path override.
  */
 public final class OpenCodeClientConfigurable implements Configurable {
 
-    private static final int SECTIONS =
-        AcpProfileForm.SECTION_BINARY | AcpProfileForm.SECTION_ACP_ARGS
-            | AcpProfileForm.SECTION_MCP | AcpProfileForm.SECTION_PERMISSIONS
-            | AcpProfileForm.SECTION_FLAGS;
+    private static final String AGENT_ID = "opencode";
 
     @SuppressWarnings("unused")
     public OpenCodeClientConfigurable(@NotNull Project ignoredProject) {
@@ -38,12 +35,16 @@ public final class OpenCodeClientConfigurable implements Configurable {
     }
 
     private JBLabel statusLabel;
-    private AcpProfileForm form;
+    private JBTextField binaryPathField;
     private JPanel mainPanel;
 
     @Override
     public @NotNull JComponent createComponent() {
         statusLabel = new JBLabel();
+
+        binaryPathField = new JBTextField();
+        binaryPathField.getEmptyText().setText("Auto-detect (leave empty)");
+        binaryPathField.setToolTipText("Absolute path to the opencode binary. Leave empty to find it on PATH.");
 
         HyperlinkLabel installLink = new HyperlinkLabel("Install OpenCode from npmjs.com/package/opencode-ai");
         installLink.setHyperlinkTarget("https://www.npmjs.com/package/opencode-ai");
@@ -53,19 +54,15 @@ public final class OpenCodeClientConfigurable implements Configurable {
         installNote.setForeground(UIUtil.getContextHelpForeground());
         installNote.setFont(JBUI.Fonts.smallFont());
 
-        JPanel statusPanel = FormBuilder.createFormBuilder()
+        mainPanel = FormBuilder.createFormBuilder()
             .addLabeledComponent("Status:", statusLabel)
             .addComponent(installNote, 2)
             .addComponent(installLink, 2)
             .addSeparator(8)
+            .addLabeledComponent("OpenCode binary:", binaryPathField)
+            .addTooltip("Leave empty to auto-detect on PATH.")
+            .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
-
-        form = new AcpProfileForm(SECTIONS);
-        JPanel configPanel = form.buildPanel();
-
-        mainPanel = new JPanel(new BorderLayout(0, 8));
-        mainPanel.add(statusPanel, BorderLayout.NORTH);
-        mainPanel.add(configPanel, BorderLayout.CENTER);
         mainPanel.setBorder(JBUI.Borders.empty(8));
 
         JBScrollPane scroll = new JBScrollPane(mainPanel);
@@ -75,33 +72,28 @@ public final class OpenCodeClientConfigurable implements Configurable {
 
     @Override
     public boolean isModified() {
-        if (form == null) return false;
-        AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.OPENCODE_PROFILE_ID);
-        return p != null && form.isModified(p);
+        if (binaryPathField == null) return false;
+        String stored = nullToEmpty(AcpClient.loadCustomBinaryPath(AGENT_ID));
+        return !binaryPathField.getText().trim().equals(stored);
     }
 
     @Override
     public void apply() {
-        if (form == null) return;
-        AgentProfileManager mgr = AgentProfileManager.getInstance();
-        AgentProfile p = mgr.getProfile(AgentProfileManager.OPENCODE_PROFILE_ID);
-        if (p == null) return;
-        form.save(p);
-        mgr.updateProfile(p);
+        if (binaryPathField == null) return;
+        AcpClient.saveCustomBinaryPath(AGENT_ID, binaryPathField.getText().trim());
     }
 
     @Override
     public void reset() {
-        if (form == null) return;
+        if (binaryPathField == null) return;
         refreshStatusAsync();
-        AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.OPENCODE_PROFILE_ID);
-        if (p != null) form.load(p);
+        binaryPathField.setText(nullToEmpty(AcpClient.loadCustomBinaryPath(AGENT_ID)));
     }
 
     @Override
     public void disposeUIResources() {
         statusLabel = null;
-        form = null;
+        binaryPathField = null;
         mainPanel = null;
     }
 
@@ -111,10 +103,9 @@ public final class OpenCodeClientConfigurable implements Configurable {
         statusLabel.setForeground(UIUtil.getLabelForeground());
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.OPENCODE_PROFILE_ID);
-            String binary = p != null ? p.getBinaryName() : "opencode";
-            String[] alternates = p != null ? p.getAlternateNames().toArray(new String[0]) : new String[0];
-            String version = BinaryDetector.detectBinaryVersion(binary, alternates);
+            String customPath = AcpClient.loadCustomBinaryPath(AGENT_ID);
+            String binary = customPath != null ? customPath : AGENT_ID;
+            String version = BinaryDetector.detectBinaryVersion(binary, new String[0]);
             SwingUtilities.invokeLater(() -> {
                 if (statusLabel == null) return;
                 if (version != null) {
@@ -126,5 +117,10 @@ public final class OpenCodeClientConfigurable implements Configurable {
                 }
             });
         });
+    }
+
+    @NotNull
+    private static String nullToEmpty(String s) {
+        return s != null ? s : "";
     }
 }
