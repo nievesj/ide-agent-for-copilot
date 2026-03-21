@@ -25,6 +25,10 @@ import java.util.concurrent.TimeoutException;
  * References: requires inline (no ACP resource blocks)
  * MCP: HTTP via {@code mcpServers} in {@code session/new}
  * Agents: three custom agents written to {@code .agent-work/copilot/agents/} at launch
+ * <p>
+ * <b>Tool filtering note:</b> {@code --excluded-tools} and {@code --available-tools} are currently
+ * ignored in ACP mode (bug #556). The flags are passed anyway so they take effect once the bug is
+ * fixed upstream. Built-in tools are suppressed via ACP permission-denial in the meantime.
  */
 public final class CopilotClient extends AcpClient {
 
@@ -97,6 +101,16 @@ public final class CopilotClient extends AcpClient {
     /** Copilot built-in web tools (not from our MCP server). */
     private static final List<String> WEB_TOOLS = List.of("web_fetch", "web_search");
 
+    /**
+     * Copilot CLI built-in tools to exclude via {@code --excluded-tools}.
+     * These overlap with (or duplicate) our agentbridge MCP tools and would confuse the model.
+     * <p>
+     * NOTE: {@code --excluded-tools} is currently ignored in ACP mode (bug #556). The flag is
+     * passed anyway so it takes effect once the bug is fixed upstream.
+     */
+    private static final String EXCLUDED_BUILTIN_TOOLS =
+            "view,edit,create,bash,glob,grep,task,report_intent,web_fetch,web_search";
+
     // ─── Lifecycle ───────────────────────────────────
 
     public CopilotClient(Project project) {
@@ -148,7 +162,14 @@ public final class CopilotClient extends AcpClient {
         List<String> cmd = new java.util.ArrayList<>(List.of(
                 AGENT_ID, "--acp", "--stdio",
                 "--config-dir", configDir,
-                "--additional-mcp-config", mcpConfig
+                "--additional-mcp-config", mcpConfig,
+                // Suppress the built-in github-mcp-server; we supply our own MCP via --additional-mcp-config.
+                "--disable-builtin-mcps",
+                // Prevent the subprocess from auto-downloading CLI updates mid-session.
+                "--no-auto-update",
+                // Exclude built-in CLI tools that duplicate or conflict with our agentbridge MCP tools.
+                // Currently ignored in ACP mode (bug #556) but will take effect once fixed upstream.
+                "--excluded-tools", EXCLUDED_BUILTIN_TOOLS
         ));
         if (agentSlug != null && !agentSlug.isEmpty()) {
             cmd.add("--agent");
@@ -284,7 +305,7 @@ public final class CopilotClient extends AcpClient {
                 merge(ALL_MCP_TOOLS, WEB_TOOLS),
                 """
                         You are a coding assistant with full access to IntelliJ IDEA tools.
-                        
+
                         IMPORTANT — use IntelliJ tools, not shell commands, for the following:
                         - Git: use git_status, git_diff, git_log, git_commit, git_stage, git_branch, etc.
                           Do NOT run git via run_command or run_in_terminal — it causes editor buffer desync.
@@ -305,13 +326,13 @@ public final class CopilotClient extends AcpClient {
                 """
                         You are a read-only code analysis assistant. Your role is to explore, search,
                         and explain the codebase — not to make any changes.
-                        
+
                         Use IntelliJ tools for all exploration:
                         - read_file, list_project_files, get_file_outline for file content
                         - search_text, search_symbols, find_references, find_implementations for search
                         - git_status, git_diff, git_log for git history
                         - get_compilation_errors, get_problems for diagnostics
-                        
+
                         Do NOT suggest or make any edits to files.
                         """
         );
@@ -325,7 +346,7 @@ public final class CopilotClient extends AcpClient {
                 """
                         You are a precise code editing assistant. Make targeted, minimal changes
                         and verify them with build_project or run_tests after each edit.
-                        
+
                         IMPORTANT — use IntelliJ tools, not shell commands:
                         - Git: use git_status, git_diff, git_commit, etc., not git via run_command.
                         - File editing: use edit_text, write_file, replace_symbol_body.
