@@ -198,10 +198,6 @@ class PromptOrchestrator(
 
     private fun buildEffectivePrompt(prompt: String): String {
         var effective = prompt
-        val selectedAgent = agentManager.settings.selectedAgent
-        if (selectedAgent.isNotEmpty()) {
-            effective = "@$selectedAgent $effective"
-        }
         if (!conversationSummaryInjected) {
             conversationSummaryInjected = true
             val summary = consolePanel().getCompressedSummary()

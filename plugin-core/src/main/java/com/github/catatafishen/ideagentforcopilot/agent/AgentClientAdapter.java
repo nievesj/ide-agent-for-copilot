@@ -10,7 +10,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -129,10 +131,12 @@ public class AgentClientAdapter implements AgentClient {
 
         List<String> values = new ArrayList<>();
         values.add(""); // "Default" — lets the agent choose its built-in default
+        Map<String, String> labels = new LinkedHashMap<>();
         for (AgentConnector.AgentMode mode : modes) {
             values.add(mode.slug());
+            labels.put(mode.slug(), mode.name());
         }
-        return List.of(new com.github.catatafishen.ideagentforcopilot.bridge.SessionOption("mode", "Agent", values));
+        return List.of(new com.github.catatafishen.ideagentforcopilot.bridge.SessionOption("mode", "Agent", values, labels));
     }
 
     @Override

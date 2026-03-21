@@ -660,7 +660,6 @@ class ChatToolWindowContent(
         leftGroup.add(AttachContextDropdownAction())
         leftGroup.addSeparator()
         leftGroup.add(ModelSelectorAction())
-        leftGroup.add(AgentSelectorAction())
         leftGroup.add(SessionOptionsGroup())
         leftGroup.addSeparator()
         restartSessionGroup = RestartSessionGroup()
@@ -1090,53 +1089,6 @@ class ChatToolWindowContent(
                 ?: MSG_LOADING
             e.presentation.text = text
             e.presentation.isEnabled = modelsStatusText == null && loadedModels.isNotEmpty()
-        }
-    }
-
-    private inner class AgentSelectorAction : ComboBoxAction() {
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
-
-        override fun createPopupActionGroup(button: JComponent, context: DataContext): DefaultActionGroup {
-            val group = DefaultActionGroup()
-            group.add(object : AnAction("Default") {
-                override fun actionPerformed(e: AnActionEvent) {
-                    agentManager.settings.setSelectedAgent("")
-                }
-
-                override fun getActionUpdateThread() = ActionUpdateThread.BGT
-            })
-            for (agentName in discoverAgentNames()) {
-                group.add(object : AnAction(agentName) {
-                    override fun actionPerformed(e: AnActionEvent) {
-                        agentManager.settings.setSelectedAgent(agentName)
-                    }
-
-                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
-                })
-            }
-            return group
-        }
-
-        override fun update(e: AnActionEvent) {
-            val agentsDir = agentManager.config.agentsDirectory
-            if (agentsDir.isNullOrBlank()) {
-                e.presentation.isVisible = false
-                return
-            }
-            e.presentation.isVisible = true
-            val selected = agentManager.settings.selectedAgent
-            e.presentation.text = selected.ifEmpty { "Default" }
-        }
-
-        private fun discoverAgentNames(): List<String> {
-            val agentsDir = agentManager.config.agentsDirectory ?: return emptyList()
-            val basePath = project.basePath ?: return emptyList()
-            val dir = java.io.File(basePath, agentsDir)
-            if (!dir.isDirectory) return emptyList()
-            return dir.listFiles { f -> f.isFile && f.extension == "md" }
-                ?.map { it.nameWithoutExtension }
-                ?.sorted()
-                ?: emptyList()
         }
     }
 
