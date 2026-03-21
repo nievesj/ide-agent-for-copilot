@@ -97,11 +97,12 @@ class BillingManager {
     /**
      * Records a turn completion — increments the local request counter
      * and updates the UI immediately (no API call needed).
-     * @param multiplier the model's cost multiplier string (e.g., "1x", "3x", "0.33x")
+     * @param multiplier the model's cost multiplier string (e.g., "1x", "3x", "0.33x"),
+     *   or {@code null} if unknown (falls back to 1x for internal accounting).
      */
-    fun recordTurnCompleted(multiplier: String = "1x") {
+    fun recordTurnCompleted(multiplier: String? = null) {
         localSessionRequests++
-        localSessionPremiumRequests += parseMultiplier(multiplier)
+        localSessionPremiumRequests += parseMultiplier(multiplier ?: "1x")
         LOG.info("recordTurnCompleted: localSessionRequests=$localSessionRequests, premium=$localSessionPremiumRequests (mult=$multiplier)")
         val estimated = estimatedUsed()
         val shouldAnimate = previousUsedCount in 0..<estimated

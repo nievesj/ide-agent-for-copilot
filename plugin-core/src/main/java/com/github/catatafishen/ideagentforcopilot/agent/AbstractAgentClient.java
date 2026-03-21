@@ -162,19 +162,19 @@ public abstract class AbstractAgentClient {
     }
 
     /**
-     * Returns the pricing multiplier label for the given model ID (e.g. "1x", "2x").
+     * Returns the pricing multiplier label for the given model ID (e.g. "1x", "2x"),
+     * or {@code null} if the multiplier is not available for this model.
      * Default implementation looks up the model in {@link #getAvailableModels()} and calls
      * {@link #getModelMultiplier(Model)}.
      */
-    @NotNull
+    @Nullable
     public String getModelMultiplier(@NotNull String modelId) {
         for (Model m : getAvailableModels()) {
             if (modelId.equals(m.id())) {
-                String multiplier = getModelMultiplier(m);
-                return multiplier != null ? multiplier : "1x";
+                return getModelMultiplier(m);
             }
         }
-        return "1x";
+        return null;
     }
 
     /**

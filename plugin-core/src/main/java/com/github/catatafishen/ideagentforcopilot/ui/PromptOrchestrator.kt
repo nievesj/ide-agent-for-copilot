@@ -192,11 +192,13 @@ class PromptOrchestrator(
         ApplicationManager.getApplication().invokeLater {
             consolePanel().setCurrentProfile(agentManager.activeProfileId)
             consolePanel().setCurrentModel(selectedModelId)
-            // Show the multiplier chip for clients that support it (e.g. Copilot), even when "1x".
+            // Show the multiplier chip for clients that support it (e.g. Copilot), only when known.
             // For non-multiplier clients the chip is token/cost-based and shown after completion.
             if (agentManager.client.supportsMultiplier()) {
                 val multiplier = getModelMultiplier(selectedModelId)
-                consolePanel().setPromptStats(selectedModelId, multiplier)
+                if (multiplier != null) {
+                    consolePanel().setPromptStats(selectedModelId, multiplier)
+                }
             }
         }
         return selectedModelId
@@ -283,7 +285,7 @@ class PromptOrchestrator(
         val client = agentManager.client
         if (client.supportsMultiplier()) {
             val multiplier = getModelMultiplier(turnModelId)
-            consolePanel().finishResponse(turnToolCallCount, turnModelId, multiplier)
+            consolePanel().finishResponse(turnToolCallCount, turnModelId, multiplier ?: "")
             billing.recordTurnCompleted(multiplier)
             callbacks.onTimerRecordUsage(0, 0, 0.0)
         } else {
@@ -502,11 +504,11 @@ class PromptOrchestrator(
         }
     }
 
-    private fun getModelMultiplier(modelId: String): String =
+    private fun getModelMultiplier(modelId: String): String? =
         try {
             agentManager.client.getModelMultiplier(modelId)
         } catch (_: Exception) {
-            "1x"
+            null
         }
 
     private fun detectQuickReplies(responseText: String): List<String> {

@@ -1051,8 +1051,8 @@ class ChatToolWindowContent(
             val group = DefaultActionGroup()
             val supportsMultiplier = agentManager.client.supportsMultiplier()
             loadedModels.forEachIndexed { index, model ->
-                val cost = if (supportsMultiplier) getModelMultiplier(model.id()) else "1x"
-                val label = if (supportsMultiplier) "${model.name()}  ($cost)" else model.name()
+                val cost = if (supportsMultiplier) getModelMultiplier(model.id()) else null
+                val label = if (cost != null) "${model.name()}  ($cost)" else model.name()
                 group.add(object : AnAction(label) {
                     override fun actionPerformed(e: AnActionEvent) {
                         if (index == selectedModelIndex) return
@@ -1064,7 +1064,9 @@ class ChatToolWindowContent(
                             consolePanel.setCurrentModel(model.id())
                             if (supportsMultiplier) {
                                 val multiplier = getModelMultiplier(model.id())
-                                consolePanel.setPromptStats(model.id(), multiplier)
+                                if (multiplier != null) {
+                                    consolePanel.setPromptStats(model.id(), multiplier)
+                                }
                             }
                         }
                         ApplicationManager.getApplication().executeOnPooledThread {
@@ -1408,7 +1410,7 @@ class ChatToolWindowContent(
             val json = conversationStore.loadJson(project.basePath)
             ApplicationManager.getApplication().invokeLater {
                 if (json != null) {
-                    conversationReplayer.loadAndSplit(json!!)
+                    conversationReplayer.loadAndSplit(json)
                     chatConsolePanel.appendEntries(conversationReplayer.recentEntries())
                     val deferred = conversationReplayer.remainingPromptCount()
                     if (deferred > 0) chatConsolePanel.showLoadMore(deferred)
@@ -1509,9 +1511,9 @@ class ChatToolWindowContent(
                         val multiplier = try {
                             agentManager.client.getModelMultiplier(modelId)
                         } catch (_: Exception) {
-                            "1x"
+                            null
                         }
-                        addProperty("multiplier", multiplier)
+                        if (multiplier != null) addProperty("multiplier", multiplier)
                     }
                     addProperty("toolCalls", toolCalls)
                 }
@@ -1525,11 +1527,11 @@ class ChatToolWindowContent(
         conversationStore.archive(project.basePath)
     }
 
-    private fun getModelMultiplier(modelId: String): String {
+    private fun getModelMultiplier(modelId: String): String? {
         return try {
             agentManager.client.getModelMultiplier(modelId)
         } catch (_: Exception) {
-            "1x"
+            null
         }
     }
 
