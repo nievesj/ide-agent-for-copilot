@@ -243,6 +243,23 @@ class PromptOrchestrator(
     }
 
     private fun buildPromptBlocks(prompt: String, references: List<ResourceReference>): List<ContentBlock> {
+        // Check if the active agent supports resource references
+        val profile = agentManager.activeProfile
+        if (!profile.isSendResourceReferences && references.isNotEmpty()) {
+            // Append context content directly to the prompt text for agents that don't support resources
+            val promptWithContext = buildString {
+                append(prompt)
+                append("\n\n")
+                for ((index, ref) in references.withIndex()) {
+                    if (index > 0) append("\n\n")
+                    append("--- Context: ${ref.uri()} ---\n")
+                    append(ref.text())
+                }
+            }
+            return listOf(ContentBlock.Text(promptWithContext))
+        }
+
+        // Standard path: send resources as separate content blocks
         val blocks = mutableListOf<ContentBlock>(ContentBlock.Text(prompt))
         for (ref in references) {
             blocks.add(
