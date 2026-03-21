@@ -1,13 +1,12 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient
 import com.github.catatafishen.ideagentforcopilot.acp.model.ContentBlock
 import com.github.catatafishen.ideagentforcopilot.acp.model.PromptRequest
+import com.github.catatafishen.ideagentforcopilot.acp.model.ResourceReference
 import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate
+import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient
 import com.github.catatafishen.ideagentforcopilot.agent.AgentException
 import com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse
-import com.github.catatafishen.ideagentforcopilot.acp.model.ResourceReference
-import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.intellij.openapi.application.ApplicationManager
@@ -163,6 +162,7 @@ class PromptOrchestrator(
                     when (response) {
                         PermissionResponse.ALLOW_ONCE, PermissionResponse.ALLOW_SESSION ->
                             prompt.allow(response.name.lowercase())
+
                         PermissionResponse.DENY -> prompt.deny("Denied by user")
                     }
                 }
@@ -223,8 +223,6 @@ class PromptOrchestrator(
         return effective
     }
 
-
-
     private fun dispatchPromptWithRetry(
         client: AbstractAgentClient,
         initialSessionId: String,
@@ -237,7 +235,8 @@ class PromptOrchestrator(
             handlePromptStreamingUpdate(update)
         }
         val sendCall: (String) -> Unit = { sid ->
-            val request = PromptRequest(sid, promptBlocks, modelId.takeIf { it.isNotEmpty() }, client.getEffectiveModeSlug())
+            val request =
+                PromptRequest(sid, promptBlocks, modelId.takeIf { it.isNotEmpty() }, client.getEffectiveModeSlug())
             client.sendPrompt(request, onUpdate)
         }
         sendWithSessionRetry(client, initialSessionId, sendCall)
@@ -246,9 +245,13 @@ class PromptOrchestrator(
     private fun buildPromptBlocks(prompt: String, references: List<ResourceReference>): List<ContentBlock> {
         val blocks = mutableListOf<ContentBlock>(ContentBlock.Text(prompt))
         for (ref in references) {
-            blocks.add(ContentBlock.Resource(ContentBlock.ResourceLink(
-                ref.uri(), null, ref.mimeType(), ref.text(), null
-            )))
+            blocks.add(
+                ContentBlock.Resource(
+                    ContentBlock.ResourceLink(
+                        ref.uri(), null, ref.mimeType(), ref.text(), null
+                    )
+                )
+            )
         }
         return blocks
     }
@@ -347,7 +350,8 @@ class PromptOrchestrator(
             is SessionUpdate.Banner -> handleStreamingBanner(update)
             is SessionUpdate.Plan -> handleClientUpdate(update)
             is SessionUpdate.AvailableCommandsChanged,
-            is SessionUpdate.AvailableModesChanged -> { /* handled by AcpClient internally */ }
+            is SessionUpdate.AvailableModesChanged -> { /* handled by AcpClient internally */
+            }
         }
     }
 

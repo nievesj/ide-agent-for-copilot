@@ -39,66 +39,74 @@ public final class CopilotClient extends AcpClient {
 
     // ─── MCP tool sets ───────────────────────────────
 
-    /** All MCP tools exposed by our server (excludes internal-only: get_chat_html, search_conversation_history). */
+    /**
+     * All MCP tools exposed by our server (excludes internal-only: get_chat_html, search_conversation_history).
+     */
     private static final List<String> ALL_MCP_TOOLS = List.of(
-            "add_to_dictionary", "apply_action", "apply_quickfix", "build_project",
-            "create_file", "create_run_configuration", "create_scratch_file",
-            "delete_file", "delete_run_configuration", "download_sources",
-            "edit_project_structure", "edit_run_configuration", "edit_text",
-            "find_implementations", "find_references", "format_code",
-            "get_action_options", "get_active_file", "get_available_actions",
-            "get_call_hierarchy", "get_class_outline", "get_compilation_errors",
-            "get_coverage", "get_documentation", "get_file_history", "get_file_outline",
-            "get_highlights", "get_indexing_status", "get_notifications", "get_open_editors",
-            "get_problems", "get_project_info", "get_sonar_rule_description", "get_type_hierarchy",
-            "git_blame", "git_branch", "git_cherry_pick", "git_commit", "git_diff",
-            "git_fetch", "git_log", "git_merge", "git_pull", "git_push", "git_rebase",
-            "git_remote", "git_reset", "git_revert", "git_show", "git_stage", "git_stash",
-            "git_status", "git_tag", "git_unstage", "go_to_declaration", "http_request",
-            "insert_after_symbol", "insert_before_symbol", "list_project_files",
-            "list_run_configurations", "list_scratch_files", "list_terminals", "list_tests",
-            "list_themes", "mark_directory", "move_file", "open_in_editor", "optimize_imports",
-            "read_build_output", "read_file", "read_ide_log", "read_run_output",
-            "read_terminal_output", "redo", "refactor", "reload_from_disk", "rename_file",
-            "replace_symbol_body", "run_command", "run_configuration", "run_in_terminal",
-            "run_qodana", "run_scratch_file", "run_sonarqube_analysis", "run_tests",
-            "search_symbols", "search_text", "set_theme", "show_diff", "suppress_inspection",
-            "undo", "write_file", "write_terminal_input"
+        "add_to_dictionary", "apply_action", "apply_quickfix", "build_project",
+        "create_file", "create_run_configuration", "create_scratch_file",
+        "delete_file", "delete_run_configuration", "download_sources",
+        "edit_project_structure", "edit_run_configuration", "edit_text",
+        "find_implementations", "find_references", "format_code",
+        "get_action_options", "get_active_file", "get_available_actions",
+        "get_call_hierarchy", "get_class_outline", "get_compilation_errors",
+        "get_coverage", "get_documentation", "get_file_history", "get_file_outline",
+        "get_highlights", "get_indexing_status", "get_notifications", "get_open_editors",
+        "get_problems", "get_project_info", "get_sonar_rule_description", "get_type_hierarchy",
+        "git_blame", "git_branch", "git_cherry_pick", "git_commit", "git_diff",
+        "git_fetch", "git_log", "git_merge", "git_pull", "git_push", "git_rebase",
+        "git_remote", "git_reset", "git_revert", "git_show", "git_stage", "git_stash",
+        "git_status", "git_tag", "git_unstage", "go_to_declaration", "http_request",
+        "insert_after_symbol", "insert_before_symbol", "list_project_files",
+        "list_run_configurations", "list_scratch_files", "list_terminals", "list_tests",
+        "list_themes", "mark_directory", "move_file", "open_in_editor", "optimize_imports",
+        "read_build_output", "read_file", "read_ide_log", "read_run_output",
+        "read_terminal_output", "redo", "refactor", "reload_from_disk", "rename_file",
+        "replace_symbol_body", "run_command", "run_configuration", "run_in_terminal",
+        "run_qodana", "run_scratch_file", "run_sonarqube_analysis", "run_tests",
+        "search_symbols", "search_text", "set_theme", "show_diff", "suppress_inspection",
+        "undo", "write_file", "write_terminal_input"
     );
 
-    /** Read-only tools for the explore agent — no file writes, no shell execution, no git mutations. */
+    /**
+     * Read-only tools for the explore agent — no file writes, no shell execution, no git mutations.
+     */
     private static final List<String> EXPLORE_MCP_TOOLS = List.of(
-            "find_implementations", "find_references",
-            "get_action_options", "get_active_file", "get_available_actions",
-            "get_call_hierarchy", "get_class_outline", "get_compilation_errors",
-            "get_coverage", "get_documentation", "get_file_history", "get_file_outline",
-            "get_highlights", "get_indexing_status", "get_notifications", "get_open_editors",
-            "get_problems", "get_project_info", "get_sonar_rule_description", "get_type_hierarchy",
-            "git_blame", "git_branch", "git_diff", "git_log", "git_remote",
-            "git_show", "git_stash", "git_status", "git_tag",
-            "go_to_declaration", "list_project_files", "list_run_configurations",
-            "list_scratch_files", "list_terminals", "list_tests",
-            "read_build_output", "read_file", "read_ide_log", "read_run_output",
-            "read_terminal_output", "search_symbols", "search_text", "show_diff"
+        "find_implementations", "find_references",
+        "get_action_options", "get_active_file", "get_available_actions",
+        "get_call_hierarchy", "get_class_outline", "get_compilation_errors",
+        "get_coverage", "get_documentation", "get_file_history", "get_file_outline",
+        "get_highlights", "get_indexing_status", "get_notifications", "get_open_editors",
+        "get_problems", "get_project_info", "get_sonar_rule_description", "get_type_hierarchy",
+        "git_blame", "git_branch", "git_diff", "git_log", "git_remote",
+        "git_show", "git_stash", "git_status", "git_tag",
+        "go_to_declaration", "list_project_files", "list_run_configurations",
+        "list_scratch_files", "list_terminals", "list_tests",
+        "read_build_output", "read_file", "read_ide_log", "read_run_output",
+        "read_terminal_output", "search_symbols", "search_text", "show_diff"
     );
 
-    /** Focused editing tools — no system shell, no Gradle wrappers, no cosmetic tools. */
+    /**
+     * Focused editing tools — no system shell, no Gradle wrappers, no cosmetic tools.
+     */
     private static final List<String> EDIT_MCP_TOOLS = List.of(
-            "apply_action", "apply_quickfix", "build_project", "create_file", "delete_file",
-            "edit_text", "find_implementations", "find_references", "format_code",
-            "get_action_options", "get_active_file", "get_available_actions",
-            "get_call_hierarchy", "get_class_outline", "get_compilation_errors",
-            "get_documentation", "get_file_history", "get_file_outline", "get_highlights",
-            "get_problems", "get_project_info", "get_type_hierarchy",
-            "git_blame", "git_diff", "git_log", "git_status",
-            "go_to_declaration", "insert_after_symbol", "insert_before_symbol",
-            "list_project_files", "move_file", "open_in_editor", "optimize_imports",
-            "read_build_output", "read_file", "redo", "refactor", "reload_from_disk",
-            "rename_file", "replace_symbol_body", "run_tests", "search_symbols",
-            "search_text", "show_diff", "suppress_inspection", "undo", "write_file"
+        "apply_action", "apply_quickfix", "build_project", "create_file", "delete_file",
+        "edit_text", "find_implementations", "find_references", "format_code",
+        "get_action_options", "get_active_file", "get_available_actions",
+        "get_call_hierarchy", "get_class_outline", "get_compilation_errors",
+        "get_documentation", "get_file_history", "get_file_outline", "get_highlights",
+        "get_problems", "get_project_info", "get_type_hierarchy",
+        "git_blame", "git_diff", "git_log", "git_status",
+        "go_to_declaration", "insert_after_symbol", "insert_before_symbol",
+        "list_project_files", "move_file", "open_in_editor", "optimize_imports",
+        "read_build_output", "read_file", "redo", "refactor", "reload_from_disk",
+        "rename_file", "replace_symbol_body", "run_tests", "search_symbols",
+        "search_text", "show_diff", "suppress_inspection", "undo", "write_file"
     );
 
-    /** Copilot built-in web tools (not from our MCP server). */
+    /**
+     * Copilot built-in web tools (not from our MCP server).
+     */
     private static final List<String> WEB_TOOLS = List.of("web_fetch", "web_search");
 
     /**
@@ -109,7 +117,7 @@ public final class CopilotClient extends AcpClient {
      * passed anyway so it takes effect once the bug is fixed upstream.
      */
     private static final String EXCLUDED_BUILTIN_TOOLS =
-            "view,edit,create,bash,glob,grep,task,report_intent,web_fetch,web_search";
+        "view,edit,create,bash,glob,grep,task,report_intent,web_fetch,web_search";
 
     // ─── Lifecycle ───────────────────────────────────
 
@@ -160,16 +168,16 @@ public final class CopilotClient extends AcpClient {
         String mcpConfig = buildMcpConfigJson(mcpPort);
         String agentSlug = getCurrentAgentSlug();
         List<String> cmd = new java.util.ArrayList<>(List.of(
-                AGENT_ID, "--acp", "--stdio",
-                "--config-dir", configDir,
-                "--additional-mcp-config", mcpConfig,
-                // Suppress the built-in github-mcp-server; we supply our own MCP via --additional-mcp-config.
-                "--disable-builtin-mcps",
-                // Prevent the subprocess from auto-downloading CLI updates mid-session.
-                "--no-auto-update",
-                // Exclude built-in CLI tools that duplicate or conflict with our agentbridge MCP tools.
-                // Currently ignored in ACP mode (bug #556) but will take effect once fixed upstream.
-                "--excluded-tools", EXCLUDED_BUILTIN_TOOLS
+            AGENT_ID, "--acp", "--stdio",
+            "--config-dir", configDir,
+            "--additional-mcp-config", mcpConfig,
+            // Suppress the built-in github-mcp-server; we supply our own MCP via --additional-mcp-config.
+            "--disable-builtin-mcps",
+            // Prevent the subprocess from auto-downloading CLI updates mid-session.
+            "--no-auto-update",
+            // Exclude built-in CLI tools that duplicate or conflict with our agentbridge MCP tools.
+            // Currently ignored in ACP mode (bug #556) but will take effect once fixed upstream.
+            "--excluded-tools", EXCLUDED_BUILTIN_TOOLS
         ));
         if (agentSlug != null && !agentSlug.isEmpty()) {
             cmd.add("--agent");
@@ -180,7 +188,7 @@ public final class CopilotClient extends AcpClient {
 
     private static String buildMcpConfigJson(int mcpPort) {
         return "{\"mcpServers\":{\"" + MCP_SERVER_NAME
-                + "\":{\"type\":\"http\",\"url\":\"http://localhost:" + mcpPort + "/mcp\"}}}";
+            + "\":{\"type\":\"http\",\"url\":\"http://localhost:" + mcpPort + "/mcp\"}}}";
     }
 
     @Override
@@ -300,59 +308,59 @@ public final class CopilotClient extends AcpClient {
 
     private static String buildDefaultAgentDefinition() {
         return buildAgentDefinition(
-                "Intellij-Default",
-                "Full-featured IntelliJ coding assistant with access to all IDE tools",
-                merge(ALL_MCP_TOOLS, WEB_TOOLS),
-                """
-                        You are a coding assistant with full access to IntelliJ IDEA tools.
+            "Intellij-Default",
+            "Full-featured IntelliJ coding assistant with access to all IDE tools",
+            merge(ALL_MCP_TOOLS, WEB_TOOLS),
+            """
+                You are a coding assistant with full access to IntelliJ IDEA tools.
 
-                        IMPORTANT — use IntelliJ tools, not shell commands, for the following:
-                        - Git: use git_status, git_diff, git_log, git_commit, git_stage, git_branch, etc.
-                          Do NOT run git via run_command or run_in_terminal — it causes editor buffer desync.
-                        - File reading: use read_file, not cat/head/tail via run_command.
-                        - File editing: use write_file, edit_text, replace_symbol_body, etc., not sed via run_command.
-                        - Text search: use search_text and search_symbols, not grep/rg via run_command.
-                        - File search: use list_project_files, not find via run_command.
-                        - Build/test: use build_project and run_tests, not Gradle tasks via run_command.
-                        """
+                IMPORTANT — use IntelliJ tools, not shell commands, for the following:
+                - Git: use git_status, git_diff, git_log, git_commit, git_stage, git_branch, etc.
+                  Do NOT run git via run_command or run_in_terminal — it causes editor buffer desync.
+                - File reading: use read_file, not cat/head/tail via run_command.
+                - File editing: use write_file, edit_text, replace_symbol_body, etc., not sed via run_command.
+                - Text search: use search_text and search_symbols, not grep/rg via run_command.
+                - File search: use list_project_files, not find via run_command.
+                - Build/test: use build_project and run_tests, not Gradle tasks via run_command.
+                """
         );
     }
 
     private static String buildExploreAgentDefinition() {
         return buildAgentDefinition(
-                "Intellij-Explore",
-                "Read-only IntelliJ code explorer for analysing and understanding a codebase",
-                merge(EXPLORE_MCP_TOOLS, WEB_TOOLS),
+            "Intellij-Explore",
+            "Read-only IntelliJ code explorer for analysing and understanding a codebase",
+            merge(EXPLORE_MCP_TOOLS, WEB_TOOLS),
+            """
+                You are a read-only code analysis assistant. Your role is to explore, search,
+                and explain the codebase — not to make any changes.
+
+                Use IntelliJ tools for all exploration:
+                - read_file, list_project_files, get_file_outline for file content
+                - search_text, search_symbols, find_references, find_implementations for search
+                - git_status, git_diff, git_log for git history
+                - get_compilation_errors, get_problems for diagnostics
+
+                Do NOT suggest or make any edits to files.
                 """
-                        You are a read-only code analysis assistant. Your role is to explore, search,
-                        and explain the codebase — not to make any changes.
-
-                        Use IntelliJ tools for all exploration:
-                        - read_file, list_project_files, get_file_outline for file content
-                        - search_text, search_symbols, find_references, find_implementations for search
-                        - git_status, git_diff, git_log for git history
-                        - get_compilation_errors, get_problems for diagnostics
-
-                        Do NOT suggest or make any edits to files.
-                        """
         );
     }
 
     private static String buildEditAgentDefinition() {
         return buildAgentDefinition(
-                "Intellij-Edit",
-                "Focused IntelliJ code editing assistant — makes targeted changes and validates them",
-                merge(EDIT_MCP_TOOLS, WEB_TOOLS),
-                """
-                        You are a precise code editing assistant. Make targeted, minimal changes
-                        and verify them with build_project or run_tests after each edit.
+            "Intellij-Edit",
+            "Focused IntelliJ code editing assistant — makes targeted changes and validates them",
+            merge(EDIT_MCP_TOOLS, WEB_TOOLS),
+            """
+                You are a precise code editing assistant. Make targeted, minimal changes
+                and verify them with build_project or run_tests after each edit.
 
-                        IMPORTANT — use IntelliJ tools, not shell commands:
-                        - Git: use git_status, git_diff, git_commit, etc., not git via run_command.
-                        - File editing: use edit_text, write_file, replace_symbol_body.
-                        - Search: use search_text, search_symbols, not grep via run_command.
-                        - Build/test: use build_project and run_tests.
-                        """
+                IMPORTANT — use IntelliJ tools, not shell commands:
+                - Git: use git_status, git_diff, git_commit, etc., not git via run_command.
+                - File editing: use edit_text, write_file, replace_symbol_body.
+                - Search: use search_text, search_symbols, not grep via run_command.
+                - Build/test: use build_project and run_tests.
+                """
         );
     }
 

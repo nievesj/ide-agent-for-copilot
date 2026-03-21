@@ -2,10 +2,10 @@ package com.github.catatafishen.ideagentforcopilot.services;
 
 import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentRegistry;
-import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
-import com.github.catatafishen.ideagentforcopilot.bridge.AgentSettings;
 import com.github.catatafishen.ideagentforcopilot.agent.claude.AnthropicDirectClient;
 import com.github.catatafishen.ideagentforcopilot.agent.claude.ClaudeCliClient;
+import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
+import com.github.catatafishen.ideagentforcopilot.bridge.AgentSettings;
 import com.github.catatafishen.ideagentforcopilot.bridge.GenericAgentSettings;
 import com.github.catatafishen.ideagentforcopilot.bridge.ProfileBasedAgentConfig;
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
@@ -15,7 +15,6 @@ import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 

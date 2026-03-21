@@ -2,9 +2,9 @@ package com.github.catatafishen.ideagentforcopilot.ui
 
 import com.github.catatafishen.ideagentforcopilot.services.ToolChipRegistry
 import com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings
-import com.google.gson.JsonParser
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ArgumentAwareRenderer
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers
+import com.google.gson.JsonParser
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer

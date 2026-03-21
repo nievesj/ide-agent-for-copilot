@@ -22,28 +22,46 @@ public abstract class AbstractAgentClient {
 
     // ─── Identity ────────────────────────────────────
 
-    /** Unique agent ID. e.g. "copilot", "junie", "claude-cli" */
+    /**
+     * Unique agent ID. e.g. "copilot", "junie", "claude-cli"
+     */
     public abstract String agentId();
 
-    /** Display name for UI. e.g. "GitHub Copilot", "Claude (CLI)" */
+    /**
+     * Display name for UI. e.g. "GitHub Copilot", "Claude (CLI)"
+     */
     public abstract String displayName();
 
     // ─── Lifecycle ───────────────────────────────────
 
-    /** Start the agent process and perform handshake. */
+    /**
+     * Start the agent process and perform handshake.
+     */
     public abstract void start() throws Exception;
 
-    /** Gracefully stop the agent process. */
+    /**
+     * Gracefully stop the agent process.
+     */
     public abstract void stop();
 
-    /** Whether the agent process is alive and initialized. */
+    /**
+     * Whether the agent process is alive and initialized.
+     */
     public abstract boolean isConnected();
 
-    /** Whether this client is alive and usable. Defaults to {@link #isConnected()}. */
-    public boolean isHealthy() { return isConnected(); }
+    /**
+     * Whether this client is alive and usable. Defaults to {@link #isConnected()}.
+     */
+    public boolean isHealthy() {
+        return isConnected();
+    }
 
-    /** Close/stop the agent. Alias for {@link #stop()}. */
-    public void close() { stop(); }
+    /**
+     * Close/stop the agent. Alias for {@link #stop()}.
+     */
+    public void close() {
+        stop();
+    }
 
     // ─── Sessions ────────────────────────────────────
 
@@ -55,7 +73,9 @@ public abstract class AbstractAgentClient {
      */
     public abstract String createSession(String cwd) throws Exception;
 
-    /** Cancel an in-progress prompt turn. */
+    /**
+     * Cancel an in-progress prompt turn.
+     */
     public abstract void cancelSession(String sessionId);
 
     // ─── Prompts ─────────────────────────────────────
@@ -63,8 +83,8 @@ public abstract class AbstractAgentClient {
     /**
      * Send a prompt and receive streaming updates.
      *
-     * @param request    the prompt content and metadata
-     * @param onUpdate   callback for each streamed session update
+     * @param request  the prompt content and metadata
+     * @param onUpdate callback for each streamed session update
      * @return the final prompt response when the turn completes
      */
     public abstract PromptResponse sendPrompt(PromptRequest request,
@@ -72,44 +92,60 @@ public abstract class AbstractAgentClient {
 
     // ─── Modes (built-in interaction modes, e.g. default/agent/plan/autopilot) ──
 
-    /** Built-in mode slug to activate by default, or null for the agent's own default. */
+    /**
+     * Built-in mode slug to activate by default, or null for the agent's own default.
+     */
     public @Nullable String defaultModeSlug() {
         return null;
     }
 
-    /** Available built-in modes (populated from session/new after connection). */
+    /**
+     * Available built-in modes (populated from session/new after connection).
+     */
     public List<AgentMode> getAvailableModes() {
         return List.of();
     }
 
-    /** Returns the currently selected mode slug (user override or default). */
+    /**
+     * Returns the currently selected mode slug (user override or default).
+     */
     public @Nullable String getCurrentModeSlug() {
         return defaultModeSlug();
     }
 
-    /** Sets the current mode slug. No-op for agents that don't support mode selection. */
+    /**
+     * Sets the current mode slug. No-op for agents that don't support mode selection.
+     */
     public void setCurrentModeSlug(@Nullable String slug) {
         // no-op
     }
 
     // ─── Agents (custom agent definitions, e.g. intellij-default/intellij-explore) ──
 
-    /** Custom agent slug to activate by default, or null to skip custom agent selection. */
+    /**
+     * Custom agent slug to activate by default, or null to skip custom agent selection.
+     */
     public @Nullable String defaultAgentSlug() {
         return null;
     }
 
-    /** Available custom agents for this connector. Override to expose agent selection. */
+    /**
+     * Available custom agents for this connector. Override to expose agent selection.
+     */
     public List<AgentMode> getAvailableAgents() {
         return List.of();
     }
 
-    /** Returns the currently selected custom agent slug (user override or default). */
+    /**
+     * Returns the currently selected custom agent slug (user override or default).
+     */
     public @Nullable String getCurrentAgentSlug() {
         return defaultAgentSlug();
     }
 
-    /** Sets the current custom agent slug. No-op for agents that don't support agent selection. */
+    /**
+     * Sets the current custom agent slug. No-op for agents that don't support agent selection.
+     */
     public void setCurrentAgentSlug(@Nullable String slug) {
         // no-op
     }
@@ -126,7 +162,9 @@ public abstract class AbstractAgentClient {
 
     // ─── Config options (e.g. effort/thinking level, returned by session/new) ───
 
-    /** Available config options for the current session (populated after session creation). */
+    /**
+     * Available config options for the current session (populated after session creation).
+     */
     public List<AgentConfigOption> getAvailableConfigOptions() {
         return List.of();
     }
@@ -140,23 +178,33 @@ public abstract class AbstractAgentClient {
 
     // ─── Models ──────────────────────────────────────
 
-    /** Available models for this agent. Empty list if not supported. */
+    /**
+     * Available models for this agent. Empty list if not supported.
+     */
     public abstract List<Model> getAvailableModels();
 
-    /** The agent-reported currently selected model ID from session/new, or {@code null} if not provided. */
+    /**
+     * The agent-reported currently selected model ID from session/new, or {@code null} if not provided.
+     */
     public @Nullable String getCurrentModelId() {
         return null;
     }
 
-    /** Set the model for a session. No-op if agent doesn't support model selection. */
+    /**
+     * Set the model for a session. No-op if agent doesn't support model selection.
+     */
     public abstract void setModel(String sessionId, String modelId);
 
-    /** How models are displayed in the UI. */
+    /**
+     * How models are displayed in the UI.
+     */
     public ModelDisplayMode modelDisplayMode() {
         return ModelDisplayMode.NONE;
     }
 
-    /** Extract a multiplier/tier string from model metadata (e.g. "2x"). */
+    /**
+     * Extract a multiplier/tier string from model metadata (e.g. "2x").
+     */
     public @Nullable String getModelMultiplier(@NotNull Model model) {
         return null;
     }
@@ -263,7 +311,8 @@ public abstract class AbstractAgentClient {
      * @param name        human-readable display name
      * @param description optional description of what this mode does
      */
-    public record AgentMode(@NotNull String slug, @NotNull String name, @Nullable String description) {}
+    public record AgentMode(@NotNull String slug, @NotNull String name, @Nullable String description) {
+    }
 
     public record AgentConfigOption(
         @NotNull String id,
@@ -271,21 +320,31 @@ public abstract class AbstractAgentClient {
         @Nullable String description,
         @NotNull List<AgentConfigOptionValue> values,
         @Nullable String selectedValueId
-    ) {}
+    ) {
+    }
 
-    public record AgentConfigOptionValue(@NotNull String id, @NotNull String label) {}
+    public record AgentConfigOptionValue(@NotNull String id, @NotNull String label) {
+    }
 
     /**
      * How model information is shown in the UI.
      */
     public enum ModelDisplayMode {
-        /** Don't show model info. */
+        /**
+         * Don't show model info.
+         */
         NONE,
-        /** Show model name. */
+        /**
+         * Show model name.
+         */
         NAME,
-        /** Show token count per turn. */
+        /**
+         * Show token count per turn.
+         */
         TOKEN_COUNT,
-        /** Show multiplier (1x, 2x, 10x). */
+        /**
+         * Show multiplier (1x, 2x, 10x).
+         */
         MULTIPLIER
     }
 
@@ -294,11 +353,15 @@ public abstract class AbstractAgentClient {
      */
     public interface PermissionPrompt {
         String toolCallId();
+
         String toolName();
+
         @Nullable String arguments();
+
         List<String> options();
 
         void allow(String optionId);
+
         void deny(String reason);
     }
 }
