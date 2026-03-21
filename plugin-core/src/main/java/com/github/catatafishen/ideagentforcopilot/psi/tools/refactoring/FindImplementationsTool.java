@@ -1,14 +1,11 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring;
 
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.SearchResultRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ReadAction;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.SearchResultRenderer;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Finds all implementations of a class/interface or overrides of a method.
@@ -37,7 +34,7 @@ public final class FindImplementationsTool extends RefactoringTool {
         return "Find all implementations of a class/interface or overrides of a method";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {

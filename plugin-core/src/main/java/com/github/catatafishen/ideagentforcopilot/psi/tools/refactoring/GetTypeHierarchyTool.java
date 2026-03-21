@@ -1,13 +1,10 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring;
 
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.TypeHierarchyRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ReadAction;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.TypeHierarchyRenderer;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Shows supertypes and/or subtypes of a class or interface.
@@ -37,7 +34,7 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
         return "Show supertypes and/or subtypes of a class or interface";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {

@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,7 +34,7 @@ public final class GitResetTool extends GitTool {
         return "Reset HEAD to a specific commit";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {

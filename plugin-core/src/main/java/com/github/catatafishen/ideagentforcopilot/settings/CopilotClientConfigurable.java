@@ -116,7 +116,7 @@ public final class CopilotClientConfigurable implements Configurable {
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             String customPath = AcpClient.loadCustomBinaryPath(AGENT_ID);
-            String binary = customPath != null ? customPath : "copilot";
+            String binary = customPath != null ? customPath : AGENT_ID;
             String version = BinaryDetector.detectBinaryVersion(binary, new String[]{"copilot-cli"});
             SwingUtilities.invokeLater(() -> {
                 if (statusLabel == null) return;

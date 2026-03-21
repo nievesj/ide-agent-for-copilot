@@ -241,7 +241,7 @@ public final class CopilotClient extends AcpClient {
      * Other clients use the standard {@code arguments} field provided by the base class.
      */
     @Override
-    protected com.google.gson.JsonObject parseToolCallArguments(com.google.gson.JsonObject params) {
+    protected com.google.gson.JsonObject parseToolCallArguments(@org.jetbrains.annotations.NotNull com.google.gson.JsonObject params) {
         com.google.gson.JsonObject standard = super.parseToolCallArguments(params);
         if (standard != null) return standard;
         if (params.has("rawInput") && params.get("rawInput").isJsonObject()) {

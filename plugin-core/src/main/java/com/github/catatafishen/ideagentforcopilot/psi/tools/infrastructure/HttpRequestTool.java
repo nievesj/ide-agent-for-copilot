@@ -1,11 +1,10 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.infrastructure;
 
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.HttpRequestRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.HttpRequestRenderer;
-import org.jetbrains.annotations.Nullable;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -42,7 +41,7 @@ public final class HttpRequestTool extends InfrastructureTool {
         return "Make an HTTP request (GET/POST/PUT/PATCH/DELETE) to a URL";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {

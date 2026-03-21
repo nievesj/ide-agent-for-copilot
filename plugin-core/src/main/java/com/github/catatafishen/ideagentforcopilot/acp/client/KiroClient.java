@@ -4,6 +4,7 @@ import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
@@ -55,7 +56,7 @@ public final class KiroClient extends AcpClient {
     }
 
     @Override
-    protected JsonObject parseToolCallArguments(JsonObject update) {
+    protected JsonObject parseToolCallArguments(@NotNull JsonObject update) {
         // Kiro sends args in "rawInput" (object) instead of "content" (array)
         return update.has(KEY_RAW_INPUT) && update.get(KEY_RAW_INPUT).isJsonObject()
             ? update.getAsJsonObject(KEY_RAW_INPUT)

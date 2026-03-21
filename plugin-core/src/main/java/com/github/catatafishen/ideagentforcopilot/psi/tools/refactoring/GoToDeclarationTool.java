@@ -5,11 +5,9 @@ import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.GoToDeclarationRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ReadAction;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
@@ -19,7 +17,6 @@ import com.intellij.psi.PsiNamedElement;
 import com.intellij.psi.PsiRecursiveElementWalkingVisitor;
 import com.intellij.psi.PsiReference;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -52,7 +49,7 @@ public final class GoToDeclarationTool extends RefactoringTool {
         return "Navigate to the declaration of a symbol at a given file and line";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {

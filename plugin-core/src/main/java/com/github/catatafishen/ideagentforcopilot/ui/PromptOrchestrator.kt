@@ -433,56 +433,57 @@ class PromptOrchestrator(
         val callType = toolCallTitles[toolCallId]
         val isSubAgent = callType == "task"
         val isInternal = callType == "subagent_internal"
-        val kind =
-            if (status == SessionUpdate.ToolCallStatus.COMPLETED || status == SessionUpdate.ToolCallStatus.FAILED) {
-                val title = toolCallTitles[toolCallId] ?: ""
-                val toolName = title.removePrefix("agentbridge-").removePrefix("@agentbridge/")
-                val def = com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getInstance(project)
-                    .findById(toolName)
-                when {
-                    def == null -> null
-                    def.isReadOnly() -> "read"
-                    def.isDestructive() -> "execute"
-                    else -> "edit"
-                }
-            } else null
+        val kind = resolveToolKind(status, toolCallId)
 
-        if (status == SessionUpdate.ToolCallStatus.COMPLETED) {
-            if (isSubAgent) {
-                activeSubAgentId = null
-                agentManager.client.setSubAgentActive(false)
-                agentManager.settings.setActiveAgentLabel(null)
-                consolePanel().updateSubAgentResult(toolCallId, "completed", result, description)
-            } else if (isInternal) {
-                consolePanel().updateSubAgentToolCall(toolCallId, "completed", result, description)
-            } else {
-                consolePanel().updateToolCall(toolCallId, "completed", result, description, kind)
-            }
-        } else if (status == SessionUpdate.ToolCallStatus.FAILED) {
-            val error = update.error() ?: result ?: "Unknown error"
-            if (isSubAgent) {
-                activeSubAgentId = null
-                agentManager.client.setSubAgentActive(false)
-                agentManager.settings.setActiveAgentLabel(null)
-                consolePanel().updateSubAgentResult(toolCallId, "failed", error, description)
-            } else if (isInternal) {
-                consolePanel().updateSubAgentToolCall(toolCallId, "failed", error, description)
-            } else {
-                consolePanel().updateToolCall(toolCallId, "failed", error, description, kind)
-            }
-        } else if (status == SessionUpdate.ToolCallStatus.IN_PROGRESS) {
-            // Keep the "running" state in UI without marking it as success or failure yet.
-            // This prevents tool chips from showing red (failed) prematurely.
-            if (isSubAgent) {
-                consolePanel().updateSubAgentResult(toolCallId, "running", null, description)
-            } else if (isInternal) {
-                consolePanel().updateSubAgentToolCall(toolCallId, "running", null, description)
-            } else {
-                consolePanel().updateToolCall(toolCallId, "running", null, description)
-            }
+        val uiStatus = when (status) {
+            SessionUpdate.ToolCallStatus.COMPLETED -> "completed"
+            SessionUpdate.ToolCallStatus.FAILED -> update.error() ?: result ?: "Unknown error"
+            else -> "running"
         }
+
+        updateToolCallUi(toolCallId, uiStatus, result, description, kind, isSubAgent, isInternal)
+
         if (status == SessionUpdate.ToolCallStatus.COMPLETED || status == SessionUpdate.ToolCallStatus.FAILED) {
             callbacks.saveConversationThrottled()
+        }
+    }
+
+    private fun resolveToolKind(status: SessionUpdate.ToolCallStatus, toolCallId: String): String? {
+        if (status != SessionUpdate.ToolCallStatus.COMPLETED && status != SessionUpdate.ToolCallStatus.FAILED) {
+            return null
+        }
+        val title = toolCallTitles[toolCallId] ?: ""
+        val toolName = title.removePrefix("agentbridge-").removePrefix("@agentbridge/")
+        val def = com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getInstance(project)
+            .findById(toolName) ?: return null
+
+        return when {
+            def.isReadOnly() -> "read"
+            def.isDestructive() -> "execute"
+            else -> "edit"
+        }
+    }
+
+    private fun updateToolCallUi(
+        toolCallId: String,
+        uiStatus: String,
+        result: String?,
+        description: String?,
+        kind: String?,
+        isSubAgent: Boolean,
+        isInternal: Boolean
+    ) {
+        if (isSubAgent) {
+            if (uiStatus != "running") {
+                activeSubAgentId = null
+                agentManager.client.setSubAgentActive(false)
+                agentManager.settings.setActiveAgentLabel(null)
+            }
+            consolePanel().updateSubAgentResult(toolCallId, uiStatus, result, description)
+        } else if (isInternal) {
+            consolePanel().updateSubAgentToolCall(toolCallId, uiStatus, result, description)
+        } else {
+            consolePanel().updateToolCall(toolCallId, uiStatus, result, description, kind)
         }
     }
 

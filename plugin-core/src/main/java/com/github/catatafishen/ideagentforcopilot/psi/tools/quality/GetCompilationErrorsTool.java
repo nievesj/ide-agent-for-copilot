@@ -1,8 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.quality;
 
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -11,7 +11,6 @@ import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -46,7 +45,7 @@ public final class GetCompilationErrorsTool extends QualityTool {
         return "Fast compilation error check using cached daemon results";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {

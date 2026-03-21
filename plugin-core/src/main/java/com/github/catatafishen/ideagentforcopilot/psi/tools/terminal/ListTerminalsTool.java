@@ -4,7 +4,6 @@ import com.github.catatafishen.ideagentforcopilot.ui.renderers.IdeInfoRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Lists active terminal tabs.
@@ -30,7 +29,7 @@ public final class ListTerminalsTool extends TerminalTool {
         return "List active terminal tabs";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {

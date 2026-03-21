@@ -6,7 +6,6 @@ import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.content.Content;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -37,7 +36,7 @@ public final class ReadTerminalOutputTool extends TerminalTool {
         return "Read output from an integrated terminal tab";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {

@@ -8,7 +8,6 @@ import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -37,7 +36,7 @@ public final class GetActiveFileTool extends EditorTool {
         return "Get the path and content of the currently active editor file";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {

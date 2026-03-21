@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -40,7 +39,7 @@ public final class GitMergeTool extends GitTool {
         return "Merge a branch into the current branch";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {

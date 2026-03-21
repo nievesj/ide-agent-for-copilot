@@ -4,7 +4,6 @@ import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitStatusRenderer
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 @SuppressWarnings("java:S112")
 public final class GitStatusTool extends GitTool {
@@ -30,7 +29,7 @@ public final class GitStatusTool extends GitTool {
         return "Show working tree status";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {

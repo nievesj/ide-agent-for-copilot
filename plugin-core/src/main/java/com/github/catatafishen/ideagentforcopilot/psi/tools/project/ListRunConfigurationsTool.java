@@ -1,11 +1,10 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.project;
 
 import com.github.catatafishen.ideagentforcopilot.psi.RunConfigurationService;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.RunConfigRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.RunConfigRenderer;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Lists all available run configurations in the project.
@@ -34,7 +33,7 @@ public final class ListRunConfigurationsTool extends ProjectTool {
         return "List all available run configurations in the project";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {

@@ -6,7 +6,6 @@ import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.RefactorRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.WriteAction;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -21,7 +20,6 @@ import com.intellij.psi.PsiReference;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
 import java.util.concurrent.CompletableFuture;
@@ -54,7 +52,7 @@ public final class RefactorTool extends RefactoringTool {
         return "Rename, extract method, inline, or safe-delete a symbol using IntelliJ's refactoring engine";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {

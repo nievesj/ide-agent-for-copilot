@@ -1,10 +1,9 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.project;
 
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.BuildResultRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.BuildResultRenderer;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -37,7 +36,7 @@ public final class BuildProjectTool extends ProjectTool {
         return "Trigger incremental compilation of the project or a specific module";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {

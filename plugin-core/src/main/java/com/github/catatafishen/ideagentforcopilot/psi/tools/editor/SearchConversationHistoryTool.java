@@ -32,6 +32,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
     private static final String PARAM_OFFSET = "offset";
     private static final String CONVERSATION_PREFIX = "conversation-";
     private static final String JSON_TITLE = "title";
+    private static final String JSON_TIMESTAMP = "timestamp";
 
     private static final class FilterOptions {
         String query;
@@ -249,58 +250,69 @@ public final class SearchConversationHistoryTool extends EditorTool {
             }
 
             // 1. Filter by time
-            if (options.since != null || options.until != null) {
-                entries = entries.stream()
-                    .filter(obj -> isWithinTimeRange(obj, options.since, options.until))
-                    .collect(Collectors.toList());
-            }
+            entries = filterByTime(entries, options);
 
             // 2. Filter by turns (last_n and offset)
-            if (options.lastN != null || options.offset != null) {
-                List<Integer> promptIndices = new ArrayList<>();
-                for (int i = 0; i < entries.size(); i++) {
-                    if ("prompt".equals(entries.get(i).get("type").getAsString())) {
-                        promptIndices.add(i);
-                    }
-                }
-
-                int offset = options.offset != null ? options.offset : 0;
-                int endPromptIdx = promptIndices.size() - 1 - offset;
-                if (endPromptIdx < 0) {
-                    entries = Collections.emptyList();
-                } else {
-                    int lastN = options.lastN != null ? options.lastN : promptIndices.size();
-                    int startPromptIdx = Math.max(0, endPromptIdx - lastN + 1);
-                    int startIdx = promptIndices.get(startPromptIdx);
-                    int endIdx = (endPromptIdx + 1 < promptIndices.size())
-                        ? promptIndices.get(endPromptIdx + 1) - 1
-                        : entries.size() - 1;
-                    entries = entries.subList(startIdx, endIdx + 1);
-                }
-            }
+            entries = filterByTurns(entries, options);
 
             // 3. Format and filter by query
-            StringBuilder sb = new StringBuilder();
-            for (var obj : entries) {
-                String type = obj.has("type") ? obj.get("type").getAsString() : "";
-                String line = formatConversationEntry(obj, type);
-                if (isMatchingEntry(line, options.query)) {
-                    sb.append(line).append("\n");
-                    if (sb.length() >= options.maxChars) {
-                        sb.append("...[truncated at ").append(options.maxChars).append(" chars]\n");
-                        break;
-                    }
-                }
-            }
-            return sb.toString();
+            return formatAndFilterEntries(entries, options);
         } catch (Exception e) {
             return "Error reading " + file.getName() + ": " + e.getMessage();
         }
     }
 
+    private static List<JsonObject> filterByTime(List<JsonObject> entries, FilterOptions options) {
+        if (options.since == null && options.until == null) return entries;
+        return entries.stream()
+            .filter(obj -> isWithinTimeRange(obj, options.since, options.until))
+            .collect(Collectors.toList());
+    }
+
+    private static List<JsonObject> filterByTurns(List<JsonObject> entries, FilterOptions options) {
+        if (options.lastN == null && options.offset == null) return entries;
+
+        List<Integer> promptIndices = new ArrayList<>();
+        for (int i = 0; i < entries.size(); i++) {
+            if ("prompt".equals(entries.get(i).get("type").getAsString())) {
+                promptIndices.add(i);
+            }
+        }
+
+        int offset = options.offset != null ? options.offset : 0;
+        int endPromptIdx = promptIndices.size() - 1 - offset;
+        if (endPromptIdx < 0) {
+            return Collections.emptyList();
+        }
+
+        int lastN = options.lastN != null ? options.lastN : promptIndices.size();
+        int startPromptIdx = Math.max(0, endPromptIdx - lastN + 1);
+        int startIdx = promptIndices.get(startPromptIdx);
+        int endIdx = (endPromptIdx + 1 < promptIndices.size())
+            ? promptIndices.get(endPromptIdx + 1) - 1
+            : entries.size() - 1;
+        return entries.subList(startIdx, endIdx + 1);
+    }
+
+    private static String formatAndFilterEntries(List<JsonObject> entries, FilterOptions options) {
+        StringBuilder sb = new StringBuilder();
+        for (var obj : entries) {
+            String type = obj.has("type") ? obj.get("type").getAsString() : "";
+            String line = formatConversationEntry(obj, type);
+            if (isMatchingEntry(line, options.query)) {
+                sb.append(line).append("\n");
+                if (sb.length() >= options.maxChars) {
+                    sb.append("...[truncated at ").append(options.maxChars).append(" chars]\n");
+                    break;
+                }
+            }
+        }
+        return sb.toString();
+    }
+
     private static boolean isWithinTimeRange(JsonObject obj, Instant since, Instant until) {
         String tsStr = obj.has("ts") ? obj.get("ts").getAsString() :
-            (obj.has("timestamp") ? obj.get("timestamp").getAsString() : null);
+            (obj.has(JSON_TIMESTAMP) ? obj.get(JSON_TIMESTAMP).getAsString() : null);
         if (tsStr == null) return true; // Keep entries without timestamp? Or filter them out? Usually keep.
         try {
             Instant ts = Instant.parse(tsStr);

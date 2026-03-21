@@ -79,6 +79,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     private static final String KEY_OPTIONS = "options";
     private static final String KEY_OPTION_ID = "optionId";
     private static final String KEY_OUTCOME = "outcome";
+    private static final String KEY_TOOL_CALL_ID = "toolCallId";
     private static final String VALUE_SELECTED = "selected";
     private static final String VALUE_ALLOW_ONCE = "allow_once";
 
@@ -518,6 +519,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     /**
      * Whether context references must be inlined as text.
      */
+    @SuppressWarnings("unused") // Overridden by subclasses (CopilotClient, OpenCodeClient)
     public boolean requiresInlineReferences() {
         return false;
     }
@@ -861,7 +863,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     private SessionUpdate.ToolCall parseToolCall(JsonObject params) {
-        String toolCallId = getStringOrEmpty(params, "toolCallId");
+        String toolCallId = getStringOrEmpty(params, KEY_TOOL_CALL_ID);
         String title = getStringOrEmpty(params, "title");
         String resolvedTitle = resolveToolId(title);
 
@@ -888,7 +890,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     private SessionUpdate.ToolCallUpdate parseToolCallUpdate(JsonObject params) {
-        String toolCallId = getStringOrEmpty(params, "toolCallId");
+        String toolCallId = getStringOrEmpty(params, KEY_TOOL_CALL_ID);
 
         SessionUpdate.ToolCallStatus status = SessionUpdate.ToolCallStatus.COMPLETED;
         if (params.has(KEY_STATUS)) {
@@ -912,7 +914,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             List<ContentBlock> blocks = parseContentBlocks(params);
             StringBuilder sb = new StringBuilder();
             for (ContentBlock block : blocks) {
-                if (block instanceof ContentBlock.Text t) sb.append(t.text());
+                if (block instanceof ContentBlock.Text(String text)) sb.append(text);
             }
             return sb.isEmpty() ? null : sb.toString();
         }
@@ -986,7 +988,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         String blockType = block.has("type") ? block.get("type").getAsString() : "text";
         if ("text".equals(blockType) && block.has("text")) {
             return new ContentBlock.Text(block.get("text").getAsString());
-        } else if ("content".equals(blockType) && block.has(KEY_CONTENT)) {
+        } else if (KEY_CONTENT.equals(blockType) && block.has(KEY_CONTENT)) {
             // Spec: tool_call_update content items wrap blocks as {type:"content", content:{type,text}}
             JsonElement inner = block.get(KEY_CONTENT);
             if (inner.isJsonObject() && inner.getAsJsonObject().has("text")) {
@@ -1018,7 +1020,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         // Notify subclass before responding, so it can capture args for chip correlation.
         if (params != null && params.has("toolCall")) {
             JsonObject toolCallObj = params.getAsJsonObject("toolCall");
-            String toolCallId = getStringOrEmpty(toolCallObj, "toolCallId");
+            String toolCallId = getStringOrEmpty(toolCallObj, KEY_TOOL_CALL_ID);
             if (!toolCallId.isEmpty()) {
                 onPermissionRequest(toolCallId, toolCallObj);
             }

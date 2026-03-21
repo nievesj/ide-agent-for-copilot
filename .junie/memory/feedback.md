@@ -766,3 +766,11 @@
     "NEW INSTRUCTION": "WHEN correlating ACP and MCP tool calls THEN compute canonical args hash and update chip kind"
 }
 
+[2026-03-22 00:18] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Tool chip border state",
+    "EXPECTATION": "Default chips stay dashed with no special class; only when MCP starts handling a tool call should the chip get a solid border via the 'is-agentbridge-tool' class; on completion simply remove the spinner and do not introduce or rely on a 'status-external' class.",
+    "NEW INSTRUCTION": "WHEN a tool call reaches terminal state THEN remove spinner and leave border unchanged"
+}
+

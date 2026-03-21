@@ -7,7 +7,6 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -38,7 +37,7 @@ public final class AddToDictionaryTool extends QualityTool {
         return "Add a word to the project spell-check dictionary";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
