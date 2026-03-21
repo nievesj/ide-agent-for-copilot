@@ -38,6 +38,7 @@ public final class McpServerConfigurable implements Configurable {
     private ComboBox<TransportMode> transportModeCombo;
     private JBCheckBox autoStartCheckbox;
     private JBCheckBox followModeCheckbox;
+    private JBCheckBox debugLoggingCheckbox;
     private JPanel mainPanel;
 
     public McpServerConfigurable(@NotNull Project project) {
@@ -72,6 +73,12 @@ public final class McpServerConfigurable implements Configurable {
             "Works independently of the connected agent — any external agent accessing "
                 + "the MCP server will trigger follow-mode when this is enabled.");
 
+        debugLoggingCheckbox = new JBCheckBox(
+            "Enable debug logging — log all ACP JSON-RPC messages at INFO level",
+            settings.isDebugLoggingEnabled());
+        debugLoggingCheckbox.setToolTipText(
+            "When enabled, every ACP request and response is logged to the IDE log (Help → Show Log).");
+
         JButton restartButton = new JButton("Restart MCP Server", AllIcons.Actions.Restart);
         restartButton.setToolTipText("Stop and restart the MCP server to pick up tool registration changes");
         restartButton.addActionListener(e -> restartMcpServer(restartButton));
@@ -98,6 +105,8 @@ public final class McpServerConfigurable implements Configurable {
             .addSeparator()
             .addComponent(followModeCheckbox)
             .addSeparator()
+            .addComponent(debugLoggingCheckbox)
+            .addSeparator()
             .addComponent(buttonRow)
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
@@ -113,6 +122,7 @@ public final class McpServerConfigurable implements Configurable {
         if ((Integer) portSpinner.getValue() != settings.getPort()) return true;
         if (transportModeCombo.getSelectedItem() != settings.getTransportMode()) return true;
         if (autoStartCheckbox.isSelected() != settings.isAutoStart()) return true;
+        if (debugLoggingCheckbox.isSelected() != settings.isDebugLoggingEnabled()) return true;
         return followModeCheckbox.isSelected() != ActiveAgentManager.getFollowAgentFiles(project);
     }
 
@@ -122,6 +132,7 @@ public final class McpServerConfigurable implements Configurable {
         settings.setPort((Integer) portSpinner.getValue());
         settings.setTransportMode((TransportMode) transportModeCombo.getSelectedItem());
         settings.setAutoStart(autoStartCheckbox.isSelected());
+        settings.setDebugLoggingEnabled(debugLoggingCheckbox.isSelected());
         ActiveAgentManager.setFollowAgentFiles(project, followModeCheckbox.isSelected());
     }
 
@@ -131,6 +142,7 @@ public final class McpServerConfigurable implements Configurable {
         portSpinner.setValue(settings.getPort());
         transportModeCombo.setSelectedItem(settings.getTransportMode());
         autoStartCheckbox.setSelected(settings.isAutoStart());
+        debugLoggingCheckbox.setSelected(settings.isDebugLoggingEnabled());
         followModeCheckbox.setSelected(ActiveAgentManager.getFollowAgentFiles(project));
     }
 
@@ -141,6 +153,7 @@ public final class McpServerConfigurable implements Configurable {
         transportModeCombo = null;
         autoStartCheckbox = null;
         followModeCheckbox = null;
+        debugLoggingCheckbox = null;
     }
 
     private void copyMcpConfig(JButton button) {

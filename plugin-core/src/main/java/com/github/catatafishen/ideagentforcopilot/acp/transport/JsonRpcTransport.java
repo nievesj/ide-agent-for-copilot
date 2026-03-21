@@ -65,6 +65,7 @@ public class JsonRpcTransport {
     private @Nullable BiConsumer<JsonElement, IncomingRequest> requestHandler;
     private @Nullable Consumer<IncomingNotification> notificationHandler;
     private @Nullable Consumer<String> stderrHandler;
+    private @Nullable Consumer<String> debugLogger;
 
     /**
      * An incoming JSON-RPC request from the agent.
@@ -101,6 +102,14 @@ public class JsonRpcTransport {
      */
     public void onStderr(Consumer<String> handler) {
         this.stderrHandler = handler;
+    }
+
+    /**
+     * Set a logger callback for debug-level ACP message tracing.
+     * When set, every incoming and outgoing JSON-RPC line is passed to this consumer.
+     */
+    public void setDebugLogger(Consumer<String> logger) {
+        this.debugLogger = logger;
     }
 
     // ─── Lifecycle ────────────────────────────────────
@@ -247,6 +256,9 @@ public class JsonRpcTransport {
     }
 
     private void processLine(String line) {
+        if (debugLogger != null) {
+            debugLogger.accept("<<< " + line);
+        }
         try {
             dispatchMessage(line);
         } catch (Exception e) {
@@ -346,6 +358,9 @@ public class JsonRpcTransport {
         if (writer == null || !alive.get()) {
             LOG.warn("Attempted write on dead transport");
             return;
+        }
+        if (debugLogger != null) {
+            debugLogger.accept(">>> " + json);
         }
         writer.println(json);
         writer.flush();

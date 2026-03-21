@@ -42,6 +42,14 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         myState.autoStart = autoStart;
     }
 
+    public boolean isDebugLoggingEnabled() {
+        return myState.debugLoggingEnabled;
+    }
+
+    public void setDebugLoggingEnabled(boolean enabled) {
+        myState.debugLoggingEnabled = enabled;
+    }
+
     public Set<String> getDisabledToolIds() {
         return myState.disabledToolIds;
     }
@@ -95,6 +103,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
     public static class State {
         private int port = DEFAULT_PORT;
         private boolean autoStart = false;
+        private boolean debugLoggingEnabled = false;
         private TransportMode transportMode = TransportMode.STREAMABLE_HTTP;
         private Set<String> disabledToolIds = new LinkedHashSet<>();
         private boolean defaultsApplied = false;
@@ -113,6 +122,14 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
         public void setAutoStart(boolean autoStart) {
             this.autoStart = autoStart;
+        }
+
+        public boolean isDebugLoggingEnabled() {
+            return debugLoggingEnabled;
+        }
+
+        public void setDebugLoggingEnabled(boolean debugLoggingEnabled) {
+            this.debugLoggingEnabled = debugLoggingEnabled;
         }
 
         public TransportMode getTransportMode() {

@@ -24,6 +24,7 @@ import com.github.catatafishen.ideagentforcopilot.agent.AgentSessionException;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentStartException;
 import com.github.catatafishen.ideagentforcopilot.bridge.McpServerJarLocator;
 import com.github.catatafishen.ideagentforcopilot.services.McpServerControl;
+import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -88,6 +89,7 @@ public abstract class AcpClient implements AgentConnector {
     private final List<Model> availableModels = new ArrayList<>();
     private final List<AgentConnector.AgentMode> availableModes = new ArrayList<>();
     private @Nullable String currentModeSlug = null;
+    private @Nullable String currentModelId = null;
     private @Nullable String currentAgentSlug = null;
     private final List<AgentConnector.AgentConfigOption> availableConfigOptions = new ArrayList<>();
     private volatile @Nullable Consumer<SessionUpdate> updateConsumer;
@@ -106,6 +108,11 @@ public abstract class AcpClient implements AgentConnector {
             int mcpPort = resolveMcpPort();
             agentProcess = launchProcess(mcpPort);
             transport.start(agentProcess);
+            transport.setDebugLogger(line -> {
+                if (McpServerSettings.getInstance(project).isDebugLoggingEnabled()) {
+                    LOG.info("[ACP] " + line);
+                }
+            });
             registerHandlers();
             capabilities = initialize();
             authenticate();
@@ -128,6 +135,7 @@ public abstract class AcpClient implements AgentConnector {
         availableModels.clear();
         availableModes.clear();
         currentModeSlug = null;
+        currentModelId = null;
         currentAgentSlug = null;
         availableConfigOptions.clear();
         updateConsumer = null;
@@ -162,13 +170,19 @@ public abstract class AcpClient implements AgentConnector {
                 availableModels.addAll(response.models());
             }
 
+            if (response.currentModelId() != null) {
+                currentModelId = response.currentModelId();
+            }
+
             if (response.modes() != null) {
                 availableModes.clear();
                 for (NewSessionResponse.AvailableMode m : response.modes()) {
                     availableModes.add(new AgentConnector.AgentMode(m.slug(), m.name(), m.description()));
                 }
                 if (currentModeSlug == null) {
-                    currentModeSlug = defaultModeSlug();
+                    // Use the agent-reported current mode first, then our own default
+                    String reportedMode = response.currentModeId();
+                    currentModeSlug = reportedMode != null ? reportedMode : defaultModeSlug();
                 }
                 if (currentAgentSlug == null) {
                     currentAgentSlug = defaultAgentSlug();
@@ -252,6 +266,11 @@ public abstract class AcpClient implements AgentConnector {
     @Override
     public final List<Model> getAvailableModels() {
         return Collections.unmodifiableList(availableModels);
+    }
+
+    @Override
+    public final @Nullable String getCurrentModelId() {
+        return currentModelId;
     }
 
     @Override

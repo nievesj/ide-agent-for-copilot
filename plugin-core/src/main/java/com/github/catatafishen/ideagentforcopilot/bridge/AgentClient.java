@@ -70,6 +70,14 @@ public interface AgentClient extends Closeable {
     List<Model> listModels() throws AcpException;
 
     /**
+     * Returns the agent-reported currently selected model ID from session/new,
+     * or {@code null} if the agent did not report one.
+     */
+    default @Nullable String getCurrentModelId() {
+        return null;
+    }
+
+    /**
      * Cancel an in-progress prompt turn for the given session.
      */
     void cancelSession(@NotNull String sessionId);

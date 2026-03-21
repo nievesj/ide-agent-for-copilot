@@ -1089,6 +1089,9 @@ class ChatToolWindowContent(
                 ?: MSG_LOADING
             e.presentation.text = text
             e.presentation.isEnabled = modelsStatusText == null && loadedModels.isNotEmpty()
+            // Hide entirely when models loaded successfully but list is empty
+            // (agent uses configOptions for model selection instead)
+            e.presentation.isVisible = modelsStatusText != null || loadedModels.isNotEmpty()
         }
     }
 
@@ -1526,13 +1529,21 @@ class ChatToolWindowContent(
 
     private fun restoreModelSelection(models: List<Model>) {
         val savedModel = agentManager.settings.selectedModel
-        LOG.debug("Restoring model selection: saved='$savedModel', available=${models.map { it.id() }}")
+        LOG.debug("Restoring model selection: saved='$savedModel', current='${agentManager.client.getCurrentModelId()}', available=${models.map { it.id() }}")
         if (savedModel != null) {
             val idx = models.indexOfFirst { it.id() == savedModel }
             if (idx >= 0) {
                 selectedModelIndex = idx; LOG.debug("Restored model index=$idx"); return
             }
             LOG.debug("Saved model '$savedModel' not found in available models")
+        }
+        // Fall back to the agent-reported current model from session/new
+        val currentModelId = agentManager.client.getCurrentModelId()
+        if (currentModelId != null) {
+            val idx = models.indexOfFirst { it.id() == currentModelId }
+            if (idx >= 0) {
+                selectedModelIndex = idx; LOG.debug("Selected agent-reported model index=$idx"); return
+            }
         }
         if (models.isNotEmpty()) selectedModelIndex = 0
     }

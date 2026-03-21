@@ -137,6 +137,11 @@ public interface AgentConnector {
     /** Available models for this agent. Empty list if not supported. */
     List<Model> getAvailableModels();
 
+    /** The agent-reported currently selected model ID from session/new, or {@code null} if not provided. */
+    default @Nullable String getCurrentModelId() {
+        return null;
+    }
+
     /** Set the model for a session. No-op if agent doesn't support model selection. */
     void setModel(String sessionId, String modelId);
 

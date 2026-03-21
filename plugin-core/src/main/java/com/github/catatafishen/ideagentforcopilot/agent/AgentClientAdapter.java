@@ -96,6 +96,11 @@ public class AgentClientAdapter implements AgentClient {
     }
 
     @Override
+    public @Nullable String getCurrentModelId() {
+        return connector.getCurrentModelId();
+    }
+
+    @Override
     public void cancelSession(@NotNull String sessionId) {
         connector.cancelSession(sessionId);
     }
@@ -173,7 +178,8 @@ public class AgentClientAdapter implements AgentClient {
                     values.add(mode.slug());
                     labels.put(mode.slug(), mode.name());
                 }
-                options.add(new com.github.catatafishen.ideagentforcopilot.bridge.SessionOption("mode", "Mode", values, labels));
+                options.add(new com.github.catatafishen.ideagentforcopilot.bridge.SessionOption(
+                    "mode", "Mode", values, labels, connector.getCurrentModeSlug()));
             }
         }
 

@@ -122,10 +122,10 @@ class AgentClientAdapterTest {
 
             var result = adapter.listModels();
             assertEquals(2, result.size());
-            assertEquals("gpt-4", result.getFirst().getId());
-            assertEquals("GPT-4", result.getFirst().getName());
-            assertEquals("The best one", result.getFirst().getDescription());
-            assertEquals("gpt-3.5", result.get(1).getId());
+            assertEquals("gpt-4", result.getFirst().id());
+            assertEquals("GPT-4", result.getFirst().name());
+            assertEquals("The best one", result.getFirst().description());
+            assertEquals("gpt-3.5", result.get(1).id());
         }
 
         @Test

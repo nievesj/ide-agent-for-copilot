@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
+import com.github.catatafishen.ideagentforcopilot.acp.model.Model;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
 import com.github.catatafishen.ideagentforcopilot.services.GenericSettings;
@@ -58,7 +59,8 @@ class CopilotAcpClientTest {
 
     @Test
     void testModelDto() {
-        Model model = new Model();
+        com.github.catatafishen.ideagentforcopilot.bridge.Model model =
+            new com.github.catatafishen.ideagentforcopilot.bridge.Model();
         model.setId("gpt-4.1");
         model.setName("GPT-4.1");
         model.setDescription("Fast model");
@@ -168,15 +170,15 @@ class CopilotAcpClientTest {
 
             // Verify model structure
             Model first = models.getFirst();
-            assertNotNull(first.getId(), "Model should have id");
-            assertNotNull(first.getName(), "Model should have name");
-            assertFalse(first.getId().isEmpty());
+            assertNotNull(first.id(), "Model should have id");
+            assertNotNull(first.name(), "Model should have name");
+            assertFalse(first.id().isEmpty());
         }
 
         @Test
         void testListModelsContainsKnownModels() throws AcpException {
             List<Model> models = client.listModels();
-            List<String> modelIds = models.stream().map(Model::getId).toList();
+            List<String> modelIds = models.stream().map(Model::id).toList();
 
             // At least some of these should be present
             boolean hasGpt = modelIds.stream().anyMatch(id -> id.startsWith("gpt-"));
@@ -212,10 +214,11 @@ class CopilotAcpClientTest {
             List<Model> models = client.listModels();
             // Pick the cheapest model
             String cheapModel = models.stream()
-                .filter(m -> "0x".equals(m.getUsage()) || "0.33x".equals(m.getUsage()))
+                .filter(m -> "0x".equals(client.getModelMultiplier(m.id()))
+                    || "0.33x".equals(client.getModelMultiplier(m.id())))
                 .findFirst()
-                .map(Model::getId)
-                .orElse(models.getLast().getId());
+                .map(Model::id)
+                .orElse(models.getLast().id());
 
             StringBuilder response = new StringBuilder();
             String stopReason = client.sendPrompt(sessionId,

@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
+import com.github.catatafishen.ideagentforcopilot.acp.model.Model;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
 import com.github.catatafishen.ideagentforcopilot.services.GenericSettings;
 import org.junit.jupiter.api.AfterEach;
@@ -30,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class CopilotFreeModelIntegrationTest {
 
-    private DefaultAcpClient client;
+    private CopilotAcpClient client;
     private String sessionId;
     private String freeModelId;
 
@@ -55,7 +56,7 @@ class CopilotFreeModelIntegrationTest {
     @BeforeEach
     void setUp() throws Exception {
         Assumptions.assumeTrue(copilotAvailable(), "Copilot CLI not available");
-        client = new DefaultAcpClient(
+        client = new CopilotAcpClient(
             new ProfileBasedAgentConfig(AgentProfileManager.createDefaultCopilotProfile(), null),
             new GenericAgentSettings(new GenericSettings("copilot"), null),
             null, null, 0);
@@ -65,10 +66,10 @@ class CopilotFreeModelIntegrationTest {
         List<Model> models = client.listModels();
         // Select free model (0x) or cheapest available
         freeModelId = models.stream()
-            .filter(m -> "0x".equals(m.getUsage()))
+            .filter(m -> "0x".equals(client.getModelMultiplier(m.id())))
             .findFirst()
-            .or(() -> models.stream().filter(m -> "0.33x".equals(m.getUsage())).findFirst())
-            .map(Model::getId)
+            .or(() -> models.stream().filter(m -> "0.33x".equals(client.getModelMultiplier(m.id()))).findFirst())
+            .map(Model::id)
             .orElse(null);
 
         Assumptions.assumeTrue(freeModelId != null,
@@ -85,12 +86,12 @@ class CopilotFreeModelIntegrationTest {
     void testFreeModelExists() throws Exception {
         List<Model> models = client.listModels();
         Model freeModel = models.stream()
-            .filter(m -> m.getId().equals(freeModelId))
+            .filter(m -> m.id().equals(freeModelId))
             .findFirst().orElse(null);
 
         assertNotNull(freeModel, "Free model should exist");
-        assertEquals("0x", freeModel.getUsage(), "Free model usage should be 0x");
-        assertNotNull(freeModel.getName(), "Free model should have a name");
+        assertEquals("0x", client.getModelMultiplier(freeModel.id()), "Free model usage should be 0x");
+        assertNotNull(freeModel.name(), "Free model should have a name");
     }
 
     @Test
@@ -149,7 +150,7 @@ class CopilotFreeModelIntegrationTest {
         assertFalse(client.isHealthy());
 
         // Create new client
-        client = new DefaultAcpClient(
+        client = new CopilotAcpClient(
             new ProfileBasedAgentConfig(AgentProfileManager.createDefaultCopilotProfile(), null),
             new GenericAgentSettings(new GenericSettings("copilot"), null),
             null, null, 0);
@@ -162,9 +163,9 @@ class CopilotFreeModelIntegrationTest {
         // Re-resolve free model
         List<Model> models = client.listModels();
         freeModelId = models.stream()
-            .filter(m -> "0x".equals(m.getUsage()))
+            .filter(m -> "0x".equals(client.getModelMultiplier(m.id())))
             .findFirst()
-            .map(Model::getId)
+            .map(Model::id)
             .orElse(null);
         Assumptions.assumeTrue(freeModelId != null);
 
@@ -182,9 +183,9 @@ class CopilotFreeModelIntegrationTest {
 
         // All models should have required fields
         for (Model model : models) {
-            assertNotNull(model.getId(), "Model id required");
-            assertFalse(model.getId().isEmpty(), "Model id should not be empty");
-            assertNotNull(model.getName(), "Model name required");
+            assertNotNull(model.id(), "Model id required");
+            assertFalse(model.id().isEmpty(), "Model id should not be empty");
+            assertNotNull(model.name(), "Model name required");
         }
     }
 
