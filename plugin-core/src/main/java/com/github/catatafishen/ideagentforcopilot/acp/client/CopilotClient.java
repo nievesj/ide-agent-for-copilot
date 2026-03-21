@@ -37,6 +37,7 @@ public final class CopilotClient extends AcpClient {
     private static final String MCP_SERVER_NAME = "agentbridge";
     private static final String MCP_TYPE_HTTP = "http";
     private static final String AGENT_WORK_DIR = ".agent-work";
+    private static final String KEY_RAW_INPUT = "rawInput";
 
     // ─── MCP tool sets ───────────────────────────────
 
@@ -152,7 +153,7 @@ public final class CopilotClient extends AcpClient {
     @Override
     public List<AbstractAgentClient.AgentMode> getAvailableAgents() {
         return List.of(
-            new AbstractAgentClient.AgentMode("intellij-default", "Intellij-Default",
+            new AbstractAgentClient.AgentMode(DEFAULT_AGENT_SLUG, "Intellij-Default",
                 "Full IntelliJ toolset with abuse-detection instructions"),
             new AbstractAgentClient.AgentMode("intellij-explore", "Intellij-Explore",
                 "Read-only code navigation, no file edits or shell execution"),
@@ -245,8 +246,8 @@ public final class CopilotClient extends AcpClient {
     protected com.google.gson.JsonObject parseToolCallArguments(@org.jetbrains.annotations.NotNull com.google.gson.JsonObject params) {
         com.google.gson.JsonObject standard = super.parseToolCallArguments(params);
         if (standard != null) return standard;
-        if (params.has("rawInput") && params.get("rawInput").isJsonObject()) {
-            return params.getAsJsonObject("rawInput");
+        if (params.has(KEY_RAW_INPUT) && params.get(KEY_RAW_INPUT).isJsonObject()) {
+            return params.getAsJsonObject(KEY_RAW_INPUT);
         }
         return null;
     }
