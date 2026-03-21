@@ -143,7 +143,23 @@ public final class CopilotClient extends AcpClient {
     @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
         String configDir = cwd + File.separator + ".agent-work" + File.separator + AGENT_ID;
-        return List.of(AGENT_ID, "--acp", "--stdio", "--config-dir", configDir);
+        String mcpConfig = buildMcpConfigJson(mcpPort);
+        String agentSlug = getCurrentAgentSlug();
+        List<String> cmd = new java.util.ArrayList<>(List.of(
+                AGENT_ID, "--acp", "--stdio",
+                "--config-dir", configDir,
+                "--additional-mcp-config", mcpConfig
+        ));
+        if (agentSlug != null && !agentSlug.isEmpty()) {
+            cmd.add("--agent");
+            cmd.add(agentSlug);
+        }
+        return cmd;
+    }
+
+    private static String buildMcpConfigJson(int mcpPort) {
+        return "{\"mcpServers\":{\"" + MCP_SERVER_NAME
+                + "\":{\"type\":\"http\",\"url\":\"http://localhost:" + mcpPort + "/mcp\"}}}";
     }
 
     @Override
@@ -165,6 +181,19 @@ public final class CopilotClient extends AcpClient {
         JsonArray servers = new JsonArray();
         servers.add(server);
         params.add("mcpServers", servers);
+    }
+
+    // ─── Mode selection ──────────────────────────────
+
+    /**
+     * For Copilot the {@code modeSlug} in {@code session/prompt} must be one of the ACP
+     * standard mode URIs returned by {@code session/new} (e.g. the {@code #agent} mode URI).
+     * The custom agent slug is passed via {@code --agent} at CLI startup and must not be
+     * sent as {@code modeSlug} — Copilot would ignore it and use the default agent.
+     */
+    @Override
+    public @Nullable String getEffectiveModeSlug() {
+        return getCurrentModeSlug();
     }
 
     // ─── Tools ───────────────────────────────────────

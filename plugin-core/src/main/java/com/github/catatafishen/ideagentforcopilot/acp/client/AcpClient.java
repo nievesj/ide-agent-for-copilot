@@ -148,6 +148,12 @@ public abstract class AcpClient implements AgentConnector {
 
     @Override
     public final String createSession(String cwd) throws AgentSessionException {
+        // Reuse the existing session if we already have one for the same working directory.
+        // eagerFetchModels() creates a session at startup — avoid a redundant second session/new.
+        if (currentSessionId != null && cwd != null && cwd.equals(launchCwd)) {
+            LOG.info(displayName() + ": reusing existing session " + currentSessionId);
+            return currentSessionId;
+        }
         try {
             beforeCreateSession(cwd);
             int mcpPort = resolveMcpPort();
@@ -219,6 +225,10 @@ public abstract class AcpClient implements AgentConnector {
         JsonObject params = new JsonObject();
         params.addProperty(KEY_SESSION_ID, sessionId);
         transport.sendNotification("session/cancel", params);
+        // Clear the cached session ID so the next createSession() starts a new one
+        if (sessionId.equals(currentSessionId)) {
+            currentSessionId = null;
+        }
     }
 
     @Override
@@ -637,22 +647,22 @@ public abstract class AcpClient implements AgentConnector {
     }
 
     /**
-     * Creates a temporary session immediately after startup to populate the available-models
-     * list. The session is cancelled right after so it does not interfere with the first
-     * real user session. If the call fails, the failure is logged and swallowed — the agent
-     * is still usable, just without pre-loaded models.
+     * Creates the initial session immediately after startup to populate models, modes, and
+     * config options. The session is kept alive and reused for the first user prompt — this
+     * avoids a redundant second {@code session/new} when the user sends their first message.
+     * If the call fails, the failure is logged and swallowed; the first real {@code createSession}
+     * call will retry.
      */
     private void eagerFetchModels() {
         String cwd = launchCwd != null ? launchCwd : project.getBasePath();
         if (cwd == null) return;
         try {
-            String sessionId = createSession(cwd);
-            cancelSession(sessionId);
-            currentSessionId = null;
-            LOG.debug(displayName() + ": eagerly loaded " + availableModels.size() + " model(s)");
+            createSession(cwd);
+            // Keep currentSessionId set — createSession() will reuse it when the user sends a prompt
+            LOG.info(displayName() + ": eagerly loaded " + availableModels.size() + " model(s), session=" + currentSessionId);
         } catch (Exception e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
-            LOG.warn(displayName() + ": eager model fetch failed (models will be empty): "
+            LOG.warn(displayName() + ": eager session creation failed (models will be empty): "
                 + e.getMessage() + (cause != e ? " — caused by: " + cause.getMessage() : ""));
         }
     }
