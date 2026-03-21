@@ -425,13 +425,8 @@ working-indicator .working-text {
     border-style: solid;
 }
 
-/* Pending: ACP registered, waiting for MCP to handle */
+/* Pending: waiting for MCP to handle */
 .turn-chip.status-pending {
-    opacity: 0.8;
-}
-
-/* External: ACP completed but MCP never handled it */
-.turn-chip.status-external {
     opacity: 0.8;
 }
 

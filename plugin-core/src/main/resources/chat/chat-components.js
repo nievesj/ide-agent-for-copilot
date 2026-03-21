@@ -967,7 +967,7 @@ var __chatUI = (() => {
       }
     },
     updateToolCall(id, status, resultHtml) {
-      const jsStatus = status === "failed" ? "failed" : status === "unverified" ? "external" : "complete";
+      const jsStatus = status === "failed" ? "failed" : "complete";
       this.setToolChipState(id, jsStatus);
     },
     updateToolCallKind(id, kind) {

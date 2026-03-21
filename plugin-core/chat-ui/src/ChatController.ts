@@ -244,7 +244,7 @@ const ChatController = {
     },
 
     updateToolCall(id: string, status: string, resultHtml?: string): void {
-        const jsStatus = status === 'failed' ? 'failed' : status === 'unverified' ? 'external' : 'complete';
+        const jsStatus = status === 'failed' ? 'failed' : 'complete';
         this.setToolChipState(id, jsStatus);
     },
 

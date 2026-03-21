@@ -202,12 +202,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 // MCP is handling this tool — mark as agentbridge tool (solid border) and set running
                 executeJs("ChatController.markMcpHandled('$did')")
             } else {
-                val jsState = when (state) {
-                    ToolChipRegistry.ChipState.COMPLETE -> "complete"
-                    ToolChipRegistry.ChipState.EXTERNAL -> "external"
-                    ToolChipRegistry.ChipState.FAILED -> "failed"
-                    else -> return@addKindStateListener
-                }
+                // COMPLETE, EXTERNAL, FAILED — just remove the spinner; border already shows origin
+                val jsState = if (state == ToolChipRegistry.ChipState.FAILED) "failed" else "complete"
                 executeJs("ChatController.setToolChipState('$did','$jsState')")
                 toolJustCompleted = true
             }
