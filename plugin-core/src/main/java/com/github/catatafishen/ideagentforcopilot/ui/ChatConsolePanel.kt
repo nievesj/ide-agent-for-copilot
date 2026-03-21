@@ -39,6 +39,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private var currentAgent = ""
     private val toolCallNames = mutableMapOf<String, String>() // domId → tool baseName
     private val toolCallEntries = mutableMapOf<String, EntryData.ToolCall>() // domId → entry
+    private val toolCallIsExternal = mutableMapOf<String, Boolean>() // domId → isExternal (not from our MCP)
     private val toolRegistry = com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getInstance(project)
 
     private val fileNavigator = FileNavigator(project)
@@ -292,6 +293,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
         val safeKind = escJs(resolvedKind)
         val isExternal = def == null  // Not from our MCP plugin
+        toolCallIsExternal[did] = isExternal
         val correlator = ToolExecutionCorrelator.getInstance(project)
         val isAcpCall = correlator.isAcpRegistered(id)
         val initialStatus = if (isAcpCall) "pending" else "running"
@@ -318,11 +320,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             if (description != null) it.description = description
         }
         val correlator = ToolExecutionCorrelator.getInstance(project)
+        val isMcpTool = toolCallIsExternal[did] == false  // false = from our MCP plugin
         val jsStatus = when {
             status == "failed" -> "failed"
             status == "running" -> "running"
-            // ACP-registered but MCP never handled it and no inline result → unverified
-            correlator.isAcpRegistered(id) && !correlator.wasHandledByMcp(id) && details == null -> "unverified"
+            // Only flag "unverified" for our own MCP tools that ACP expected MCP to handle
+            isMcpTool && correlator.isAcpRegistered(id) && !correlator.wasHandledByMcp(id) -> "unverified"
             else -> "completed"
         }
         executeJs("ChatController.updateToolCall('$did','$jsStatus','$jsStatus')")
@@ -458,6 +461,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         entries.clear()
         currentTextData = null; currentThinkingData = null; nextSubAgentColor = 0
         turnCounter = 0; currentTurnId = ""; toolJustCompleted = false
+        toolCallNames.clear(); toolCallEntries.clear(); toolCallIsExternal.clear()
         executeJs("ChatController.clear()")
         fallbackArea?.let { ApplicationManager.getApplication().invokeLater { it.text = "" } }
     }
