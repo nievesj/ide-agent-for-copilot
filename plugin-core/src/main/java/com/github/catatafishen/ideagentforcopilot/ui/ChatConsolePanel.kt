@@ -346,16 +346,30 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             if (kind != null) it.kind = kind
         }
         val jsKind = kind ?: ""
-        when (status) {
-            "failed" -> registry.completeClientSide(id, false)
-            "running" -> { /* intermediate — chip already shows as running or pending */
-            }
 
-            else -> registry.completeClientSide(id, true) // "completed" or any other
+        // Map status to JS state
+        val jsStatus = when (status) {
+            "running" -> "running"
+            "complete" -> "complete"
+            "completed" -> "complete"
+            "external" -> "external"
+            "failed" -> "failed"
+            else -> "complete"  // fallback
         }
-        // If kind is provided, update the chip on the JS side
+
+        // Update chip status in the DOM
+        executeJs("ChatController.setToolChipState('$did','$jsStatus')")
+
+        // If kind is provided, update the chip kind
         if (kind != null) {
             executeJs("ChatController.updateToolCallKind('$did','$jsKind')")
+        }
+
+        // Notify registry of completion
+        when (status) {
+            "failed" -> registry.completeClientSide(id, false)
+            "running" -> { /* intermediate — no completion */ }
+            else -> registry.completeClientSide(id, true) // "completed", "complete", or any other
         }
     }
 
