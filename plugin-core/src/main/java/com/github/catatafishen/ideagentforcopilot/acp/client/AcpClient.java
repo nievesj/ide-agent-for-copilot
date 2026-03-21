@@ -225,8 +225,10 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     private void updateModes(NewSessionResponse response) {
         availableModes.clear();
-        for (NewSessionResponse.AvailableMode m : response.modes()) {
-            availableModes.add(new AbstractAgentClient.AgentMode(m.slug(), m.name(), m.description()));
+        if (response.modes() != null) {
+            for (NewSessionResponse.AvailableMode m : response.modes()) {
+                availableModes.add(new AbstractAgentClient.AgentMode(m.slug(), m.name(), m.description()));
+            }
         }
         if (currentModeSlug == null) {
             String reportedMode = response.currentModeId();
@@ -239,15 +241,18 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     private void updateConfigOptions(NewSessionResponse response) {
         availableConfigOptions.clear();
-        for (NewSessionResponse.SessionConfigOption opt : response.configOptions()) {
-            List<AbstractAgentClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
-                : opt.values().stream()
-                .map(v -> new AbstractAgentClient.AgentConfigOptionValue(v.id(), v.label()))
-                .toList();
-            String label = opt.label() != null ? opt.label() : (opt.id() != null ? opt.id() : "");
-            availableConfigOptions.add(
-                new AbstractAgentClient.AgentConfigOption(opt.id(), label, opt.description(), vals, opt.selectedValueId())
-            );
+        if (response.configOptions() != null) {
+            for (NewSessionResponse.SessionConfigOption opt : response.configOptions()) {
+                List<AbstractAgentClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
+                    : opt.values().stream()
+                    .map(v -> new AbstractAgentClient.AgentConfigOptionValue(v.id(), v.label()))
+                    .toList();
+                String optId = opt.id() != null ? opt.id() : "";
+                String label = opt.label() != null ? opt.label() : optId;
+                availableConfigOptions.add(
+                    new AbstractAgentClient.AgentConfigOption(optId, label, opt.description(), vals, opt.selectedValueId())
+                );
+            }
         }
         LOG.debug(displayName() + ": session/new: " + availableConfigOptions.size() + " config option(s)");
     }
