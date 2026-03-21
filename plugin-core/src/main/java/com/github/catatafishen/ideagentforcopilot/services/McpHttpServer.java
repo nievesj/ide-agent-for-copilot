@@ -88,7 +88,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         // If port changed, save it to settings
         if (actualPort != port) {
             settings.setPort(actualPort);
-            LOG.info("Port " + port + " was in use; allocated " + actualPort + " instead for project: " + project.getBasePath());
+            LOG.info("[MCP] port conflict: " + port + " was in use; allocated " + actualPort + " instead for project: " + project.getBasePath());
         }
 
         httpServer.createContext("/health", this::handleHealth);
@@ -107,7 +107,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         httpServer.setExecutor(Executors.newCachedThreadPool());
         httpServer.start();
         running = true;
-        LOG.info("MCP server started on port " + actualPort + " (" + activeTransportMode.getDisplayName()
+        LOG.info("[MCP] server started on port " + actualPort + " (" + activeTransportMode.getDisplayName()
             + ") for project: " + project.getBasePath());
         project.getMessageBus().syncPublisher(STATUS_TOPIC).serverStatusChanged();
     }
@@ -132,7 +132,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         activeTransportMode = null;
         running = false;
         activeConnections.set(0);
-        LOG.info("MCP HTTP server stopped for project: " + project.getBasePath());
+        LOG.info("[MCP] server stopped for project: " + project.getBasePath());
         if (!project.isDisposed()) {
             project.getMessageBus().syncPublisher(STATUS_TOPIC).serverStatusChanged();
         }
@@ -176,14 +176,21 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         }
 
         activeConnections.incrementAndGet();
+        McpServerSettings settings = McpServerSettings.getInstance(project);
         try {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            if (settings.isDebugLoggingEnabled()) {
+                LOG.info("[MCP] <<< " + body);
+            }
             String response = protocolHandler.handleMessage(body);
 
             if (response == null) {
                 // Notification — no response needed
                 exchange.sendResponseHeaders(202, -1);
             } else {
+                if (settings.isDebugLoggingEnabled()) {
+                    LOG.info("[MCP] >>> " + response);
+                }
                 byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
                 exchange.sendResponseHeaders(200, bytes.length);

@@ -150,11 +150,13 @@ public final class McpProtocolHandler {
             }
         }
 
+        // Always log with [MCP] prefix for easy filtering alongside [ACP] logs.
+        // Include progressToken when debug logging is on — this is the key for ACP↔MCP correlation.
+        String tokenSuffix = progressToken != null ? " [progressToken=" + progressToken + "]" : " [no progressToken]";
         if (settings.isDebugLoggingEnabled()) {
-            LOG.info("MCP >>> tools/call: " + toolName +
-                (progressToken != null ? " [progressToken=" + progressToken + "]" : ""));
+            LOG.info("[MCP] >>> tools/call: " + toolName + tokenSuffix);
         } else {
-            LOG.info("MCP tool call: " + toolName);
+            LOG.info("[MCP] tools/call: " + toolName);
         }
 
         // Delegate to PsiBridgeService
@@ -176,7 +178,7 @@ public final class McpProtocolHandler {
 
             return respondResult(msg, result);
         } catch (Exception e) {
-            LOG.warn("MCP tool error: " + toolName, e);
+            LOG.warn("[MCP] tool error: " + toolName, e);
             JsonObject content = new JsonObject();
             content.addProperty("type", "text");
             content.addProperty("text", "Error: " + e.getMessage());
