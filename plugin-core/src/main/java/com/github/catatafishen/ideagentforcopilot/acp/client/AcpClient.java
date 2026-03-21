@@ -40,6 +40,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -74,9 +75,9 @@ public abstract class AcpClient extends AbstractAgentClient {
     private static final String KEY_RESULT = "result";
 
     protected final Gson gson = new GsonBuilder()
-            .registerTypeAdapter(NewSessionResponse.class, new NewSessionResponseDeserializer())
-            .registerTypeHierarchyAdapter(ContentBlock.class, new ContentBlockSerializer())
-            .create();
+        .registerTypeAdapter(NewSessionResponse.class, new NewSessionResponseDeserializer())
+        .registerTypeHierarchyAdapter(ContentBlock.class, new ContentBlockSerializer())
+        .create();
     protected final JsonRpcTransport transport = new JsonRpcTransport();
     protected final Project project;
 
@@ -198,8 +199,8 @@ public abstract class AcpClient extends AbstractAgentClient {
                 for (NewSessionResponse.SessionConfigOption opt : response.configOptions()) {
                     List<AbstractAgentClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
                         : opt.values().stream()
-                            .map(v -> new AbstractAgentClient.AgentConfigOptionValue(v.id(), v.label()))
-                            .toList();
+                        .map(v -> new AbstractAgentClient.AgentConfigOptionValue(v.id(), v.label()))
+                        .toList();
                     String label = opt.label() != null ? opt.label() : (opt.id() != null ? opt.id() : "");
                     availableConfigOptions.add(
                         new AbstractAgentClient.AgentConfigOption(opt.id(), label, opt.description(), vals, opt.selectedValueId())
@@ -314,10 +315,27 @@ public abstract class AcpClient extends AbstractAgentClient {
     /**
      * Bridges ACP config options (from session/new) to the {@link SessionOption} type used by
      * the UI toolbar dropdowns. Called by the toolbar on every repaint — returns the live list.
+     *
+     * <p>Config options whose values exactly cover the available model list are suppressed when
+     * the session already provided a proper {@code models} array. Such options are a fallback
+     * for clients that don't advertise models at session start; exposing them alongside the
+     * primary model selector would render a duplicate model dropdown.</p>
      */
     @Override
+    @NotNull
     public final List<SessionOption> listSessionOptions() {
+        Set<String> sessionModelIds = availableModels.isEmpty()
+            ? Collections.emptySet()
+            : availableModels.stream().map(Model::id).collect(java.util.stream.Collectors.toSet());
+
         return availableConfigOptions.stream()
+            .filter(opt -> {
+                if (sessionModelIds.isEmpty()) return true;
+                Set<String> optValueIds = opt.values().stream()
+                    .map(AbstractAgentClient.AgentConfigOptionValue::id)
+                    .collect(java.util.stream.Collectors.toSet());
+                return !sessionModelIds.equals(optValueIds) && !sessionModelIds.containsAll(optValueIds);
+            })
             .map(opt -> {
                 List<String> valueIds = opt.values().stream()
                     .map(AbstractAgentClient.AgentConfigOptionValue::id)
@@ -333,7 +351,9 @@ public abstract class AcpClient extends AbstractAgentClient {
             .toList();
     }
 
-    /** Delegates to {@link #setConfigOption} so the ACP server is notified. */
+    /**
+     * Delegates to {@link #setConfigOption} so the ACP server is notified.
+     */
     @Override
     public final void setSessionOption(@NotNull String sessionId, @NotNull String key, @NotNull String value) {
         setConfigOption(sessionId, key, value);
