@@ -1,6 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.github.catatafishen.ideagentforcopilot.bridge.*
+import com.github.catatafishen.ideagentforcopilot.bridge.AnthropicDirectClient
+import com.github.catatafishen.ideagentforcopilot.bridge.ClaudeCliClient
+import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager
 import com.intellij.openapi.util.IconLoader
 import javax.swing.Icon
 
@@ -17,10 +19,10 @@ object AgentIconProvider {
     fun getIconForProfile(profileId: String?): Icon {
         val icon = when (profileId) {
             AnthropicDirectClient.PROFILE_ID, ClaudeCliClient.PROFILE_ID -> claudeIcon
-            CopilotAcpClient.PROFILE_ID -> copilotIcon
-            OpenCodeAcpClient.PROFILE_ID -> opencodeIcon
-            JunieAcpClient.PROFILE_ID -> junieIcon
-            KiroAcpClient.PROFILE_ID -> kiroIcon
+            AgentProfileManager.COPILOT_PROFILE_ID -> copilotIcon
+            AgentProfileManager.OPENCODE_PROFILE_ID -> opencodeIcon
+            AgentProfileManager.JUNIE_PROFILE_ID -> junieIcon
+            AgentProfileManager.KIRO_PROFILE_ID -> kiroIcon
             else -> null
         }
         return icon ?: defaultIcon

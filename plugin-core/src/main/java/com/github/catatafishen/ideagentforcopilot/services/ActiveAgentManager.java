@@ -8,12 +8,7 @@ import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentSettings;
 import com.github.catatafishen.ideagentforcopilot.bridge.AnthropicDirectClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.ClaudeCliClient;
-import com.github.catatafishen.ideagentforcopilot.bridge.CopilotAcpClient;
-import com.github.catatafishen.ideagentforcopilot.bridge.DefaultAcpClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.GenericAgentSettings;
-import com.github.catatafishen.ideagentforcopilot.bridge.JunieAcpClient;
-import com.github.catatafishen.ideagentforcopilot.bridge.KiroAcpClient;
-import com.github.catatafishen.ideagentforcopilot.bridge.OpenCodeAcpClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.ProfileBasedAgentConfig;
 import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
@@ -186,12 +181,7 @@ public final class ActiveAgentManager implements Disposable {
                 AgentConfig config = resolveStartConfig();
                 acpClient = new ClaudeCliClient(profile, config, ToolRegistry.getInstance(project), project, mcpPort);
             } else {
-                String projectPath = project.getBasePath();
-                int mcpPort = resolveMcpPort();
-                AgentConfig config = resolveStartConfig();
-                AgentSettings agentSettings = createAgentSettings();
-                ToolRegistry registry = ToolRegistry.getInstance(project);
-                acpClient = createAcpClient(profile.getId(), config, agentSettings, registry, projectPath, mcpPort);
+                acpClient = createAcpClient(profile.getId());
             }
 
             acpClient.start();
@@ -297,36 +287,14 @@ public final class ActiveAgentManager implements Disposable {
         }
     }
 
-    /**
-     * Instantiates the appropriate {@link AgentClient} for the given profile ID.
-     * Tries the new AgentBridge2 clients first for ACP agents, falling back to legacy
-     * if the profile ID is not in the new {@link AgentRegistry}.
-     */
     @NotNull
-    private AgentClient createAcpClient(@NotNull String profileId,
-                                        @NotNull AgentConfig config,
-                                        @NotNull AgentSettings settings,
-                                        @NotNull ToolRegistry registry,
-                                        @Nullable String projectBasePath,
-                                        int mcpPort) {
+    private AgentClient createAcpClient(@NotNull String profileId) {
         AgentConnector connector = AgentRegistry.create(profileId, project);
         if (connector != null) {
-            LOG.info("Using AgentBridge2 client for profile: " + profileId);
             return new AgentClientAdapter(connector, project);
         }
-
-        LOG.info("Falling back to legacy AcpClient for profile: " + profileId);
-        return switch (profileId) {
-            case AgentProfileManager.COPILOT_PROFILE_ID ->
-                new CopilotAcpClient(config, settings, registry, projectBasePath, mcpPort);
-            case AgentProfileManager.OPENCODE_PROFILE_ID ->
-                new OpenCodeAcpClient(config, settings, registry, projectBasePath, mcpPort);
-            case AgentProfileManager.JUNIE_PROFILE_ID ->
-                new JunieAcpClient(config, settings, registry, projectBasePath, mcpPort);
-            case AgentProfileManager.KIRO_PROFILE_ID ->
-                new KiroAcpClient(config, settings, registry, projectBasePath, mcpPort);
-            default -> new DefaultAcpClient(config, settings, registry, projectBasePath, mcpPort);
-        };
+        LOG.warn("Unknown ACP profile ID: " + profileId + " — no client registered in AgentRegistry");
+        throw new IllegalArgumentException("Unknown ACP agent profile: " + profileId);
     }
 
     private void clearCachedConfig() {
