@@ -1181,25 +1181,22 @@ public abstract class AcpClient extends AbstractAgentClient {
         transport.sendResponse(id, result);
     }
 
+    /**
+     * Whether this agent should block all built-in (non-MCP) tool calls,
+     * forcing the model to use agentbridge tools exclusively.
+     * Override in subclasses that require exclusive agentbridge usage.
+     */
+    protected boolean excludeBuiltInTools() {
+        return false;
+    }
+
     private boolean isToolBlocked(String protocolTitle, String toolId) {
-        // We only care about built-in tools (not prefixed with our own MCP server names)
         if (!isBuiltInTool(protocolTitle)) {
             return false;
         }
-
-        // If the profile explicitly excludes built-in tools, we block everything except our whitelist
-        try {
-            com.github.catatafishen.ideagentforcopilot.services.AgentProfile profile =
-                com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager.getInstance(project).getActiveProfile();
-
-            if (profile.isExcludeAgentBuiltInTools()) {
-                // Case-insensitive check against allowed built-ins
-                return !ALLOWED_BUILT_IN_TOOLS.contains(toolId.toLowerCase());
-            }
-        } catch (Exception e) {
-            LOG.warn("Failed to check tool block status for '" + toolId + "'", e);
+        if (excludeBuiltInTools()) {
+            return !ALLOWED_BUILT_IN_TOOLS.contains(toolId.toLowerCase());
         }
-
         return false;
     }
 

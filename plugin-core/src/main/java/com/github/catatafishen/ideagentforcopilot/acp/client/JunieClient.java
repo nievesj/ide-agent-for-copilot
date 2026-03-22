@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.acp.client;
 import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
 import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
 import com.github.catatafishen.ideagentforcopilot.agent.junie.JunieKeyStore;
-import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.settings.StartupInstructionsSettings;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -66,6 +65,11 @@ public final class JunieClient extends AcpClient {
     }
 
     @Override
+    protected boolean excludeBuiltInTools() {
+        return true;
+    }
+
+    @Override
     protected String resolveToolId(String protocolTitle) {
         String title = protocolTitle.trim();
         if (title.startsWith("agentbridge_")) {
@@ -119,44 +123,39 @@ public final class JunieClient extends AcpClient {
 
     @Override
     protected void beforeLaunch(String cwd, int mcpPort) throws java.io.IOException {
-        com.github.catatafishen.ideagentforcopilot.services.AgentProfile profile =
-            com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager.getInstance(project).getActiveProfile();
+        java.nio.file.Path junieDir = java.nio.file.Path.of(cwd, ".junie");
+        java.nio.file.Files.createDirectories(junieDir);
+        java.nio.file.Path allowlistPath = junieDir.resolve("allowlist.json");
 
-        if (profile.isExcludeAgentBuiltInTools()) {
-            java.nio.file.Path junieDir = java.nio.file.Path.of(cwd, ".junie");
-            java.nio.file.Files.createDirectories(junieDir);
-            java.nio.file.Path allowlistPath = junieDir.resolve("allowlist.json");
+        JsonObject allowlist = new JsonObject();
+        allowlist.addProperty("defaultBehavior", "deny");
+        allowlist.addProperty("allowReadonlyCommands", false);
 
-            JsonObject allowlist = new JsonObject();
-            allowlist.addProperty("defaultBehavior", "deny");
-            allowlist.addProperty("allowReadonlyCommands", false);
+        JsonObject rules = new JsonObject();
 
-            JsonObject rules = new JsonObject();
+        JsonObject mcpTools = new JsonObject();
+        JsonArray mcpRules = new JsonArray();
+        JsonObject agentbridgeRule = new JsonObject();
+        agentbridgeRule.addProperty("prefix", "agentbridge");
+        agentbridgeRule.addProperty("action", "allow");
+        mcpRules.add(agentbridgeRule);
+        mcpTools.add("rules", mcpRules);
 
-            JsonObject mcpTools = new JsonObject();
-            JsonArray mcpRules = new JsonArray();
-            JsonObject agentbridgeRule = new JsonObject();
-            agentbridgeRule.addProperty("prefix", "agentbridge");
-            agentbridgeRule.addProperty("action", "allow");
-            mcpRules.add(agentbridgeRule);
-            mcpTools.add("rules", mcpRules);
+        rules.add("mcpTools", mcpTools);
 
-            rules.add("mcpTools", mcpTools);
+        JsonObject terminal = new JsonObject();
+        terminal.addProperty("defaultBehavior", "deny");
+        rules.add("terminal", terminal);
 
-            JsonObject terminal = new JsonObject();
-            terminal.addProperty("defaultBehavior", "deny");
-            rules.add("terminal", terminal);
+        JsonObject fileEditing = new JsonObject();
+        fileEditing.addProperty("defaultBehavior", "deny");
+        rules.add("fileEditing", fileEditing);
 
-            JsonObject fileEditing = new JsonObject();
-            fileEditing.addProperty("defaultBehavior", "deny");
-            rules.add("fileEditing", fileEditing);
+        allowlist.add("rules", rules);
 
-            allowlist.add("rules", rules);
-
-            try (java.io.Writer writer = java.nio.file.Files.newBufferedWriter(allowlistPath)) {
-                gson.toJson(allowlist, writer);
-                LOG.info("Junie: wrote .junie/allowlist.json to restrict built-in tools");
-            }
+        try (java.io.Writer writer = java.nio.file.Files.newBufferedWriter(allowlistPath)) {
+            gson.toJson(allowlist, writer);
+            LOG.info("Junie: wrote .junie/allowlist.json to restrict built-in tools");
         }
     }
 
@@ -174,11 +173,8 @@ public final class JunieClient extends AcpClient {
 
     @Override
     protected void onSessionCreated(String sessionId) {
-        // Inject tool usage instructions
         String userInstructions = StartupInstructionsSettings.getInstance().getInstructions();
-        String profileInstructions = ActiveAgentManager.getInstance(project).getActiveProfile().getAdditionalInstructions();
-
-        sendSessionMessage(sessionId, buildInstructions(userInstructions, profileInstructions));
+        sendSessionMessage(sessionId, buildInstructions(userInstructions));
     }
 
     /**
@@ -305,7 +301,7 @@ public final class JunieClient extends AcpClient {
         return false;
     }
 
-    private String buildInstructions(@Nullable String userInstructions, @Nullable String profileInstructions) {
+    private String buildInstructions(@Nullable String userInstructions) {
         StringBuilder sb = new StringBuilder();
         sb.append("CRITICAL: You are running inside an IntelliJ IDEA plugin. ")
             .append("To interact with the environment (files, git, terminal, code navigation), ")
@@ -316,9 +312,6 @@ public final class JunieClient extends AcpClient {
 
         if (userInstructions != null && !userInstructions.isBlank()) {
             sb.append("\n\n").append(userInstructions);
-        }
-        if (profileInstructions != null && !profileInstructions.isBlank()) {
-            sb.append("\n\n").append(profileInstructions);
         }
         return sb.toString();
     }

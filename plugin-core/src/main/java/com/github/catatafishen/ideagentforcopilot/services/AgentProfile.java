@@ -59,22 +59,14 @@ public final class AgentProfile {
 
     private McpInjectionMethod mcpMethod;
     private String mcpConfigTemplate;
-    private String mcpEnvVarName = "";
     private String mcpServerName = "agentbridge";
-    /**
-     * Force sending mcpServers in session/new even when using CONFIG_FLAG injection.
-     * Used by Copilot which requires both: CONFIG_FLAG for auth + mcpServers in session/new.
-     */
-    private boolean forceMcpInSessionNew;
 
     // ── Feature Flags ────────────────────────────────────────────────────────
 
     private boolean supportsModelFlag;
     private boolean supportsConfigDir;
     private boolean supportsMcpConfigFlag;
-    private boolean requiresResourceDuplication;
     private boolean sendResourceReferences = true;
-    private String modelUsageField;
 
     // ── Modes ────────────────────────────────────────────────────────────────
 
@@ -111,8 +103,6 @@ public final class AgentProfile {
     private String prependInstructionsTo;
     private List<String> bundledAgentFiles = new ArrayList<>();
     private String additionalInstructions = "";
-    private String toolNameRegex;
-    private String toolNameReplacement;
 
     /**
      * Custom model list for CLI-mode profiles.
@@ -140,12 +130,9 @@ public final class AgentProfile {
         this.acpArgs = List.of("--acp", "--stdio");
         this.mcpMethod = McpInjectionMethod.CONFIG_FLAG;
         this.mcpConfigTemplate = "";
-        this.mcpEnvVarName = "";
         this.supportsModelFlag = true;
         this.supportsConfigDir = true;
         this.supportsMcpConfigFlag = true;
-        this.requiresResourceDuplication = false;
-        this.modelUsageField = "";
         this.agentsDirectory = null;
     }
 
@@ -166,15 +153,11 @@ public final class AgentProfile {
         copy.acpArgs = new ArrayList<>(acpArgs);
         copy.mcpMethod = mcpMethod;
         copy.mcpConfigTemplate = mcpConfigTemplate;
-        copy.mcpEnvVarName = mcpEnvVarName;
         copy.mcpServerName = mcpServerName;
-        copy.forceMcpInSessionNew = forceMcpInSessionNew;
         copy.supportsModelFlag = supportsModelFlag;
         copy.supportsConfigDir = supportsConfigDir;
         copy.supportsMcpConfigFlag = supportsMcpConfigFlag;
-        copy.requiresResourceDuplication = requiresResourceDuplication;
         copy.sendResourceReferences = sendResourceReferences;
-        copy.modelUsageField = modelUsageField;
         copy.agentsDirectory = agentsDirectory;
         copy.usePluginPermissions = usePluginPermissions;
         copy.excludeAgentBuiltInTools = excludeAgentBuiltInTools;
@@ -183,8 +166,6 @@ public final class AgentProfile {
         copy.prependInstructionsTo = prependInstructionsTo;
         copy.bundledAgentFiles = new ArrayList<>(bundledAgentFiles);
         copy.additionalInstructions = additionalInstructions;
-        copy.toolNameRegex = toolNameRegex;
-        copy.toolNameReplacement = toolNameReplacement;
         copy.customCliModels = new ArrayList<>(customCliModels);
         return copy;
     }
@@ -206,15 +187,11 @@ public final class AgentProfile {
         copy.acpArgs = new ArrayList<>(acpArgs);
         copy.mcpMethod = mcpMethod;
         copy.mcpConfigTemplate = mcpConfigTemplate;
-        copy.mcpEnvVarName = mcpEnvVarName;
         copy.mcpServerName = mcpServerName;
-        copy.forceMcpInSessionNew = forceMcpInSessionNew;
         copy.supportsModelFlag = supportsModelFlag;
         copy.supportsConfigDir = supportsConfigDir;
         copy.supportsMcpConfigFlag = supportsMcpConfigFlag;
-        copy.requiresResourceDuplication = requiresResourceDuplication;
         copy.sendResourceReferences = sendResourceReferences;
-        copy.modelUsageField = modelUsageField;
         copy.agentsDirectory = agentsDirectory;
         copy.usePluginPermissions = usePluginPermissions;
         copy.excludeAgentBuiltInTools = excludeAgentBuiltInTools;
@@ -223,8 +200,6 @@ public final class AgentProfile {
         copy.prependInstructionsTo = prependInstructionsTo;
         copy.bundledAgentFiles = new ArrayList<>(bundledAgentFiles);
         copy.additionalInstructions = additionalInstructions;
-        copy.toolNameRegex = toolNameRegex;
-        copy.toolNameReplacement = toolNameReplacement;
         copy.customCliModels = new ArrayList<>(customCliModels);
         return copy;
     }
@@ -246,15 +221,11 @@ public final class AgentProfile {
         this.acpArgs = new ArrayList<>(other.acpArgs);
         this.mcpMethod = other.mcpMethod;
         this.mcpConfigTemplate = other.mcpConfigTemplate;
-        this.mcpEnvVarName = other.mcpEnvVarName;
         this.mcpServerName = other.mcpServerName;
-        this.forceMcpInSessionNew = other.forceMcpInSessionNew;
         this.supportsModelFlag = other.supportsModelFlag;
         this.supportsConfigDir = other.supportsConfigDir;
         this.supportsMcpConfigFlag = other.supportsMcpConfigFlag;
-        this.requiresResourceDuplication = other.requiresResourceDuplication;
         this.sendResourceReferences = other.sendResourceReferences;
-        this.modelUsageField = other.modelUsageField;
         this.agentsDirectory = other.agentsDirectory;
         this.usePluginPermissions = other.usePluginPermissions;
         this.excludeAgentBuiltInTools = other.excludeAgentBuiltInTools;
@@ -263,8 +234,6 @@ public final class AgentProfile {
         this.prependInstructionsTo = other.prependInstructionsTo;
         this.bundledAgentFiles = new ArrayList<>(other.bundledAgentFiles);
         this.additionalInstructions = other.additionalInstructions;
-        this.toolNameRegex = other.toolNameRegex;
-        this.toolNameReplacement = other.toolNameReplacement;
         this.customCliModels = new ArrayList<>(other.customCliModels);
     }
 
@@ -403,29 +372,12 @@ public final class AgentProfile {
     }
 
     @NotNull
-    public String getMcpEnvVarName() {
-        return mcpEnvVarName;
-    }
-
-    public void setMcpEnvVarName(@NotNull String mcpEnvVarName) {
-        this.mcpEnvVarName = mcpEnvVarName;
-    }
-
-    @NotNull
     public String getMcpServerName() {
         return mcpServerName;
     }
 
     public void setMcpServerName(@NotNull String mcpServerName) {
         this.mcpServerName = mcpServerName;
-    }
-
-    public boolean isForceMcpInSessionNew() {
-        return forceMcpInSessionNew;
-    }
-
-    public void setForceMcpInSessionNew(boolean forceMcpInSessionNew) {
-        this.forceMcpInSessionNew = forceMcpInSessionNew;
     }
 
     public boolean isSupportsModelFlag() {
@@ -452,29 +404,12 @@ public final class AgentProfile {
         this.supportsMcpConfigFlag = supportsMcpConfigFlag;
     }
 
-    public boolean isRequiresResourceDuplication() {
-        return requiresResourceDuplication;
-    }
-
-    public void setRequiresResourceDuplication(boolean requiresResourceDuplication) {
-        this.requiresResourceDuplication = requiresResourceDuplication;
-    }
-
     public boolean isSendResourceReferences() {
         return sendResourceReferences;
     }
 
     public void setSendResourceReferences(boolean sendResourceReferences) {
         this.sendResourceReferences = sendResourceReferences;
-    }
-
-    @Nullable
-    public String getModelUsageField() {
-        return modelUsageField;
-    }
-
-    public void setModelUsageField(@Nullable String modelUsageField) {
-        this.modelUsageField = modelUsageField != null ? modelUsageField : "";
     }
 
     @Nullable
@@ -565,24 +500,6 @@ public final class AgentProfile {
 
     public void setCustomCliModels(@NotNull List<String> customCliModels) {
         this.customCliModels = new ArrayList<>(customCliModels);
-    }
-
-    @Nullable
-    public String getToolNameRegex() {
-        return toolNameRegex;
-    }
-
-    public void setToolNameRegex(@Nullable String toolNameRegex) {
-        this.toolNameRegex = toolNameRegex;
-    }
-
-    @Nullable
-    public String getToolNameReplacement() {
-        return toolNameReplacement;
-    }
-
-    public void setToolNameReplacement(@Nullable String toolNameReplacement) {
-        this.toolNameReplacement = toolNameReplacement;
     }
 
     /**

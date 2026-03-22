@@ -107,7 +107,7 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
         p.setSupportsMcpConfigFlag(false);
         p.setSupportsModelFlag(true);
         p.setSupportsConfigDir(false);
-        p.setRequiresResourceDuplication(false);
+        // requiresResourceDuplication removed (always false for CLI agents)
         p.setExcludeAgentBuiltInTools(false);
         p.setUsePluginPermissions(true);
         p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);

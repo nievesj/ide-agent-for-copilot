@@ -121,7 +121,6 @@ public final class AgentProfileManager {
         p.setInstallHint("Install from junie.jetbrains.com and run 'junie' to authenticate.");
         p.setInstallUrl("https://junie.jetbrains.com/docs/junie-cli.html");
         p.setSendResourceReferences(false); // Junie doesn't support Resource content blocks - append to prompt instead
-        p.setExcludeAgentBuiltInTools(true); // Favor agentbridge tools for consistent IDE experience
         return p;
     }
 
@@ -149,11 +148,6 @@ public final class AgentProfileManager {
         p.setBinaryName(OPENCODE_PROFILE_ID);
         p.setInstallHint("Install with: npm i -g opencode-ai");
         p.setInstallUrl("https://opencode.ai/docs");
-        p.setExcludeAgentBuiltInTools(true); // Deny native tools; force use of agentbridge MCP tools
-        // fixOpenCodeConfigForFile() converts "mcpServers" array → "mcp" object for opencode.json
-        p.setMcpConfigTemplate(
-            "{\"mcpServers\":[{\"name\":\"agentbridge\",\"type\":\"http\",\"url\":\"http://127.0.0.1:{mcpPort}\",\"headers\":[]}]}"
-        );
         return p;
     }
 

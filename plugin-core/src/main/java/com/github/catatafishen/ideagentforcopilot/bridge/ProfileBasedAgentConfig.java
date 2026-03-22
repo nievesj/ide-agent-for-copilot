@@ -170,9 +170,6 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
             pb.environment().put("OPENCODE_CONFIG", configPath);
         }
 
-        if (profile.getMcpMethod() == McpInjectionMethod.ENV_VAR && mcpPort > 0) {
-            injectMcpViaEnvVar(pb, mcpPort);
-        }
         return pb;
     }
 
@@ -300,18 +297,6 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         }
     }
 
-    private void injectMcpViaEnvVar(@NotNull ProcessBuilder pb, int mcpPort) {
-        String envVarName = profile.getMcpEnvVarName();
-        if (envVarName.isEmpty()) return;
-        String resolved = resolveMcpTemplate(mcpPort);
-        if (resolved == null) return;
-        if (profile.getPermissionInjectionMethod() == PermissionInjectionMethod.CONFIG_JSON) {
-            resolved = mergePermissionsIntoConfig(resolved);
-        }
-        pb.environment().put(envVarName, resolved);
-        LOG.info(profile.getDisplayName() + " MCP config injected via env var " + envVarName);
-    }
-
     @Override
     public void parseInitializeResponse(@NotNull JsonObject result) {
         authMethods = result.has("authMethods") ? result.getAsJsonArray("authMethods") : null;
@@ -319,10 +304,6 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
 
     @Override
     public @Nullable String parseModelUsage(@Nullable JsonObject modelMeta) {
-        String field = profile.getModelUsageField();
-        if (field != null && !field.isEmpty() && modelMeta != null && modelMeta.has(field)) {
-            return modelMeta.get(field).getAsString();
-        }
         return null;
     }
 
@@ -342,11 +323,6 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     }
 
     @Override
-    public boolean requiresResourceContentDuplication() {
-        return profile.isRequiresResourceDuplication();
-    }
-
-    @Override
     public @NotNull PermissionInjectionMethod getPermissionInjectionMethod() {
         return profile.getPermissionInjectionMethod();
     }
@@ -354,16 +330,6 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     @Override
     public @NotNull String getEffectiveMcpServerName() {
         return effectiveMcpServerName;
-    }
-
-    @Override
-    public @Nullable String getToolNameRegex() {
-        return profile.getToolNameRegex();
-    }
-
-    @Override
-    public @Nullable String getToolNameReplacement() {
-        return profile.getToolNameReplacement();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -396,11 +362,6 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     @Override
     public boolean supportsSessionMessage() {
         return profile.isSupportsSessionMessage();
-    }
-
-    @Override
-    public boolean requiresResourceDuplication() {
-        return profile.isRequiresResourceDuplication();
     }
 
     @Override
@@ -714,8 +675,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
 
     @Override
     public boolean requiresMcpInSessionNew() {
-        return profile.getMcpMethod() == McpInjectionMethod.SESSION_NEW
-            || profile.isForceMcpInSessionNew();
+        return profile.getMcpMethod() == McpInjectionMethod.SESSION_NEW;
     }
 
     /**

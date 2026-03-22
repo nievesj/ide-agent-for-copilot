@@ -105,7 +105,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         p.setSupportsMcpConfigFlag(true);
         p.setSupportsModelFlag(true);
         p.setSupportsConfigDir(false);
-        p.setRequiresResourceDuplication(false);
+        // requiresResourceDuplication removed (always false for CLI agents)
         p.setExcludeAgentBuiltInTools(true);
         p.setUsePluginPermissions(true);
         p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);

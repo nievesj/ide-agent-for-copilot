@@ -27,6 +27,11 @@ public final class KiroClient extends AcpClient {
     }
 
     @Override
+    protected boolean excludeBuiltInTools() {
+        return true;
+    }
+
+    @Override
     protected String resolveToolId(String protocolTitle) {
         if (protocolTitle.startsWith("@agentbridge/")) {
             return protocolTitle.substring("@agentbridge/".length());
@@ -42,22 +47,12 @@ public final class KiroClient extends AcpClient {
 
     @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
-        com.github.catatafishen.ideagentforcopilot.services.AgentProfile profile =
-            com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager.getInstance(project).getActiveProfile();
-
-        if (profile.isExcludeAgentBuiltInTools()) {
-            return List.of("kiro-cli", "--agent", "intellij-task", "acp");
-        }
-        return List.of("kiro-cli", "acp");
+        return List.of("kiro-cli", "--agent", "intellij-task", "acp");
     }
 
     @Override
     protected void beforeLaunch(String cwd, int mcpPort) throws java.io.IOException {
-        com.github.catatafishen.ideagentforcopilot.services.AgentProfile profile =
-            com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager.getInstance(project).getActiveProfile();
-
-        if (profile.isExcludeAgentBuiltInTools()) {
-            java.nio.file.Path kiroDir = java.nio.file.Path.of(cwd, ".agent-work", ".kiro", "agents");
+        java.nio.file.Path kiroDir = java.nio.file.Path.of(cwd, ".agent-work", ".kiro", "agents");
             java.nio.file.Files.createDirectories(kiroDir);
             java.nio.file.Path agentPath = kiroDir.resolve("intellij-task.json");
 
@@ -80,7 +75,6 @@ public final class KiroClient extends AcpClient {
                 com.intellij.openapi.diagnostic.Logger.getInstance(KiroClient.class)
                     .info("Kiro: wrote agent definition to " + agentPath + " to restrict built-in tools");
             }
-        }
     }
 
     @Override

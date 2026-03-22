@@ -24,8 +24,7 @@ public final class OpenCodeClient extends AcpClient {
      * is forced to use agentbridge MCP tools instead.
      */
     private static final List<String> NATIVE_TOOLS_TO_DENY = List.of(
-        "grep", "glob", "ls", "read", "write", "edit", "patch",
-        "bash", "webfetch", "task", "todoread", "todowrite"
+        "grep", "glob", "ls", "read", "write", "edit", "patch", "bash"
     );
 
     public OpenCodeClient(Project project) {
