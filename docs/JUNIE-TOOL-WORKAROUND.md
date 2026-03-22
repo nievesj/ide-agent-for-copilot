@@ -62,7 +62,13 @@ ACP[a2uxToAcp]: emitting ToolCallUpdate id=... title='Edit' kind=EDIT status=COM
 
 **No `request_permission` step** — tools go directly from `ToolCall(IN_PROGRESS)` → `ToolCallUpdate(COMPLETED)`.
 
-## Our Workaround
+> **UPDATE (March 22, 2026):** Native guards and Runtime Denial have been implemented.
+> 1. **Junie:** The plugin now automatically creates `.junie/allowlist.json` at launch to deny all built-in tools.
+> 2. **Kiro:** The plugin creates an agent definition in `.agent-work/.kiro/agents/intellij-task.json` to filter tools.
+> 3. **AcpClient:** A centralized "Runtime Denial" in `handlePermissionRequest` intercepts and rejects unauthorized built-in tool calls for all agents.
+> 4. **Exceptions:** `web_fetch` and `web_search` are now allowed built-in tools as the IDE has no equivalent.
+
+## Current Solution: Multi-Layered Enforcement
 
 Since protocol-level blocking is impossible, we use **prompt engineering** via startup instructions.
 

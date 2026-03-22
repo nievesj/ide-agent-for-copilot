@@ -82,6 +82,8 @@ public abstract class AcpClient extends AbstractAgentClient {
     private static final String KEY_TOOL_CALL_ID = "toolCallId";
     private static final String VALUE_SELECTED = "selected";
     private static final String VALUE_ALLOW_ONCE = "allow_once";
+    private static final String VALUE_DENY_ONCE = "deny_once";
+    private static final Set<String> ALLOWED_BUILT_IN_TOOLS = Set.of("web_fetch", "web_search");
 
     protected final Gson gson = new GsonBuilder()
         .registerTypeAdapter(NewSessionResponse.class, new NewSessionResponseDeserializer())
@@ -1025,25 +1027,62 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     private void handlePermissionRequest(JsonElement id, @Nullable JsonObject params) {
         // Notify subclass before responding, so it can capture args for chip correlation.
+        String toolCallId = "";
+        String toolId = "";
         if (params != null && params.has("toolCall")) {
             JsonObject toolCallObj = params.getAsJsonObject("toolCall");
-            String toolCallId = getStringOrEmpty(toolCallObj, KEY_TOOL_CALL_ID);
+            toolCallId = getStringOrEmpty(toolCallObj, KEY_TOOL_CALL_ID);
+            toolId = resolveToolId(getStringOrEmpty(toolCallObj, "title"));
             if (!toolCallId.isEmpty()) {
                 onPermissionRequest(toolCallId, toolCallObj);
             }
         }
 
-        // Prefer the "allow_once" option by kind; fall back to the first available option.
-        JsonObject chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
-        if (chosenOption == null) {
-            chosenOption = findFirstOption(params);
+        JsonObject chosenOption = null;
+        if (!toolId.isEmpty() && isToolBlocked(toolId)) {
+            LOG.warn(displayName() + ": tool '" + toolId + "' is blocked (built-in). Denying permission.");
+            chosenOption = findOptionByKind(params, VALUE_DENY_ONCE);
+            if (chosenOption == null) {
+                // Fallback: if we must deny but agent doesn't offer "deny_once",
+                // we'll try to find any option that isn't allow. But typically "deny_once" exists.
+                chosenOption = findFirstOption(params);
+            }
+        } else {
+            // Prefer the "allow_once" option by kind; fall back to the first available option.
+            chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
+            if (chosenOption == null) {
+                chosenOption = findFirstOption(params);
+            }
         }
+
         String optionId = chosenOption != null && chosenOption.has(KEY_OPTION_ID)
             ? chosenOption.get(KEY_OPTION_ID).getAsString()
             : VALUE_ALLOW_ONCE;
         JsonObject result = new JsonObject();
         result.add(KEY_OUTCOME, buildPermissionOutcome(optionId, chosenOption));
         transport.sendResponse(id, result);
+    }
+
+    private boolean isToolBlocked(String toolId) {
+        // We only care about built-in tools (not prefixed with our own MCP server names)
+        if (toolId.contains("/") || toolId.contains("@")) {
+            return false;
+        }
+
+        // If the profile explicitly excludes built-in tools, we block everything except our whitelist
+        try {
+            com.github.catatafishen.ideagentforcopilot.services.AgentProfile profile =
+                com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager.getInstance(project).getActiveProfile();
+
+            if (profile.isExcludeAgentBuiltInTools()) {
+                // Case-insensitive check against allowed built-ins
+                return !ALLOWED_BUILT_IN_TOOLS.contains(toolId.toLowerCase());
+            }
+        } catch (Exception e) {
+            LOG.warn("Failed to check tool block status for '" + toolId + "'", e);
+        }
+
+        return false;
     }
 
     /**

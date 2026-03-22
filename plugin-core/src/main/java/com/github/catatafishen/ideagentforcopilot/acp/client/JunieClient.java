@@ -54,13 +54,21 @@ public final class JunieClient extends AcpClient {
     }
 
     @Override
+    public String displayName() {
+        return "Junie";
+    }
+
+    @Override
     public String agentId() {
         return "junie";
     }
 
     @Override
-    public String displayName() {
-        return "Junie";
+    protected String resolveToolId(String protocolTitle) {
+        if (protocolTitle.startsWith("agentbridge_")) {
+            return protocolTitle.substring("agentbridge_".length());
+        }
+        return protocolTitle.replaceFirst("^Tool: agentbridge/", "");
     }
 
     @Override
@@ -82,6 +90,49 @@ public final class JunieClient extends AcpClient {
     }
 
     @Override
+    protected void beforeLaunch(String cwd, int mcpPort) throws java.io.IOException {
+        com.github.catatafishen.ideagentforcopilot.services.AgentProfile profile =
+            com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager.getInstance(project).getActiveProfile();
+
+        if (profile.isExcludeAgentBuiltInTools()) {
+            java.nio.file.Path junieDir = java.nio.file.Path.of(cwd, ".junie");
+            java.nio.file.Files.createDirectories(junieDir);
+            java.nio.file.Path allowlistPath = junieDir.resolve("allowlist.json");
+
+            JsonObject allowlist = new JsonObject();
+            allowlist.addProperty("defaultBehavior", "deny");
+            allowlist.addProperty("allowReadonlyCommands", false);
+
+            JsonObject rules = new JsonObject();
+
+            JsonObject mcpTools = new JsonObject();
+            JsonArray mcpRules = new JsonArray();
+            JsonObject agentbridgeRule = new JsonObject();
+            agentbridgeRule.addProperty("prefix", "agentbridge");
+            agentbridgeRule.addProperty("action", "allow");
+            mcpRules.add(agentbridgeRule);
+            mcpTools.add("rules", mcpRules);
+
+            rules.add("mcpTools", mcpTools);
+
+            JsonObject terminal = new JsonObject();
+            terminal.addProperty("defaultBehavior", "deny");
+            rules.add("terminal", terminal);
+
+            JsonObject fileEditing = new JsonObject();
+            fileEditing.addProperty("defaultBehavior", "deny");
+            rules.add("fileEditing", fileEditing);
+
+            allowlist.add("rules", rules);
+
+            try (java.io.Writer writer = java.nio.file.Files.newBufferedWriter(allowlistPath)) {
+                gson.toJson(allowlist, writer);
+                LOG.info("Junie: wrote .junie/allowlist.json to restrict built-in tools");
+            }
+        }
+    }
+
+    @Override
     protected void customizeNewSession(String cwd, int mcpPort, JsonObject params) {
         // Junie injects MCP via session/new mcpServers array using stdio (command + args)
         JsonObject server = buildMcpStdioServer("agentbridge", mcpPort);
@@ -99,10 +150,6 @@ public final class JunieClient extends AcpClient {
         sendSessionMessage(sessionId, buildInstructions());
     }
 
-    @Override
-    protected String resolveToolId(String protocolTitle) {
-        return protocolTitle.replaceFirst("^Tool: agentbridge/", "");
-    }
 
     /**
      * Junie's {@code tool_call} event has empty {@code content:[]} — actual tool arguments

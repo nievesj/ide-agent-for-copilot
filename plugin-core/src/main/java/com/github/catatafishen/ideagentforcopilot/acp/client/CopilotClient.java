@@ -119,7 +119,7 @@ public final class CopilotClient extends AcpClient {
      * passed anyway so it takes effect once the bug is fixed upstream.
      */
     private static final String EXCLUDED_BUILTIN_TOOLS =
-        "view,edit,create,bash,glob,grep,task,report_intent,web_fetch,web_search";
+        "view,edit,create,bash,glob,grep,task,report_intent";
 
     // ─── Lifecycle ───────────────────────────────────
 
