@@ -157,6 +157,13 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         return activeConnections.get();
     }
 
+    private static final int LOG_MAX_CHARS = 2000;
+
+    private static String truncateForLog(String s) {
+        if (s == null || s.length() <= LOG_MAX_CHARS) return s;
+        return s.substring(0, LOG_MAX_CHARS) + "... [truncated " + (s.length() - LOG_MAX_CHARS) + " chars]";
+    }
+
     private void handleMcp(HttpExchange exchange) throws IOException {
         // CORS headers for browser-based agents
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
@@ -180,7 +187,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         try {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             if (settings.isDebugLoggingEnabled()) {
-                LOG.info("[MCP] <<< " + body);
+                LOG.info("[MCP] <<< " + truncateForLog(body));
             }
             String response = protocolHandler.handleMessage(body);
 
@@ -189,7 +196,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
                 exchange.sendResponseHeaders(202, -1);
             } else {
                 if (settings.isDebugLoggingEnabled()) {
-                    LOG.info("[MCP] >>> " + response);
+                    LOG.info("[MCP] >>> " + truncateForLog(response));
                 }
                 byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);

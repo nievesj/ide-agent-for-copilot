@@ -208,16 +208,23 @@ public final class ReadIdeLogTool extends InfrastructureTool {
             pending = null;
         }
 
+        private static final int MAX_LINE_CHARS = 2000;
+
         private @Nullable String buildCompact(Matcher m) {
             String level = m.group(4);
             if (levels != null && !levels.contains(level)) return null;
             if (!isInTimeRange(m.group(1), m.group(2))) return null;
 
+            String message = m.group(6);
             String compact = m.group(2) + "." + m.group(3)
                 + "  " + level
                 + "  " + shortLogger(m.group(5).trim())
-                + ": " + m.group(6);
-            return filterPattern != null && !filterPattern.matcher(compact).find() ? null : compact;
+                + ": " + message;
+            if (filterPattern != null && !filterPattern.matcher(compact).find()) return null;
+            if (compact.length() > MAX_LINE_CHARS) {
+                compact = compact.substring(0, MAX_LINE_CHARS) + "... [+" + (compact.length() - MAX_LINE_CHARS) + "]";
+            }
+            return compact;
         }
 
         private boolean isInTimeRange(String date, String time) {

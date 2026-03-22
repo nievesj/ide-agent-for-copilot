@@ -112,6 +112,13 @@ public abstract class AcpClient extends AbstractAgentClient {
     // Final protocol methods — subclasses cannot override
     // ═══════════════════════════════════════════════════
 
+    private static final int LOG_MAX_CHARS = 2000;
+
+    private static String truncateForLog(String s) {
+        if (s == null || s.length() <= LOG_MAX_CHARS) return s;
+        return s.substring(0, LOG_MAX_CHARS) + "... [truncated " + (s.length() - LOG_MAX_CHARS) + " chars]";
+    }
+
     @Override
     public final void start() throws AgentStartException {
         try {
@@ -120,7 +127,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             transport.start(agentProcess);
             transport.setDebugLogger(line -> {
                 if (McpServerSettings.getInstance(project).isDebugLoggingEnabled()) {
-                    LOG.info("[ACP] " + line);
+                    LOG.info("[ACP] " + truncateForLog(line));
                 }
             });
             registerHandlers();
