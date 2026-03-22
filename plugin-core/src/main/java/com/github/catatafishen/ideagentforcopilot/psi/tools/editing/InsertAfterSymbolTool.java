@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.editing;
 
+import com.github.catatafishen.ideagentforcopilot.psi.CodeChangeTracker;
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.FileAccessTracker;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
@@ -7,7 +8,6 @@ import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ReplaceSymbolRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.WriteAction;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -15,7 +15,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -47,13 +46,12 @@ public final class InsertAfterSymbolTool extends EditingTool {
         return "Insert content after a symbol definition. Auto-formats and optimizes imports immediately on every call";
     }
 
-    
-
     @Override
     public @NotNull String kind() {
         return "edit";
     }
-@Override
+
+    @Override
     public @NotNull String permissionTemplate() {
         return "Insert after {symbol} in {file}";
     }
@@ -91,6 +89,7 @@ public final class InsertAfterSymbolTool extends EditingTool {
         String resultStr = result.get(15, TimeUnit.SECONDS);
         if (!resultStr.startsWith(ToolUtils.ERROR_PREFIX) && !resultStr.startsWith(SYMBOL_PREFIX)) {
             int insertedLines = (int) content.chars().filter(c -> c == '\n').count() + 1;
+            CodeChangeTracker.recordChange(insertedLines, 0);
             int insertStart = endLine[0] + 1;
             FileTool.followFileIfEnabled(project, pathStr, insertStart, insertStart + insertedLines - 1,
                 FileTool.HIGHLIGHT_EDIT, "inserting after " + symbolName);

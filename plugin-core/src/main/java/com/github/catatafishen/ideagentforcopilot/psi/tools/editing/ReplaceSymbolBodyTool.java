@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.editing;
 
+import com.github.catatafishen.ideagentforcopilot.psi.CodeChangeTracker;
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.FileAccessTracker;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
@@ -46,13 +47,12 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
             + "Auto-formats and optimizes imports immediately on every call";
     }
 
-
-
     @Override
     public @NotNull String kind() {
         return "edit";
     }
-@Override
+
+    @Override
     public @NotNull String permissionTemplate() {
         return "Replace {symbol} in {file}";
     }
@@ -127,9 +127,10 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
                 FileDocumentManager.getInstance().saveDocument(doc);
 
                 int replacedLines = loc.endLine() - loc.startLine() + 1;
-                int newLineCount = (int) fNew.chars().filter(c -> c == '\n').count();
+                int newLineCount = (int) fNew.chars().filter(c -> c == '\n').count() + 1;
+                CodeChangeTracker.recordChange(newLineCount, replacedLines);
                 result.complete("Replaced lines " + loc.startLine() + "-" + loc.endLine()
-                    + " (" + replacedLines + " lines) with " + newLineCount + " lines in " + pathStr
+                    + " (" + replacedLines + " lines) with " + (newLineCount - 1) + " lines in " + pathStr
                     + FORMATTED_SUFFIX);
             } catch (Exception e) {
                 result.complete(ToolUtils.ERROR_PREFIX + e.getMessage());

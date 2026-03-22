@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.file;
 
+import com.github.catatafishen.ideagentforcopilot.psi.CodeChangeTracker;
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.FileAccessTracker;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
@@ -68,13 +69,12 @@ public class WriteFileTool extends FileTool {
             + "(controlled by auto_format_and_optimize_imports param)";
     }
 
-    
-
     @Override
     public @NotNull String kind() {
         return "edit";
     }
-@Override
+
+    @Override
     public @NotNull String permissionTemplate() {
         return "Write {path}";
     }
@@ -148,11 +148,14 @@ public class WriteFileTool extends FileTool {
         }
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         if (doc != null) {
+            String oldContent = doc.getText();
             WriteAction.run(() ->
                 CommandProcessor.getInstance().executeCommand(
                     project, () -> doc.setText(newContent), "Write File", null)
             );
             FileDocumentManager.getInstance().saveDocument(doc);
+            int[] diff = CodeChangeTracker.diffLines(oldContent, newContent);
+            CodeChangeTracker.recordChange(diff[0], diff[1]);
             String syntaxWarning = checkSyntaxErrors(pathStr);
             if (autoFormat && syntaxWarning.isEmpty()) queueAutoFormat(project, pathStr);
             String formatNote = autoFormat && syntaxWarning.isEmpty() ? AUTO_FORMAT_SUFFIX : "";
@@ -165,6 +168,7 @@ public class WriteFileTool extends FileTool {
                     resultFuture.complete("Error writing: " + e.getMessage());
                 }
             });
+            CodeChangeTracker.recordChange(CodeChangeTracker.countLines(newContent), 0);
             resultFuture.complete("Written: " + pathStr);
         }
     }
@@ -186,6 +190,7 @@ public class WriteFileTool extends FileTool {
                 Files.createDirectories(filePath.getParent());
                 Files.writeString(filePath, content);
                 LocalFileSystem.getInstance().refreshAndFindFileByPath(fullPath);
+                CodeChangeTracker.recordChange(CodeChangeTracker.countLines(content), 0);
                 resultFuture.complete("Created: " + pathStr);
             } catch (IOException e) {
                 resultFuture.complete("Error creating file: " + e.getMessage());
@@ -235,6 +240,7 @@ public class WriteFileTool extends FileTool {
                 "Edit File", null)
         );
         FileDocumentManager.getInstance().saveDocument(doc);
+        CodeChangeTracker.recordChange(CodeChangeTracker.countLines(normalizedNew), CodeChangeTracker.countLines(normalizedOld));
         String syntaxWarning = checkSyntaxErrors(pathStr);
         if (autoFormat && syntaxWarning.isEmpty()) queueAutoFormat(project, pathStr);
         followRange[0] = doc.getLineNumber(finalIdx) + 1;
@@ -296,6 +302,7 @@ public class WriteFileTool extends FileTool {
                 "Edit File (Line Range)", null)
         );
         FileDocumentManager.getInstance().saveDocument(doc);
+        CodeChangeTracker.recordChange(CodeChangeTracker.countLines(fNew), replacedLines);
         String syntaxWarning = checkSyntaxErrors(pathStr);
         if (autoFormat && syntaxWarning.isEmpty()) queueAutoFormat(project, pathStr);
         int ctxEnd = Math.min(fStart + fNew.length(), doc.getTextLength());

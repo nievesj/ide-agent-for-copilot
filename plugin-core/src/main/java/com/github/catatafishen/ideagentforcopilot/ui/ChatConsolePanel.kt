@@ -236,6 +236,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         executeJs("ChatController.setPromptStats('$short','${escJs(multiplier)}')")
     }
 
+    override fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) {
+        executeJs("ChatController.setCodeChangeStats($linesAdded,$linesRemoved)")
+    }
+
     override fun setCurrentModel(modelId: String) {
         executeJs("ChatController.setCurrentModel('${escJs(modelId)}')")
     }

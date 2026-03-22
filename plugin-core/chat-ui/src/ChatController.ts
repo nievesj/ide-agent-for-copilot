@@ -438,6 +438,19 @@ const ChatController = {
         meta.appendChild(chip);
     },
 
+    setCodeChangeStats(added: number, removed: number): void {
+        const rows = document.querySelectorAll('.prompt-row');
+        const row = rows[rows.length - 1];
+        if (!row) return;
+        let meta = row.querySelector('message-meta');
+        if (!meta) {
+            meta = document.createElement('message-meta');
+            row.insertBefore(meta, row.firstChild);
+        }
+        meta.classList.add('show');
+        (meta as any).setCodeChangeStats(added, removed);
+    },
+
     setCurrentProfile(profileId: string): void {
         this._currentProfile = profileId;
     },

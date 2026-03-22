@@ -7,6 +7,7 @@ import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate
 import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient
 import com.github.catatafishen.ideagentforcopilot.agent.AgentException
 import com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse
+import com.github.catatafishen.ideagentforcopilot.psi.CodeChangeTracker
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.intellij.openapi.application.ApplicationManager
@@ -189,6 +190,7 @@ class PromptOrchestrator(
         turnCostUsd = 0.0
         activeSubAgentId = null
         turnModelId = selectedModelId
+        CodeChangeTracker.clear()
         ApplicationManager.getApplication().invokeLater {
             consolePanel().setCurrentProfile(agentManager.activeProfileId)
             consolePanel().setCurrentModel(selectedModelId)
@@ -317,6 +319,13 @@ class PromptOrchestrator(
                 }
             }
             callbacks.onTimerRecordUsage(turnInputTokens, turnOutputTokens, turnCostUsd)
+        }
+
+        val codeChanges = CodeChangeTracker.getAndClear()
+        if (codeChanges[0] > 0 || codeChanges[1] > 0) {
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel().setCodeChangeStats(codeChanges[0], codeChanges[1])
+            }
         }
 
         callbacks.notifyIfUnfocused(turnToolCallCount)

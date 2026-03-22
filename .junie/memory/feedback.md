@@ -774,3 +774,11 @@
     "NEW INSTRUCTION": "WHEN a tool call reaches terminal state THEN remove spinner and leave border unchanged"
 }
 
+[2026-03-22 13:44] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Generated JS and placement",
+    "EXPECTATION": "Do not edit generated .js files; only modify .ts sources. Show line counts in the toolbar using the existing tool-call counter mechanism with metadata, not inside chat, and avoid extra HTML/CSS changes.",
+    "NEW INSTRUCTION": "WHEN modifying chat-ui UI THEN change TypeScript only; never edit generated JS"
+}
+

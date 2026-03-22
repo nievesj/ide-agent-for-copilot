@@ -360,6 +360,30 @@ working-indicator .working-text {
     transition: background 0.15s, border-color 0.15s, opacity 0.15s;
 }
 
+.turn-chip.stats {
+    background: none;
+    border-color: var(--think-a10);
+    color: var(--think);
+    font-size: 0.85em;
+    font-weight: normal;
+    padding: 1px var(--sp-2);
+    cursor: default;
+    gap: var(--sp-2);
+}
+
+.diff-stat {
+    display: flex;
+    gap: var(--sp-2);
+}
+
+.diff-add {
+    color: var(--kind-execute);
+}
+
+.diff-del {
+    color: var(--error);
+}
+
 .chip-dimmed {
     opacity: 0.5;
 }

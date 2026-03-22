@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.file;
 
+import com.github.catatafishen.ideagentforcopilot.psi.CodeChangeTracker;
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.FileAccessTracker;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.WriteFileRenderer;
@@ -7,7 +8,6 @@ import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -40,13 +40,12 @@ public final class CreateFileTool extends FileTool {
         return "Create a new file and register it in IntelliJ's VFS";
     }
 
-    
-
     @Override
     public @NotNull String kind() {
         return "edit";
     }
-@Override
+
+    @Override
     public @NotNull String permissionTemplate() {
         return "Create {path}";
     }
@@ -106,6 +105,7 @@ public final class CreateFileTool extends FileTool {
         });
 
         String result = resultFuture.get(10, TimeUnit.SECONDS);
+        CodeChangeTracker.recordChange(lineCount, 0);
         followFileIfEnabled(project, pathStr, 1, lineCount, HIGHLIGHT_EDIT, agentLabel(project) + " created");
         FileAccessTracker.recordWrite(project, pathStr);
         return result;
