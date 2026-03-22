@@ -464,10 +464,12 @@ class PromptOrchestrator(
         val toolCallId = update.toolCallId()
         val result = update.result()
         val description = update.description()
+        val autoDenied = update.autoDenied()
+        val denialReason = update.denialReason()
+
         val callType = toolCallTitles[toolCallId]
         val isSubAgent = callType == "task"
         val isInternal = callType == "subagent_internal"
-        val kind = resolveToolKind(status, toolCallId)
 
         val uiStatus = when (status) {
             SessionUpdate.ToolCallStatus.COMPLETED -> "completed"
@@ -475,26 +477,10 @@ class PromptOrchestrator(
             else -> "running"
         }
 
-        updateToolCallUi(toolCallId, uiStatus, result, description, kind, isSubAgent, isInternal)
+        updateToolCallUi(toolCallId, uiStatus, result, description, null, isSubAgent, isInternal, autoDenied, denialReason)
 
         if (status == SessionUpdate.ToolCallStatus.COMPLETED || status == SessionUpdate.ToolCallStatus.FAILED) {
             callbacks.saveConversationThrottled()
-        }
-    }
-
-    private fun resolveToolKind(status: SessionUpdate.ToolCallStatus, toolCallId: String): String? {
-        if (status != SessionUpdate.ToolCallStatus.COMPLETED && status != SessionUpdate.ToolCallStatus.FAILED) {
-            return null
-        }
-        val title = toolCallTitles[toolCallId] ?: ""
-        val toolName = title.removePrefix("agentbridge-").removePrefix("@agentbridge/")
-        val def = com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getInstance(project)
-            .findById(toolName) ?: return null
-
-        return when {
-            def.isReadOnly() -> "read"
-            def.isDestructive() -> "execute"
-            else -> "edit"
         }
     }
 
@@ -505,7 +491,9 @@ class PromptOrchestrator(
         description: String?,
         kind: String?,
         isSubAgent: Boolean,
-        isInternal: Boolean
+        isInternal: Boolean,
+        autoDenied: Boolean = false,
+        denialReason: String? = null
     ) {
         if (isSubAgent) {
             if (uiStatus != "running") {
@@ -518,11 +506,11 @@ class PromptOrchestrator(
                     agentManager.activeProfile.clientCssClass
                 )
             }
-            consolePanel().updateSubAgentResult(toolCallId, uiStatus, result, description)
+            consolePanel().updateSubAgentResult(toolCallId, uiStatus, result, description, autoDenied, denialReason)
         } else if (isInternal) {
-            consolePanel().updateSubAgentToolCall(toolCallId, uiStatus, result, description)
+            consolePanel().updateSubAgentToolCall(toolCallId, uiStatus, result, description, autoDenied, denialReason)
         } else {
-            consolePanel().updateToolCall(toolCallId, uiStatus, result, description, kind)
+            consolePanel().updateToolCall(toolCallId, uiStatus, result, description, kind, autoDenied, denialReason)
         }
     }
 

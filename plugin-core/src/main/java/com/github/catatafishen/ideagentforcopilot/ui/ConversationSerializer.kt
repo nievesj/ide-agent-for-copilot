@@ -61,6 +61,9 @@ internal object ConversationSerializer {
                 obj.addProperty("kind", e.kind)
                 if (!e.result.isNullOrEmpty()) obj.addProperty("result", e.result)
                 if (!e.status.isNullOrEmpty()) obj.addProperty("status", e.status)
+                if (e.autoDenied) obj.addProperty("autoDenied", true)
+                if (!e.denialReason.isNullOrEmpty()) obj.addProperty("denialReason", e.denialReason)
+                if (e.mcpHandled) obj.addProperty("mcpHandled", true)
                 if (e.timestamp.isNotEmpty()) obj.addProperty("ts", e.timestamp)
                 if (e.agent.isNotEmpty()) obj.addProperty("agent", e.agent)
             }
@@ -73,6 +76,8 @@ internal object ConversationSerializer {
                 obj.addProperty("result", e.result ?: "")
                 obj.addProperty("status", e.status ?: "")
                 obj.addProperty("colorIndex", e.colorIndex)
+                if (e.autoDenied) obj.addProperty("autoDenied", true)
+                if (!e.denialReason.isNullOrEmpty()) obj.addProperty("denialReason", e.denialReason)
                 if (e.timestamp.isNotEmpty()) obj.addProperty("ts", e.timestamp)
                 if (e.agent.isNotEmpty()) obj.addProperty("agent", e.agent)
             }
@@ -147,6 +152,11 @@ internal object ConversationSerializer {
             obj["kind"]?.asString ?: "other",
             obj["result"]?.asString,
             obj["status"]?.asString,
+            obj["description"]?.asString,
+            obj["filePath"]?.asString,
+            obj["autoDenied"]?.asBoolean ?: false,
+            obj["denialReason"]?.asString,
+            obj["mcpHandled"]?.asBoolean ?: false,
             obj["ts"]?.asString ?: "",
             obj["agent"]?.asString ?: ""
         )
@@ -161,6 +171,8 @@ internal object ConversationSerializer {
                 obj["status"]?.asString?.ifEmpty { null } ?: "completed",
                 ci,
                 null,
+                obj["autoDenied"]?.asBoolean ?: false,
+                obj["denialReason"]?.asString,
                 obj["ts"]?.asString ?: "",
                 obj["agent"]?.asString ?: ""
             )

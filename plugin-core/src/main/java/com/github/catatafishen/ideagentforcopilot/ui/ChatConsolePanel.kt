@@ -52,6 +52,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         if (state == ToolChipRegistry.ChipState.RUNNING) {
             // MCP is handling this tool — mark as agentbridge tool (solid border) and set running
             executeJs("ChatController.markMcpHandled('$did')")
+            // Mark the entry as MCP handled for persistence
+            toolCallEntries[did]?.mcpHandled = true
         } else {
             // COMPLETE, EXTERNAL, FAILED — just remove the spinner; border already shows origin
             val jsState = if (state == ToolChipRegistry.ChipState.FAILED) "failed" else "complete"
@@ -254,7 +256,14 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun setCurrentAgent(agentName: String, profileId: String, clientType: String) {
         currentAgent = agentName
         currentClientType = clientType
-        executeJs("ChatController.setClientType('${escJs(clientType)}')")
+        val agentCss = ChatTheme.activeAgentCss(profileId)
+        executeJs(
+            "document.documentElement.style.cssText += '$agentCss';ChatController.setClientType('${
+                escJs(
+                    clientType
+                )
+            }')"
+        )
     }
 
     override fun addContextFilesEntry(files: List<Pair<String, String>>) {
@@ -314,7 +323,11 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val filePath = extractFilePathFromArgs(title, arguments)
 
         val entry =
-            EntryData.ToolCall(title, arguments, resolvedKind, null, null, null, filePath, timestamp(), currentAgent)
+            EntryData.ToolCall(
+                title, arguments, resolvedKind, null, null, null, filePath,
+                autoDenied = false, denialReason = null,
+                timestamp = timestamp(), agent = currentAgent
+            )
         entries.add(entry)
 
         val def = toolRegistry?.findById(title)
@@ -349,14 +362,24 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         executeJs("ChatController.upsertToolChip('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','$safeKind','$initialStatus')")
     }
 
-    override fun updateToolCall(id: String, status: String, details: String?, description: String?, kind: String?) {
+    override fun updateToolCall(
+        id: String,
+        status: String,
+        details: String?,
+        description: String?,
+        kind: String?,
+        autoDenied: Boolean,
+        denialReason: String?
+    ) {
         val chipId = registry.findChipIdByClientId(id)
         val did = if (chipId != null) "t-$chipId" else domId(id)
         val resultLen = details?.length ?: 0
-        LOG.debug("updateToolCall: id=$id, chipId=$chipId, status=$status, resultLen=$resultLen, hasDesc=${description != null}")
+        LOG.debug("updateToolCall: id=$id, chipId=$chipId, status=$status, resultLen=$resultLen, hasDesc=${description != null}, denied=$autoDenied")
         toolCallEntries[did]?.let {
             it.result = details
             it.status = status
+            it.autoDenied = autoDenied
+            it.denialReason = denialReason
             if (description != null) it.description = description
             if (kind != null) it.kind = kind
         }
@@ -370,11 +393,20 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             return
         }
 
+        val jsStatus = if (autoDenied) "denied" else when (status) {
+            "failed" -> "failed"
+            else -> "complete"
+        }
+
         // For terminal states, notify the registry — it determines COMPLETE vs EXTERNAL vs FAILED,
         // and the chip state listener updates the DOM with the authoritative final state.
         when (status) {
             "failed" -> registry.completeClientSide(id, false)
             else -> registry.completeClientSide(id, true) // "complete", "completed", etc.
+        }
+
+        if (autoDenied) {
+            executeJs("ChatController.setToolChipState('$did','denied')")
         }
     }
 
@@ -406,14 +438,23 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     /** Update a sub-agent internal tool call (no segment break). */
-    override fun updateSubAgentToolCall(toolId: String, status: String, details: String?, description: String?) {
+    override fun updateSubAgentToolCall(
+        toolId: String,
+        status: String,
+        details: String?,
+        description: String?,
+        autoDenied: Boolean,
+        denialReason: String?
+    ) {
         val did = domId(toolId)
         toolCallEntries[did]?.let {
             it.result = details
             it.status = status
+            it.autoDenied = autoDenied
+            it.denialReason = denialReason
             if (description != null) it.description = description
         }
-        val jsStatus = when (status) {
+        val jsStatus = if (autoDenied) "denied" else when (status) {
             "failed" -> "failed"
             "running" -> "running"
             else -> "completed"
@@ -423,7 +464,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun addSubAgentEntry(
         id: String, agentType: String, description: String, prompt: String?,
-        initialResult: String?, initialStatus: String?, initialDescription: String?
+        initialResult: String?, initialStatus: String?, initialDescription: String?,
+        autoDenied: Boolean, denialReason: String?
     ) {
         maybeStartNewSegment()
         finalizeCurrentText()
@@ -431,6 +473,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val entry = EntryData.SubAgent(
             agentType, description, prompt,
             colorIndex = colorIndex, callId = id,
+            autoDenied = autoDenied, denialReason = denialReason,
             timestamp = timestamp(), agent = currentAgent
         )
         if (initialResult != null) {
@@ -449,27 +492,38 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 )
             }')"
         )
-        if (!initialResult.isNullOrBlank() || initialStatus == "completed" || initialStatus == "failed") {
+        if (autoDenied || !initialResult.isNullOrBlank() || initialStatus == "completed" || initialStatus == "failed") {
+            val status = if (autoDenied) "denied" else (initialStatus ?: "completed")
             val resultHtml =
-                if (!initialResult.isNullOrBlank()) markdownToHtml(initialResult) else if (initialStatus == "completed") "Completed" else FAILED_SPAN
+                if (autoDenied) FAILED_SPAN else if (!initialResult.isNullOrBlank()) markdownToHtml(initialResult) else if (initialStatus == "completed") "Completed" else FAILED_SPAN
             val encoded = b64(resultHtml)
-            executeJs("ChatController.updateSubAgent('$did','${initialStatus ?: "completed"}',b64('$encoded'))")
+            executeJs("ChatController.updateSubAgent('$did','$status',b64('$encoded'))")
         }
     }
 
-    override fun updateSubAgentResult(id: String, status: String, result: String?, description: String?) {
+    override fun updateSubAgentResult(
+        id: String,
+        status: String,
+        result: String?,
+        description: String?,
+        autoDenied: Boolean,
+        denialReason: String?
+    ) {
         val entry = entries.filterIsInstance<EntryData.SubAgent>().find { it.callId == id }
             ?: entries.filterIsInstance<EntryData.SubAgent>().lastOrNull()
         entry?.let {
             it.result = result
             it.status = status
+            it.autoDenied = autoDenied
+            it.denialReason = denialReason
             if (description != null) it.result = "$description\n\n$result"
         }
         val did = domId(id)
+        val jsStatus = if (autoDenied) "denied" else status
         val resultHtml =
-            if (!result.isNullOrBlank()) markdownToHtml(result) else if (status == "completed") "Completed" else FAILED_SPAN
+            if (autoDenied) FAILED_SPAN else if (!result.isNullOrBlank()) markdownToHtml(result) else if (status == "completed") "Completed" else FAILED_SPAN
         val encoded = b64(resultHtml)
-        executeJs("ChatController.updateSubAgent('$did','$status',b64('$encoded'))")
+        executeJs("ChatController.updateSubAgent('$did','$jsStatus',b64('$encoded'))")
         toolJustCompleted = true
     }
 
@@ -774,10 +828,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         toolCallNames[id] = e.title
         toolCallEntries[id] = EntryData.ToolCall(
             e.title, e.arguments, e.kind,
-            result = result, status = status, description = e.description
+            result = result, status = status, description = e.description,
+            mcpHandled = e.mcpHandled
         )
         val paramsAttr = if (e.arguments != null) " data-params='${esc(e.arguments)}'" else ""
-        metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(e.kind)}' data-chip-for='$id'$paramsAttr></tool-chip>")
+        val mcpAttr = if (e.mcpHandled) " data-mcp-handled='true'" else ""
+        metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(e.kind)}' data-chip-for='$id'$paramsAttr$mcpAttr></tool-chip>")
     }
 
     @Suppress("kotlin:S6518") // False positive: CompletableFuture.get(long, TimeUnit) is not an indexed accessor
@@ -876,13 +932,22 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         status: String?,
         details: String?,
         arguments: String? = null,
-        description: String? = null
+        description: String? = null,
+        autoDenied: Boolean = false,
+        denialReason: String? = null
     ): JComponent {
         val detailsLen = details?.length ?: 0
         val descLen = description?.length ?: 0
-        LOG.debug("renderToolResultPanel: baseName=$baseName, status=$status, detailsLen=$detailsLen, descLen=$descLen")
+        LOG.debug("renderToolResultPanel: baseName=$baseName, status=$status, detailsLen=$detailsLen, descLen=$descLen, denied=$autoDenied")
 
         val container = ToolRenderers.listPanel()
+
+        if (autoDenied) {
+            container.add(JBLabel("<html><body style='width: 450px'><span style='color: #FF0000; font-weight: bold;'>Tool call was automatically denied.</span><br/>Reason: ${denialReason ?: "Security policy"}</body></html>").apply {
+                border = com.intellij.util.ui.JBUI.Borders.empty(0, 0, 8, 0)
+                alignmentX = JComponent.LEFT_ALIGNMENT
+            })
+        }
 
         // 1. Show natural language description/explanation if available
         if (!description.isNullOrBlank()) {
@@ -1057,15 +1122,35 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val kind = entry?.kind ?: "other"
         val toolDef = baseName?.let { toolRegistry?.findById(it) }
         val mcpDescription = if (toolDef != null && !toolDef.isBuiltIn()) toolDef.description() else null
+        val autoDenied = entry?.autoDenied ?: false
+        val denialReason = entry?.denialReason
         val resultPanel =
-            renderToolResultPanel(baseName, entry?.status, entry?.result, entry?.arguments, entry?.description)
+            renderToolResultPanel(
+                baseName,
+                entry?.status,
+                entry?.result,
+                entry?.arguments,
+                entry?.description,
+                autoDenied,
+                denialReason
+            )
         val arguments = entry?.arguments
         val paramsPanel = if (!arguments.isNullOrBlank()) {
             ToolRenderers.jsonEditor(prettyJson(arguments), project)
         } else null
         val filePath = entry?.filePath
         ApplicationManager.getApplication().invokeLater {
-            ToolCallPopup.show(project, chipTitle, kind, paramsPanel, resultPanel, mcpDescription, filePath)
+            ToolCallPopup.show(
+                project,
+                chipTitle,
+                kind,
+                paramsPanel,
+                resultPanel,
+                mcpDescription,
+                filePath,
+                autoDenied,
+                denialReason
+            )
         }
     }
 

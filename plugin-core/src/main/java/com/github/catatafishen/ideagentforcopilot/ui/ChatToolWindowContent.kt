@@ -6,9 +6,7 @@ import com.github.catatafishen.ideagentforcopilot.agent.AgentException
 import com.github.catatafishen.ideagentforcopilot.bridge.ConversationStore
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.settings.BillingSettings
-import com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings
 import com.intellij.icons.AllIcons
-import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction
 import com.intellij.openapi.actionSystem.ex.CustomComponentAction
@@ -41,7 +39,6 @@ class ChatToolWindowContent(
         const val AGENT_WORK_DIR = ".agent-work"
         const val CARD_CONNECT = "connect"
         const val CARD_CHAT = "chat"
-        const val KEY_PASTE_OVERRIDE = "copilot.pasteOverrideEnabled"
     }
 
     private val cardLayout = CardLayout()
@@ -147,7 +144,6 @@ class ChatToolWindowContent(
     private fun setupTitleBarActions() {
         val actions = listOf(
             FollowAgentFilesToggleAction(),
-            PasteOverrideToggleAction(),
             Separator.create(),
             ProjectFilesDropdownAction(),
             Separator.create(),
@@ -1000,20 +996,6 @@ class ChatToolWindowContent(
         }
     }
 
-    private inner class PasteOverrideToggleAction : ToggleAction(
-        "Smart Paste",
-        "Intercept large clipboard pastes to create scratch files instead",
-        AllIcons.Actions.MenuPaste
-    ) {
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
-
-        override fun isSelected(e: AnActionEvent): Boolean =
-            PropertiesComponent.getInstance(project).getBoolean(KEY_PASTE_OVERRIDE, true)
-
-        override fun setSelected(e: AnActionEvent, state: Boolean) {
-            PropertiesComponent.getInstance(project).setValue(KEY_PASTE_OVERRIDE, state)
-        }
-    }
 
     /** Open a project-root file in the editor if it exists. */
     private fun openProjectFile(fileName: String) {
@@ -1023,7 +1005,7 @@ class ChatToolWindowContent(
         com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(vf, true)
     }
 
-    /** Dropdown action for project configuration files: Instructions, task file, Agent Definitions, MCP Instructions. */
+    /** Dropdown action for project configuration files. */
     private inner class ProjectFilesDropdownAction : AnAction(
         "Project Files", "Open project configuration files",
         AllIcons.Nodes.Folder
@@ -1037,33 +1019,33 @@ class ChatToolWindowContent(
 
         private fun showPopup(owner: Component) {
             val group = DefaultActionGroup()
-            val base = project.basePath
+            val base = project.basePath ?: return
 
-            val entries = ProjectFilesSettings.getInstance().entries
-            // Group entries by their group field
-            val groupedEntries = entries.groupBy { it.group }.toSortedMap()
+            // Shared
+            group.addSeparator("Shared")
+            addFileAction(group, base, "TODO.md", "TODO")
+            addFileAction(group, base, "AGENTS.md", "AGENTS")
 
-            var firstGroup = true
-            for ((groupName, groupEntries) in groupedEntries) {
-                if (!firstGroup) {
-                    group.addSeparator()
-                }
-                firstGroup = false
+            // Copilot CLI
+            group.addSeparator("Copilot CLI")
+            addGlobSection(group, base, ".agent-work/copilot/agents", "*.md", "agents")
+            addGlobSection(group, base, ".agent-work/copilot/skills", "*/SKILL.md", "skills")
+            addGlobSection(group, base, ".agent-work/copilot/instructions", "*.instructions.md", "instructions")
 
-                if (groupName.isNotEmpty()) {
-                    group.addSeparator(groupName)
-                }
+            // OpenCode
+            group.addSeparator("OpenCode")
+            addGlobSection(group, base, ".agent-work/opencode/agent", "*.md", "agent")
 
-                for (entry in groupEntries) {
-                    if (entry.isGlob) {
-                        addGlobEntries(group, base, entry)
-                    } else {
-                        addFileEntry(group, base, entry)
-                    }
-                }
-            }
+            // Junie
+            group.addSeparator("Junie")
+            addFileAction(group, base, ".agent-work/junie/guidelines.md", "guidelines.md")
+            addGlobSection(group, base, ".agent-work/junie/agents", "*.md", "agents")
 
-            group.addSeparator("MCP Server")
+            // Kiro
+            group.addSeparator("Kiro")
+            addGlobSection(group, base, ".agent-work/kiro/agents", "*.json", "agents")
+            addGlobSection(group, base, ".agent-work/kiro/skills", "*/SKILL.md", "skills")
+
             val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
                 .createActionGroupPopup(
                     null, group, com.intellij.openapi.actionSystem.impl.SimpleDataContext.getProjectContext(project),
@@ -1073,59 +1055,61 @@ class ChatToolWindowContent(
             popup.showUnderneathOf(owner)
         }
 
-        private fun addFileEntry(group: DefaultActionGroup, base: String?, entry: ProjectFilesSettings.FileEntry) {
-            val file = if (base != null) java.io.File(base, entry.path) else null
-            val exists = file?.exists() == true
+        private fun addFileAction(group: DefaultActionGroup, base: String, path: String, label: String) {
+            val file = java.io.File(base, path)
+            val exists = file.exists()
             group.add(object : AnAction(
-                entry.label,
-                if (exists) "Open ${entry.path}" else "${entry.path} not found",
+                label,
+                if (exists) "Open $path" else "Create $path",
                 if (exists) AllIcons.FileTypes.Text else AllIcons.Actions.IntentionBulbGrey
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
-                override fun update(e: AnActionEvent) {
-                    e.presentation.isEnabled = exists
+                override fun actionPerformed(e: AnActionEvent) {
+                    if (!exists) {
+                        file.parentFile?.mkdirs()
+                        file.writeText("")
+                    }
+                    openProjectFile(path)
                 }
-
-                override fun actionPerformed(e: AnActionEvent) = openProjectFile(entry.path)
             })
         }
 
-        private fun addGlobEntries(group: DefaultActionGroup, base: String?, entry: ProjectFilesSettings.FileEntry) {
-            group.addSeparator(entry.label)
-            if (base == null) return
+        private fun addGlobSection(group: DefaultActionGroup, base: String, dirPath: String, pattern: String, label: String) {
+            val dir = java.io.File(base, dirPath)
+            val files = findMatchingFiles(dir, pattern)
 
-            val globPath = entry.path
-            val lastSlash = globPath.lastIndexOf('/')
-            val dirPart = if (lastSlash >= 0) globPath.substring(0, lastSlash) else ""
-            val patternPart = if (lastSlash >= 0) globPath.substring(lastSlash + 1) else globPath
-            val regex = Regex("^" + patternPart.replace(".", "\\.").replace("*", ".*") + "$")
-
-            val dir = java.io.File(base, dirPart)
-            val matched = dir.listFiles { f -> f.isFile && regex.matches(f.name) }
-                ?.sortedBy { it.name } ?: emptyList()
-
-            if (matched.isNotEmpty()) {
-                for (file in matched) {
-                    val relPath = if (dirPart.isNotEmpty()) "$dirPart/${file.name}" else file.name
-                    group.add(object : AnAction(
-                        file.nameWithoutExtension,
-                        "Open ${file.name}",
-                        AllIcons.General.User
-                    ) {
-                        override fun getActionUpdateThread() = ActionUpdateThread.BGT
-                        override fun actionPerformed(e: AnActionEvent) = openProjectFile(relPath)
-                    })
-                }
-            } else {
-                group.add(object : AnAction("None Found", null, null) {
+            if (files.isEmpty()) {
+                group.add(object : AnAction("$label (none)", "No files found", AllIcons.Actions.IntentionBulbGrey) {
                     override fun getActionUpdateThread() = ActionUpdateThread.BGT
                     override fun update(e: AnActionEvent) {
                         e.presentation.isEnabled = false
                     }
-
-                    override fun actionPerformed(e: AnActionEvent) { /* disabled — no-op */
-                    }
+                    override fun actionPerformed(e: AnActionEvent) {}
                 })
+            } else {
+                files.forEach { file ->
+                    val relPath = file.relativeTo(java.io.File(base)).path
+                    group.add(object : AnAction(file.nameWithoutExtension, "Open ${file.name}", AllIcons.FileTypes.Text) {
+                        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+                        override fun actionPerformed(e: AnActionEvent) = openProjectFile(relPath)
+                    })
+                }
+            }
+        }
+
+        private fun findMatchingFiles(dir: java.io.File, pattern: String): List<java.io.File> {
+            if (!dir.exists()) return emptyList()
+
+            return if (pattern.contains("/")) {
+                // Pattern like "*/SKILL.md" - search subdirectories
+                val parts = pattern.split("/")
+                dir.listFiles()?.filter { it.isDirectory }?.flatMap { subDir ->
+                    subDir.listFiles { f -> f.isFile && f.name == parts[1] }?.toList() ?: emptyList()
+                }?.sortedBy { it.name } ?: emptyList()
+            } else {
+                // Simple pattern like "*.md"
+                val regex = Regex("^" + pattern.replace(".", "\\.").replace("*", ".*") + "$")
+                dir.listFiles { f -> f.isFile && regex.matches(f.name) }?.sortedBy { it.name }?.toList() ?: emptyList()
             }
         }
     }
@@ -1281,7 +1265,11 @@ class ChatToolWindowContent(
         contentComponent: JComponent,
         pasteStrokes: Set<KeyStroke>
     ): Boolean {
-        if (!PropertiesComponent.getInstance(project).getBoolean(KEY_PASTE_OVERRIDE, true)) return false
+        if (!com.intellij.ide.util.PropertiesComponent.getInstance().getBoolean(
+                com.github.catatafishen.ideagentforcopilot.settings.ScratchTypesConfigurable.KEY_PASTE_OVERRIDE,
+                true
+            )
+        ) return false
         if (event !is java.awt.event.KeyEvent) return false
         if (editor.isDisposed) return false
         if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return false

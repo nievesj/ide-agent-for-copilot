@@ -3,6 +3,8 @@ package com.github.catatafishen.ideagentforcopilot.acp.client;
 import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
 import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
 import com.github.catatafishen.ideagentforcopilot.agent.junie.JunieKeyStore;
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
+import com.github.catatafishen.ideagentforcopilot.settings.StartupInstructionsSettings;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -65,10 +67,30 @@ public final class JunieClient extends AcpClient {
 
     @Override
     protected String resolveToolId(String protocolTitle) {
-        if (protocolTitle.startsWith("agentbridge_")) {
-            return protocolTitle.substring("agentbridge_".length());
+        String title = protocolTitle.trim();
+        if (title.startsWith("agentbridge_")) {
+            return title.substring("agentbridge_".length());
         }
-        return protocolTitle.replaceFirst("^Tool: agentbridge/", "");
+        if (title.startsWith("Tool: agentbridge/")) {
+            return title.substring("Tool: agentbridge/".length());
+        }
+
+        // Handle natural language titles Junie sends for its built-in tools (as fallbacks)
+        String lower = title.toLowerCase();
+        if (lower.startsWith("open ")) return "read_file";
+        if (lower.startsWith("searched ") || lower.startsWith("found ")) return "search_text";
+        if (lower.startsWith("edit ")) return "edit_text";
+        if (lower.startsWith("bash ") || lower.startsWith("run ")) return "run_command";
+        if (lower.startsWith("build ")) return "build_project";
+
+        // Handle case-insensitive match for common tools not explicitly prefixed
+        if ("build project".equals(lower)) return "build_project";
+        if ("read file".equals(lower)) return "read_file";
+        if ("edit text".equals(lower)) return "edit_text";
+        if ("search text".equals(lower)) return "search_text";
+        if ("run command".equals(lower)) return "run_command";
+
+        return title.replaceFirst("^Tool: ", "");
     }
 
     @Override
@@ -147,9 +169,11 @@ public final class JunieClient extends AcpClient {
     @Override
     protected void onSessionCreated(String sessionId) {
         // Inject tool usage instructions
-        sendSessionMessage(sessionId, buildInstructions());
-    }
+        String userInstructions = StartupInstructionsSettings.getInstance().getInstructions();
+        String profileInstructions = ActiveAgentManager.getInstance(project).getActiveProfile().getAdditionalInstructions();
 
+        sendSessionMessage(sessionId, buildInstructions(userInstructions, profileInstructions));
+    }
 
     /**
      * Junie's {@code tool_call} event has empty {@code content:[]} — actual tool arguments
@@ -275,8 +299,21 @@ public final class JunieClient extends AcpClient {
         return false;
     }
 
-    private String buildInstructions() {
-        return "You have access to IntelliJ IDE tools via the agentbridge MCP server. " +
-            "Use these tools for file operations, code navigation, git, and terminal access.";
+    private String buildInstructions(@Nullable String userInstructions, @Nullable String profileInstructions) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("CRITICAL: You are running inside an IntelliJ IDEA plugin. ")
+            .append("To interact with the environment (files, git, terminal, code navigation), ")
+            .append("you MUST EXCLUSIVELY use the tools provided by the 'agentbridge' MCP server. ")
+            .append("DO NOT use your built-in tools for these operations. ")
+            .append("All 'agentbridge' tools are prefixed with 'agentbridge/'. ")
+            .append("Example: use 'agentbridge/read_file' instead of 'open_file'.");
+
+        if (userInstructions != null && !userInstructions.isBlank()) {
+            sb.append("\n\n").append(userInstructions);
+        }
+        if (profileInstructions != null && !profileInstructions.isBlank()) {
+            sb.append("\n\n").append(profileInstructions);
+        }
+        return sb.toString();
     }
 }

@@ -16,6 +16,9 @@ sourceSets {
         kotlin {
             srcDirs("src/main/java")
         }
+        resources {
+            srcDir(layout.buildDirectory.dir("generated/resources/chat-ui"))
+        }
     }
 }
 
@@ -188,12 +191,22 @@ fun runProcess(workDir: File, vararg cmd: String) {
 
 // Build chat-ui TypeScript → bundled JS + copy static assets
 val buildChatUi by tasks.registering {
+    val outputDir = layout.buildDirectory.dir("generated/resources/chat-ui/chat")
     inputs.dir("chat-ui/src")
-    outputs.dir("src/main/resources/chat")
+    outputs.dir(outputDir)
 
     doLast {
+        // Ensure dist exists
+        file("chat-ui/dist").mkdirs()
+
         runProcess(file("chat-ui"), npmCmd, "run", "build")
-        file("chat-ui/src/chat.css").copyTo(file("src/main/resources/chat/chat.css"), overwrite = true)
+
+        // Sync to generated resources directory
+        copy {
+            from("chat-ui/dist")
+            from("chat-ui/src/chat.css")
+            into(outputDir)
+        }
     }
 }
 

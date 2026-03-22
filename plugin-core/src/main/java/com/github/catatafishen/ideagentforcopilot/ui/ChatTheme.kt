@@ -77,6 +77,7 @@ object ChatTheme {
             val c = SA_COLORS[i]
             sb.append("--sa-c$i:${rgb(c)};--sa-c$i-a06:${rgba(c, 0.06)};--sa-c$i-a10:${rgba(c, 0.10)};--sa-c$i-a15:${rgba(c, 0.15)};")
         }
+        sb.append("--active-agent:${rgb(AGENT_COLOR)};--active-agent-a06:${rgba(AGENT_COLOR, 0.06)};")
         sb.append("--kind-read:${rgb(KIND_READ_COLOR)};--kind-edit:${rgb(KIND_EDIT_COLOR)};")
         sb.append("--kind-execute:${rgb(KIND_EXECUTE_COLOR)};--kind-search:${rgb(KIND_SEARCH_COLOR)};")
         sb.append("--kind-think:${rgb(KIND_THINK_COLOR)};--kind-other:${rgb(KIND_OTHER_COLOR)};")
@@ -95,6 +96,11 @@ object ChatTheme {
         "kiro" -> 3              // pink
         "opencode" -> 4          // blue
         else -> profileId.hashCode().and(Int.MAX_VALUE) % SA_COLOR_COUNT
+    }
+
+    fun activeAgentCss(profileId: String): String {
+        val idx = agentColorIndex(profileId)
+        return "--active-agent:var(--sa-c$idx);--active-agent-a06:var(--sa-c$idx-a06);"
     }
 
     private fun rgb(c: Color) = "rgb(${c.red},${c.green},${c.blue})"

@@ -219,19 +219,26 @@ public sealed interface SessionUpdate
     /**
      * Status update for an in-progress tool call.
      *
-     * @param toolCallId  ID matching the originating {@link ToolCall}
-     * @param status      terminal outcome
-     * @param result      result text for a completed call (may be null)
-     * @param error       error message for a failed call (may be null)
-     * @param description optional natural language explanation of the result (may be null)
+     * @param toolCallId    ID matching the originating {@link ToolCall}
+     * @param status        terminal outcome
+     * @param result        result text for a completed call (may be null)
+     * @param error         error message for a failed call (may be null)
+     * @param description   optional natural language explanation of the result (may be null)
+     * @param autoDenied    true if the tool was automatically denied by the plugin (security/policy)
+     * @param denialReason  human-readable reason for the auto-denial, or null
      */
     record ToolCallUpdate(
         @NotNull String toolCallId,
         @NotNull ToolCallStatus status,
         @Nullable String result,
         @Nullable String error,
-        @Nullable String description
+        @Nullable String description,
+        boolean autoDenied,
+        @Nullable String denialReason
     ) implements SessionUpdate {
+        public ToolCallUpdate(@NotNull String toolCallId, @NotNull ToolCallStatus status, @Nullable String result, @Nullable String error, @Nullable String description) {
+            this(toolCallId, status, result, error, description, false, null);
+        }
     }
 
     /**

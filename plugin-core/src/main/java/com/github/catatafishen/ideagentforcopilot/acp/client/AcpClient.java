@@ -1077,8 +1077,23 @@ public abstract class AcpClient extends AbstractAgentClient {
 
         JsonObject chosenOption = null;
         if (!toolId.isEmpty() && isToolBlocked(toolId)) {
-            LOG.warn(displayName() + ": tool '" + toolId + "' is blocked (built-in). Denying permission.");
+            String reason = "Tool '" + toolId + "' is blocked by the current agent profile (excludeAgentBuiltInTools=true).";
+            LOG.warn(displayName() + ": " + reason);
             chosenOption = findOptionByKind(params, VALUE_DENY_ONCE);
+
+            // Notify UI that this tool was auto-denied
+            if (updateConsumer != null) {
+                updateConsumer.accept(new SessionUpdate.ToolCallUpdate(
+                    toolCallId,
+                    SessionUpdate.ToolCallStatus.FAILED,
+                    null,
+                    "Auto-denied: " + reason,
+                    null,
+                    true,
+                    reason
+                ));
+            }
+
             if (chosenOption == null) {
                 // Fallback: if we must deny but agent doesn't offer "deny_once",
                 // we'll try to find any option that isn't allow. But typically "deny_once" exists.

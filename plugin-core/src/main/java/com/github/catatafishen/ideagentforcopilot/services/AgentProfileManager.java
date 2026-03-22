@@ -121,6 +121,7 @@ public final class AgentProfileManager {
         p.setInstallHint("Install from junie.jetbrains.com and run 'junie' to authenticate.");
         p.setInstallUrl("https://junie.jetbrains.com/docs/junie-cli.html");
         p.setSendResourceReferences(false); // Junie doesn't support Resource content blocks - append to prompt instead
+        p.setExcludeAgentBuiltInTools(true); // Favor agentbridge tools for consistent IDE experience
         return p;
     }
 

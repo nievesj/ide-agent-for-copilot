@@ -60,6 +60,9 @@ sealed class EntryData {
         var status: String? = null,
         var description: String? = null,
         var filePath: String? = null,
+        var autoDenied: Boolean = false,
+        var denialReason: String? = null,
+        var mcpHandled: Boolean = false,
         val timestamp: String = "",
         val agent: String = ""
     ) : EntryData()
@@ -72,6 +75,8 @@ sealed class EntryData {
         var status: String? = null,
         var colorIndex: Int = 0,
         val callId: String? = null,
+        var autoDenied: Boolean = false,
+        var denialReason: String? = null,
         val timestamp: String = "",
         val agent: String = ""
     ) : EntryData()

@@ -11,6 +11,10 @@ export default class ToolChip extends HTMLElement {
         if (this._init) return;
         this._init = true;
         this.classList.add('turn-chip', 'tool');
+        // Check if this tool was handled by MCP (from restored history)
+        if (this.dataset.mcpHandled === 'true') {
+            this.classList.add('is-agentbridge-tool');
+        }
         this.setAttribute('role', 'button');
         this.setAttribute('tabindex', '0');
         this.setAttribute('aria-expanded', 'false');
@@ -38,7 +42,8 @@ export default class ToolChip extends HTMLElement {
         let iconHtml = '';
         if (status === 'running') iconHtml = '<span class="chip-spinner"></span> ';
         if (status === 'pending') iconHtml = '<span class="chip-spinner"></span> ';
-        this.classList.toggle('failed', status === 'failed');
+        if (status === 'denied') iconHtml = '<span style="color:var(--error);margin-right:4px">\u2716</span>';
+        this.classList.toggle('failed', status === 'failed' || status === 'denied');
         this.innerHTML = iconHtml + escHtml(truncated);
         if (label.length > 50) {
             this.dataset.tip = label;

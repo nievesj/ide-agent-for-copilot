@@ -22,12 +22,12 @@ async function build() {
         bundle: true,
         format: 'iife',
         globalName: '__chatUI',
-        outfile: '../src/main/resources/chat/chat-components.js',
+        outfile: 'dist/chat-components.js',
         target: 'es2022',
     });
 
     // Prepend banner to the output file
-    const outputPath = '../src/main/resources/chat/chat-components.js';
+    const outputPath = 'dist/chat-components.js';
     const content = fs.readFileSync(outputPath, 'utf8');
     fs.writeFileSync(outputPath, banner + content);
 

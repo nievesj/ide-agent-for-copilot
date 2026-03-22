@@ -4,7 +4,7 @@ This directory contains the **TypeScript source files** for the chat UI componen
 
 ## ⚠️ Important: Do NOT edit the generated JavaScript file!
 
-The file `plugin-core/src/main/resources/chat/chat-components.js` is **auto-generated** from these TypeScript sources. Any edits made directly to that file will be lost on the next build.
+The file `plugin-core/build/generated/resources/chat-ui/chat/chat-components.js` is **auto-generated** from these TypeScript sources. Any edits made directly to that file will be lost on the next build.
 
 ## Making Changes
 
@@ -14,7 +14,7 @@ The file `plugin-core/src/main/resources/chat/chat-components.js` is **auto-gene
    cd plugin-core/chat-ui
    npm run build
    ```
-3. The changes will be compiled into `plugin-core/src/main/resources/chat/chat-components.js`
+3. The changes will be compiled into `plugin-core/chat-ui/dist/chat-components.js` and then synced to the plugin resources by Gradle.
 
 ## Project Structure
 
@@ -22,20 +22,15 @@ The file `plugin-core/src/main/resources/chat/chat-components.js` is **auto-gene
 plugin-core/chat-ui/
 ├── src/                         # TypeScript source files (EDIT THESE)
 │   ├── index.ts                 # Entry point
-│   ├── ChatController.ts        # Main controller
-│   ├── toolDisplayName.ts       # Tool display name mappings
-│   ├── helpers.ts               # Utility functions
-│   ├── types.ts                 # TypeScript types
-│   └── components/              # UI components
-│       ├── ChatContainer.ts
-│       ├── ToolChip.ts
-│       └── ...
+│   ├── ...
 ├── build.js                     # Build script (adds header comment)
+├── dist/                        # Generated JS (from esbuild)
 ├── package.json                 # npm dependencies and scripts
 └── tsconfig.json                # TypeScript configuration
 
-plugin-core/src/main/resources/chat/
-└── chat-components.js           # Generated output (DO NOT EDIT)
+plugin-core/build/generated/resources/chat-ui/chat/
+└── chat-components.js           # Final bundled output (synced by Gradle)
+└── chat.css                     # Synced by Gradle
 ```
 
 ## Development
@@ -55,7 +50,7 @@ npm run typecheck
 ## For AI Agents
 
 If you're an AI agent making changes to the chat UI:
-- **NEVER** edit `plugin-core/src/main/resources/chat/chat-components.js` directly
-- **ALWAYS** edit the TypeScript source files in `plugin-core/chat-ui/src/`
-- **ALWAYS** run `npm run build` after making changes
-- The generated file has a header comment warning against direct edits
+- **NEVER** edit any files in `plugin-core/src/main/resources/chat/` directly
+- **ALWAYS** edit the TypeScript/CSS source files in `plugin-core/chat-ui/src/`
+- **ALWAYS** run `./gradlew :plugin-core:buildChatUi` or a full build after making changes
+- The generated files have a header comment warning against direct edits

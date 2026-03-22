@@ -51,17 +51,23 @@ interface ChatPanelApi : Disposable {
         status: String,
         details: String? = null,
         description: String? = null,
-        kind: String? = null
+        kind: String? = null,
+        autoDenied: Boolean = false,
+        denialReason: String? = null
     )
 
     // ── Sub-agents ─────────────────────────────────────────────────
 
     fun addSubAgentEntry(
         id: String, agentType: String, description: String, prompt: String?,
-        initialResult: String? = null, initialStatus: String? = null, initialDescription: String? = null
+        initialResult: String? = null, initialStatus: String? = null, initialDescription: String? = null,
+        autoDenied: Boolean = false, denialReason: String? = null
     )
 
-    fun updateSubAgentResult(id: String, status: String, result: String?, description: String? = null)
+    fun updateSubAgentResult(
+        id: String, status: String, result: String?, description: String? = null,
+        autoDenied: Boolean = false, denialReason: String? = null
+    )
 
     // ── Sub-agent internal tool calls ──────────────────────────────
 
@@ -73,7 +79,10 @@ interface ChatPanelApi : Disposable {
         kind: String? = null
     )
 
-    fun updateSubAgentToolCall(toolId: String, status: String, details: String? = null, description: String? = null)
+    fun updateSubAgentToolCall(
+        toolId: String, status: String, details: String? = null, description: String? = null,
+        autoDenied: Boolean = false, denialReason: String? = null
+    )
 
     // ── Status / errors ────────────────────────────────────────────
 

@@ -38,6 +38,8 @@ internal object ToolCallPopup {
      * @param resultPanel     Swing component for the result section
      * @param toolDescription optional one-liner description for MCP tools, shown at the top of the popup
      * @param filePath        optional file path for edit tools, enables "Show Local History" button
+     * @param autoDenied      true if the tool was automatically denied by the plugin (security/policy)
+     * @param denialReason    human-readable reason for the auto-denial, or null
      */
     fun show(
         project: Project,
@@ -47,6 +49,8 @@ internal object ToolCallPopup {
         resultPanel: JComponent,
         toolDescription: String? = null,
         filePath: String? = null,
+        autoDenied: Boolean = false,
+        denialReason: String? = null
     ) {
         currentPopup?.cancel()
 
@@ -54,7 +58,7 @@ internal object ToolCallPopup {
         val panelBg = UIUtil.getPanelBackground()
         val tintedBg = ToolRenderers.blendColor(kindColor, panelBg, 0.07)
 
-        val contentPanel = buildContentPanel(tintedBg, resultPanel, paramsPanel, toolDescription, project, filePath)
+        val contentPanel = buildContentPanel(tintedBg, resultPanel, paramsPanel, toolDescription, project, filePath, autoDenied, denialReason)
 
         val width = popupWidth()
         val height = popupHeight()
@@ -104,6 +108,8 @@ internal object ToolCallPopup {
         toolDescription: String? = null,
         project: Project,
         filePath: String?,
+        autoDenied: Boolean = false,
+        denialReason: String? = null,
     ): JBPanel<JBPanel<*>> {
         val panel = object : JBPanel<JBPanel<*>>(), Scrollable {
             override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
@@ -122,6 +128,33 @@ internal object ToolCallPopup {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             background = bg
             border = JBUI.Borders.empty(8, 12)
+        }
+
+        if (autoDenied) {
+            val denialPanel = JBPanel<JBPanel<*>>().apply {
+                layout = BoxLayout(this, BoxLayout.Y_AXIS)
+                background = bg
+                border = JBUI.Borders.compound(
+                    JBUI.Borders.customLine(JBColor.RED, 1),
+                    JBUI.Borders.empty(8)
+                )
+                alignmentX = JComponent.LEFT_ALIGNMENT
+
+                add(JBLabel("Tool call was automatically denied by the plugin.").apply {
+                    foreground = JBColor.RED
+                    font = JBUI.Fonts.label().asBold()
+                    alignmentX = JComponent.LEFT_ALIGNMENT
+                })
+                if (denialReason != null) {
+                    add(Box.createVerticalStrut(JBUI.scale(4)))
+                    add(JBLabel("<html><body style='width:580px'>Reason: $denialReason</body></html>").apply {
+                        foreground = JBColor.RED
+                        alignmentX = JComponent.LEFT_ALIGNMENT
+                    })
+                }
+            }
+            panel.add(denialPanel)
+            panel.add(Box.createVerticalStrut(JBUI.scale(12)))
         }
 
         if (toolDescription != null) {
