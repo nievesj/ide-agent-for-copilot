@@ -280,6 +280,7 @@ public final class ToolChipRegistry {
             kindSnapshot = new ArrayList<>(kindListeners);
         }
         if (snapshot.isEmpty() && kindSnapshot.isEmpty()) return;
+        LOG.debug("ToolChipRegistry: fireState " + chipId + " -> " + state + " (listeners=" + snapshot.size() + ", kindListeners=" + kindSnapshot.size() + ")");
         ApplicationManager.getApplication().invokeLater(() -> {
             for (var listener : snapshot) {
                 try {
@@ -303,7 +304,11 @@ public final class ToolChipRegistry {
             TreeMap<String, String> sorted = new TreeMap<>();
             for (String key : args.keySet()) {
                 if (!"__tool_use_purpose".equals(key)) {
-                    sorted.put(key, args.get(key).toString());
+                    com.google.gson.JsonElement value = args.get(key);
+                    // Use a stable JSON representation for the value to ensure consistency
+                    // regardless of internal GSON representation or property order in nested objects.
+                    String stableValue = (value == null || value.isJsonNull()) ? "null" : value.toString();
+                    sorted.put(key, stableValue);
                 }
             }
             return String.format("%08x", sorted.toString().hashCode());

@@ -195,24 +195,26 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         registerChipStateListener()
     }
 
-    private fun registerChipStateListener() {
-        registry.addKindStateListener { chipId, state, kind ->
-            // Use "t-$chipId" — chips are registered in the DOM as data-chip-for="t-<chipId>"
-            val did = "t-$chipId"
-            if (state == ToolChipRegistry.ChipState.RUNNING) {
-                // MCP is handling this tool — mark as agentbridge tool (solid border) and set running
-                executeJs("ChatController.markMcpHandled('$did')")
-            } else {
-                // COMPLETE, EXTERNAL, FAILED — just remove the spinner; border already shows origin
-                val jsState = if (state == ToolChipRegistry.ChipState.FAILED) "failed" else "complete"
-                executeJs("ChatController.setToolChipState('$did','$jsState')")
-                toolJustCompleted = true
-            }
-            if (kind != null) {
-                val jsKind = kind.replace("'", "\\'")
-                executeJs("ChatController.updateToolCallKind('$did','$jsKind')")
-            }
+    private val kindStateListener = ToolChipRegistry.ChipStateWithKindListener { chipId, state, kind ->
+        // Use "t-$chipId" — chips are registered in the DOM as data-chip-for="t-<chipId>"
+        val did = "t-$chipId"
+        if (state == ToolChipRegistry.ChipState.RUNNING) {
+            // MCP is handling this tool — mark as agentbridge tool (solid border) and set running
+            executeJs("ChatController.markMcpHandled('$did')")
+        } else {
+            // COMPLETE, EXTERNAL, FAILED — just remove the spinner; border already shows origin
+            val jsState = if (state == ToolChipRegistry.ChipState.FAILED) "failed" else "complete"
+            executeJs("ChatController.setToolChipState('$did','$jsState')")
+            toolJustCompleted = true
         }
+        if (kind != null) {
+            val jsKind = kind.replace("'", "\\'")
+            executeJs("ChatController.updateToolCallKind('$did','$jsKind')")
+        }
+    }
+
+    private fun registerChipStateListener() {
+        registry.addKindStateListener(kindStateListener)
     }
 
     // ── Public API ─────────────────────────────────────────────────
@@ -804,6 +806,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     override fun dispose() {
+        registry.removeKindStateListener(kindStateListener)
         repaintTimer.stop()
         instances.remove(project)
     }
@@ -897,7 +900,6 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         } else {
             details
         }
-
         if (finalDetails.isNullOrBlank()) {
             val label = when (status) {
                 "failed" -> "✖ Failed"
