@@ -44,9 +44,10 @@ import java.util.function.BiConsumer;
 public final class ToolChipRegistry {
     private static final Logger LOG = Logger.getInstance(ToolChipRegistry.class);
 
-    public enum ChipState { PENDING, RUNNING, COMPLETE, EXTERNAL, FAILED }
+    public enum ChipState {PENDING, RUNNING, COMPLETE, EXTERNAL, FAILED}
 
-    public record ChipRegistration(@NotNull String chipId, @NotNull ChipState initialState) {}
+    public record ChipRegistration(@NotNull String chipId, @NotNull ChipState initialState) {
+    }
 
     record ChipEntry(
         @NotNull String chipId,
@@ -58,6 +59,7 @@ public final class ToolChipRegistry {
         ChipEntry withMcp() {
             return new ChipEntry(chipId, displayName, clientId, true, createdAt);
         }
+
         ChipEntry withClientId(@NotNull String id, @NotNull String name) {
             return new ChipEntry(chipId, name, id, mcpHandled, createdAt);
         }
@@ -104,6 +106,7 @@ public final class ToolChipRegistry {
         }
 
         String baseHash = computeBaseHash(args);
+        LOG.info("ToolChipRegistry [ACP→Client]: tool=" + displayTitle + " hash=" + baseHash + " args=" + args);
 
         // Look for a MCP-first chip (mcpHandled=true, clientId=null) with this hash
         ChipEntry mcpFirst = findMcpFirstChip(baseHash);
@@ -143,17 +146,19 @@ public final class ToolChipRegistry {
      */
     public synchronized void registerMcp(@NotNull String toolName, @NotNull JsonObject args, @Nullable String kind) {
         String baseHash = computeBaseHash(args);
+        LOG.info("ToolChipRegistry [MCP→Server]: tool=" + toolName + " hash=" + baseHash + " args=" + args);
 
         // Find the newest unmatched client-side chip (newest = last in insertion order)
         ChipEntry target = findNewestUnmatchedClientChip(baseHash);
         if (target != null) {
             chips.put(target.chipId(), target.withMcp());
-            LOG.debug("ToolChipRegistry: MCP matched " + target.chipId() + " (" + toolName + ")");
+            LOG.info("ToolChipRegistry [MCP→Server]: ✓ MATCHED client chip " + target.chipId() + " for tool=" + toolName);
             fireState(target.chipId(), ChipState.RUNNING, kind);
             return;
         }
 
         // MCP arrived first — store for when client-side arrives
+        LOG.warn("ToolChipRegistry [MCP→Server]: ✗ NO MATCH for tool=" + toolName + " hash=" + baseHash + " — MCP arrived before client or hash mismatch!");
         ChipEntry entry = new ChipEntry(baseHash, toolName, null, true, System.currentTimeMillis());
         chips.put(baseHash, entry);
         // Don't fire a state event — no DOM chip exists yet
@@ -187,7 +192,9 @@ public final class ToolChipRegistry {
 
     // ── Listeners ─────────────────────────────────────────────────────────────
 
-    /** Register a state-change listener. Fired on EDT for RUNNING, COMPLETE, EXTERNAL, FAILED. */
+    /**
+     * Register a state-change listener. Fired on EDT for RUNNING, COMPLETE, EXTERNAL, FAILED.
+     */
     public synchronized void addStateListener(@NotNull BiConsumer<String, ChipState> listener) {
         listeners.add(listener);
     }
@@ -206,7 +213,9 @@ public final class ToolChipRegistry {
 
     // ── Turn management ───────────────────────────────────────────────────────
 
-    /** Clear current-turn state. Call when a new agent response starts. */
+    /**
+     * Clear current-turn state. Call when a new agent response starts.
+     */
     public synchronized void clearTurn() {
         int count = chips.size();
         chips.clear();
@@ -215,7 +224,9 @@ public final class ToolChipRegistry {
         if (count > 0) LOG.debug("ToolChipRegistry: cleared " + count + " chips");
     }
 
-    /** Full reset (session end). */
+    /**
+     * Full reset (session end).
+     */
     public void clear() {
         clearTurn();
     }
@@ -228,7 +239,9 @@ public final class ToolChipRegistry {
 
     // ── Internal ─────────────────────────────────────────────────────────────
 
-    /** Find a MCP-first chip (mcpHandled=true, clientId=null) with the given base hash. */
+    /**
+     * Find a MCP-first chip (mcpHandled=true, clientId=null) with the given base hash.
+     */
     private @Nullable ChipEntry findMcpFirstChip(@NotNull String baseHash) {
         for (var entry : chips.values()) {
             if (entry.clientId() == null && entry.mcpHandled() && isMatchingHash(entry.chipId(), baseHash)) {
@@ -238,7 +251,9 @@ public final class ToolChipRegistry {
         return null;
     }
 
-    /** Find the newest (last in insertion order) client-side chip not yet MCP-matched. */
+    /**
+     * Find the newest (last in insertion order) client-side chip not yet MCP-matched.
+     */
     private @Nullable ChipEntry findNewestUnmatchedClientChip(@NotNull String baseHash) {
         ChipEntry result = null;
         for (var entry : chips.values()) {
