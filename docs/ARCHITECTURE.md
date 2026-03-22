@@ -12,18 +12,21 @@
 │  │  ┌──────────────┐  ┌───────────────────────────────┐  │    │
 │  │  │ Tool Window  │  │  Services Layer               │  │    │
 │  │  │  (JCEF Chat) │  │                               │  │    │
-│  │  │              │  │  - AgentService (abstract)    │  │    │
-│  │  │ • Chat panel │◄─┤  - CopilotService             │  │    │
-│  │  │ • Toolbar    │  │  - OpenCodeService            │  │    │
-│  │  │ • Prompt     │  │  - JunieService               │  │    │
-│  │  │              │  │  - CustomProfileService       │  │    │
+│  │  │              │  │  - ActiveAgentManager         │  │    │
+│  │  │ • Chat panel │◄─┤  - AgentProfileManager        │  │    │
+│  │  │ • Toolbar    │  │  - PsiBridgeService           │  │    │
+│  │  │ • Prompt     │  │  - ToolChipRegistry           │  │    │
+│  │  │              │  │                               │  │    │
 │  │  └──────────────┘  └─────┬─────────────────────────┘  │    │
 │  │                           │                             │    │
 │  │  ┌────────────────────────▼──────────────────────┐    │    │
-│  │  │     Bridge Layer (AcpClient)                  │    │    │
-│  │  │  • JSON-RPC 2.0 over stdin/stdout            │    │    │
-│  │  │  • Permission handler (deny + retry)         │    │    │
-│  │  │  • Streaming response handling               │    │    │
+│  │  │     Agent Clients (AbstractAgentClient)       │    │    │
+│  │  │                                               │    │    │
+│  │  │  ACP-based:              Claude-based:        │    │    │
+│  │  │  ├─ CopilotClient        ├─ ClaudeCliClient   │    │    │
+│  │  │  ├─ JunieClient          └─ AnthropicDirect   │    │    │
+│  │  │  ├─ KiroClient                                │    │    │
+│  │  │  └─ OpenCodeClient                            │    │    │
 │  │  └────────────────────┬──────────────────────────┘    │    │
 │  │                       │                                │    │
 │  │  ┌────────────────────▼──────────────────────┐        │    │
@@ -32,13 +35,13 @@
 │  │  │  • 92 MCP tools via IntelliJ APIs         │        │    │
 │  │  └────────────────────┬──────────────────────┘        │    │
 │  └───────────────────────┼───────────────────────────────┘    │
-│                          │ stdin/stdout (ACP)                  │
+│                          │ stdin/stdout or HTTP                │
 └──────────────────────────┼────────────────────────────────────┘
                            │
               ┌────────────▼────────────┐
-              │   ACP-Compatible CLI    │
-              │   (Copilot/OpenCode/    │
-              │    Junie/Kiro/Custom)   │
+              │   Agent CLI / API       │
+              │   (Copilot/Junie/Kiro/  │
+              │    OpenCode/Claude)     │
               └────────────┬────────────┘
                            │ stdio
               ┌────────────▼────────────┐
@@ -56,68 +59,86 @@
 
 ## Component Details
 
-### 1. Plugin Layer (Java 21)
+### 1. Services Layer
 
-#### Tool Window
+#### ActiveAgentManager (Project-level)
 
-- **Framework**: JCEF (Chromium Embedded Framework) for chat rendering
-- **Layout**: Single-panel chat interface with toolbar and prompt input
-- **Responsibilities**:
-    - Render conversation in streaming markdown
-    - Handle user input and context attachments
-    - Display agent profiles and model selection
-    - Show tool execution feedback
+Central service that manages the active agent profile and client lifecycle:
 
-#### Services
-
-All services implement `Disposable` for proper cleanup.
-
-**AgentService** (Abstract base):
-
-- Defines lifecycle: start, stop, restart, dispose
-- Provides `createAgentConfig()` and `createAgentSettings()`
-- Agent-agnostic ACP client management
-
-**CopilotService / OpenCodeService / JunieService**:
-
-- Concrete implementations for specific agents
-- Each provides agent-specific `AgentConfig` and `AgentSettings`
-- Handle agent-specific quirks and workarounds
-
-**PsiBridgeService** (Project-level):
-
-- HTTP server for MCP tool execution
-- Exposes 92 tools via IntelliJ APIs
-- Manages tool permissions and execution
-
-#### Bridge Layer
-
-**AcpClient**:
+- Stores which `AgentProfile` is currently active
+- Creates and owns the `AbstractAgentClient` for the active profile
+- Handles client start/stop/restart/dispose
+- Provides shared UI preferences (attach trigger, follow-agent-files)
 
 ```java
-public class AcpClient {
-    // Communicates with any ACP-compatible CLI via JSON-RPC 2.0 over stdin/stdout
-
-    public void initialize();
-    public SessionResponse createSession();
-    public void sendPrompt(String sessionId, String prompt);
-    public void cancelSession(String sessionId);
+@Service(Service.Level.PROJECT)
+public final class ActiveAgentManager implements Disposable {
+    private AbstractAgentClient acpClient;
+    private AgentConfig cachedConfig;
+    
+    public void setActiveProfile(AgentProfile profile);
+    public AbstractAgentClient getClient();
+    public void startAgent();
+    public void stopAgent();
 }
 ```
 
-**Permission Handler**:
+#### AgentProfileManager (Application-level)
 
-Built-in agent file operations are denied so all writes go through IntelliJ's Document API:
+Manages the collection of available agent profiles:
 
-1. Agent requests permission (kind="edit")
-2. Plugin denies the permission
-3. Agent retries using MCP tool (`write_file`)
-4. Write goes through Document API with undo support
-5. Auto-format runs (optimize imports + reformat)
+- Built-in profiles: GitHub Copilot, OpenCode, Junie, Kiro, Claude Code
+- Custom user-defined profiles
+- Profile persistence and serialization
 
----
+#### PsiBridgeService (Project-level)
 
-### 2. MCP Tool Bridge
+HTTP server exposing 92 IntelliJ-native MCP tools:
+
+- Starts on dynamic localhost port
+- Handles tool invocations from MCP server
+- Accesses PSI, VFS, Document API, Git4Idea, etc.
+
+### 2. Agent Clients
+
+All agent clients extend `AbstractAgentClient`, which provides common functionality:
+
+- Session management (create, prompt, cancel)
+- Model selection
+- Event streaming and listeners
+- Connection lifecycle
+
+#### ACP-Based Clients
+
+For agents that use the Agent Client Protocol (JSON-RPC 2.0 over stdio):
+
+| Client | Agent | Notes |
+|--------|-------|-------|
+| `CopilotClient` | GitHub Copilot CLI | Full ACP, permission requests |
+| `JunieClient` | JetBrains Junie | ACP without permissions |
+| `KiroClient` | Amazon Kiro | ACP with tool filtering |
+| `OpenCodeClient` | OpenCode | ACP with config-based permissions |
+
+#### Claude-Based Clients
+
+For Anthropic Claude agents (different protocol):
+
+| Client | Agent | Notes |
+|--------|-------|-------|
+| `ClaudeCliClient` | Claude Code CLI | Uses claude-code-acp wrapper |
+| `AnthropicDirectClient` | Anthropic API | Direct API calls, no CLI |
+
+### 3. Profile-Based Configuration
+
+`ProfileBasedAgentConfig` creates agent configuration from an `AgentProfile`:
+
+- CLI command and arguments
+- Environment variables (MCP server config, API keys)
+- Tool filtering (excludedTools parameter)
+- Permission injection method (CLI flags, JSON config, or none)
+- Session instructions
+
+### 4. MCP Tool Bridge
 
 ```
 Agent CLI ──stdio──► MCP Server (JAR) ──HTTP──► PsiBridgeService
@@ -127,26 +148,6 @@ Agent CLI ──stdio──► MCP Server (JAR) ──HTTP──► PsiBridgeSer
 - **MCP Server** (`mcp-server/`): Standalone JAR, stdio protocol, routes tool calls to PSI bridge
 - **PSI Bridge** (`PsiBridgeService`): HTTP server inside IntelliJ process, accesses PSI/VFS/Document APIs
 - **Bridge file**: `~/.copilot/psi-bridge.json` contains port for HTTP connection
-
----
-
-### 3. Tool Callbacks
-
-When an agent CLI invokes a tool (e.g., `write_file`), the MCP server makes an HTTP request to the PSI bridge:
-
-```
-Agent CLI → MCP Server (stdio) → PSI Bridge (HTTP) → IntelliJ APIs
-```
-
-#### Auto-Format After Write
-
-Every file write through `write_file` triggers:
-
-1. `PsiDocumentManager.commitAllDocuments()`
-2. `OptimizeImportsProcessor`
-3. `ReformatCodeProcessor`
-
-This runs inside a single undoable command group on the EDT.
 
 ---
 
@@ -170,17 +171,37 @@ This runs inside a single undoable command group on the EDT.
      │  Display response   │                       │
      │◄────────────────────┤                       │
      │                     │                       │
-     │                     │  request_permission    │
-     │                     │◄──────────────────────┤
-     │                     │  (deny built-in edit)  │
-     │                     ├──────────────────────►│
-     │                     │                       │
      │                     │  MCP tool call         │
      │                     │◄──────────────────────┤
      │                     │  (write_file)          │
      │                     ├──────────────────────►│
      │                     │                       │
 ```
+
+### Permission Flow (ACP agents with permissions)
+
+```
+Agent requests permission (kind="edit")
+    → Plugin denies (forces MCP tool usage)
+    → Agent retries with MCP tool (write_file)
+    → Write goes through Document API
+    → Auto-format runs
+```
+
+---
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `services/ActiveAgentManager.java` | Active profile and client lifecycle |
+| `services/AgentProfileManager.java` | Profile collection management |
+| `acp/client/AcpClient.java` | Base ACP client (JSON-RPC 2.0) |
+| `acp/client/CopilotClient.java` | GitHub Copilot implementation |
+| `acp/client/JunieClient.java` | JetBrains Junie implementation |
+| `agent/claude/ClaudeCliClient.java` | Claude Code CLI implementation |
+| `bridge/ProfileBasedAgentConfig.java` | Profile → AgentConfig conversion |
+| `psi/PsiBridgeService.java` | 92 MCP tools via IntelliJ APIs |
 
 ---
 
@@ -190,65 +211,15 @@ This runs inside a single undoable command group on the EDT.
 
 - **deny**: Never execute (fail immediately)
 - **ask**: Prompt user for approval
-- **allow**: Execute without prompt (for safe ops only)
+- **allow**: Execute without prompt
 
 ### Sensitive Operations
 
 Always require approval:
-
 - `git_push --force`
 - `run_command` (shell commands)
 - File deletions
 - Operations outside project root
-
-### Token Storage
-
-- Agent auth tokens stored by their respective CLIs
-- Plugin does not store or access tokens directly
-- Agent-specific authentication handled by each CLI
-
----
-
-## Error Handling
-
-### Plugin Layer
-
-- Network timeouts: Retry with exponential backoff
-- Process crashes: Auto-restart with backoff
-- Auth failures: Display guidance to re-authenticate via CLI
-
----
-
-## Testing Strategy
-
-### Unit Tests (Plugin)
-
-- `AcpClient`: Mock stdin/stdout protocol
-- Service tests: Mock IntelliJ APIs
-- Settings tests: JSON serialization
-
-### Integration Tests
-
-- Full workflow with real agent CLI
-- Tool execution end-to-end
-- Permission flows
-
----
-
-## Performance Optimization
-
-### Plugin
-
-- Lazy-load ACP client (on first use)
-- Cache model list (5 min TTL)
-- Debounce UI updates
-- Use background threads for I/O
-
-### Memory
-
-- Close sessions promptly
-- Limit concurrent sessions
-- Clear old conversation history
 
 ---
 
