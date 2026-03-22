@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * OpenCode ACP client.
@@ -17,6 +18,15 @@ import java.util.List;
 public final class OpenCodeClient extends AcpClient {
 
     private static final String AGENT_ID = "opencode";
+
+    /**
+     * OpenCode's native built-in tool names that must be denied so the model
+     * is forced to use agentbridge MCP tools instead.
+     */
+    private static final List<String> NATIVE_TOOLS_TO_DENY = List.of(
+        "grep", "glob", "ls", "read", "write", "edit", "patch",
+        "bash", "webfetch", "task", "todoread", "todowrite"
+    );
 
     public OpenCodeClient(Project project) {
         super(project);
@@ -35,6 +45,20 @@ public final class OpenCodeClient extends AcpClient {
     @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
         return List.of(AGENT_ID, "acp");
+    }
+
+    @Override
+    protected Map<String, String> buildEnvironment(int mcpPort, String cwd) {
+        // Inject OPENCODE_CONFIG_CONTENT to deny native tools so the model is forced
+        // to use agentbridge MCP tools. MCP server registration is handled separately
+        // via customizeNewSession(), so only the permission block is needed here.
+        JsonObject permission = new JsonObject();
+        for (String tool : NATIVE_TOOLS_TO_DENY) {
+            permission.addProperty(tool, "deny");
+        }
+        JsonObject config = new JsonObject();
+        config.add("permission", permission);
+        return Map.of("OPENCODE_CONFIG_CONTENT", new com.google.gson.Gson().toJson(config));
     }
 
     @Override
