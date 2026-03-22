@@ -89,7 +89,6 @@ public final class KiroClient extends AcpClient {
         params.add("mcpServers", servers);
     }
 
-
     @Override
     protected JsonObject parseToolCallArguments(@NotNull JsonObject update) {
         // Kiro sends args in "rawInput" (object) instead of "content" (array)
@@ -110,7 +109,7 @@ public final class KiroClient extends AcpClient {
             }
             return extractPurpose(tc);
         }
-        return update;
+        return update;  // Pass through all other update types unchanged
     }
 
     private SessionUpdate.ToolCall extractPurpose(SessionUpdate.ToolCall tc) {
