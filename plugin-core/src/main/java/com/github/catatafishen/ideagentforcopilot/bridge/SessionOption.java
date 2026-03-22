@@ -9,7 +9,7 @@ import java.util.Map;
 /**
  * Describes a client-specific session option that the UI should render as a dropdown.
  *
- * <p>Returned by {@link AgentClient#listSessionOptions()}. Each option has a stable
+ * <p>Returned by {@link com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient#listSessionOptions()}. Each option has a stable
  * {@link #key} (used for storage and command-line mapping), a human-readable
  * {@link #displayName}, a fixed set of {@link #values}, and an optional {@link #labels} map
  * for overriding how individual values are displayed in the UI.</p>
@@ -31,12 +31,16 @@ public record SessionOption(
     @Nullable Map<String, String> labels,
     @Nullable String initialValue
 ) {
-    /** Convenience constructor for options without custom labels or initial value. */
+    /**
+     * Convenience constructor for options without custom labels or initial value.
+     */
     public SessionOption(@NotNull String key, @NotNull String displayName, @NotNull List<String> values) {
         this(key, displayName, values, null, null);
     }
 
-    /** Convenience constructor for options with custom labels but no initial value. */
+    /**
+     * Convenience constructor for options with custom labels but no initial value.
+     */
     public SessionOption(@NotNull String key, @NotNull String displayName, @NotNull List<String> values,
                          @Nullable Map<String, String> labels) {
         this(key, displayName, values, labels, null);
