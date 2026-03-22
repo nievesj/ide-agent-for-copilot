@@ -3,6 +3,8 @@ package com.github.catatafishen.ideagentforcopilot.acp.client;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Map;
@@ -19,10 +21,7 @@ public final class OpenCodeClient extends AcpClient {
 
     private static final String AGENT_ID = "opencode";
 
-    /**
-     * OpenCode's native built-in tool names that must be denied so the model
-     * is forced to use agentbridge MCP tools instead.
-     */
+    private static final String KEY_RAW_INPUT = "rawInput";
     private static final List<String> NATIVE_TOOLS_TO_DENY = List.of(
         "grep", "glob", "ls", "read", "write", "edit", "patch", "bash"
     );
@@ -61,6 +60,37 @@ public final class OpenCodeClient extends AcpClient {
     }
 
     @Override
+    protected String extractSubAgentType(@NotNull JsonObject params, @NotNull String resolvedTitle,
+                                         @Nullable JsonObject argumentsObj) {
+        // OpenCode sends tool_call with empty rawInput for all tool calls, then fills the actual
+        // arguments in the follow-up tool_call_update/in_progress event.
+        // The "task" title always means a sub-agent invocation.
+        if ("task".equals(resolvedTitle)) {
+            // Prefer subagent_type from rawInput when already populated (tool_call_update path)
+            JsonObject raw = params.has(KEY_RAW_INPUT) && params.get(KEY_RAW_INPUT).isJsonObject()
+                ? params.getAsJsonObject(KEY_RAW_INPUT) : null;
+            if (raw != null && raw.has("subagent_type")) {
+                return raw.get("subagent_type").getAsString();
+            }
+            return "general";
+        }
+        return super.extractSubAgentType(params, resolvedTitle, argumentsObj);
+    }
+
+    @Override
+    @Nullable
+    protected JsonObject parseToolCallArguments(@NotNull JsonObject params) {
+        // OpenCode puts tool call arguments in "rawInput" instead of "arguments"
+        if (params.has(KEY_RAW_INPUT) && params.get(KEY_RAW_INPUT).isJsonObject()) {
+            JsonObject raw = params.getAsJsonObject(KEY_RAW_INPUT);
+            if (!raw.entrySet().isEmpty()) {
+                return raw;
+            }
+        }
+        return super.parseToolCallArguments(params);
+    }
+
+    @Override
     protected String resolveToolId(String protocolTitle) {
         return protocolTitle.replaceFirst("^agentbridge_", "");
     }
@@ -88,7 +118,7 @@ public final class OpenCodeClient extends AcpClient {
         JsonObject server = new JsonObject();
         server.addProperty("name", "agentbridge");
         server.addProperty("type", "http");
-        server.addProperty("url", "http://127.0.0.1:" + mcpPort);
+        server.addProperty("url", "http://127.0.0.1:" + mcpPort + "/mcp");
         server.add("headers", new JsonArray());
         JsonArray servers = new JsonArray();
         servers.add(server);

@@ -477,7 +477,17 @@ class PromptOrchestrator(
             else -> "running"
         }
 
-        updateToolCallUi(toolCallId, uiStatus, result, description, null, isSubAgent, isInternal, autoDenied, denialReason)
+        updateToolCallUi(
+            toolCallId,
+            uiStatus,
+            result,
+            description,
+            null,
+            isSubAgent,
+            isInternal,
+            autoDenied,
+            denialReason
+        )
 
         if (status == SessionUpdate.ToolCallStatus.COMPLETED || status == SessionUpdate.ToolCallStatus.FAILED) {
             callbacks.saveConversationThrottled()
@@ -496,16 +506,19 @@ class PromptOrchestrator(
         denialReason: String? = null
     ) {
         if (isSubAgent) {
-            if (uiStatus != "running") {
-                activeSubAgentId = null
-                agentManager.client.setSubAgentActive(false)
-                agentManager.settings.setActiveAgentLabel(null)
-                consolePanel().setCurrentAgent(
-                    agentManager.activeProfile.displayName,
-                    agentManager.activeProfile.id,
-                    agentManager.activeProfile.clientCssClass
-                )
+            if (uiStatus == "running") {
+                // Sub-agent is still in progress — chip is already in running state from addSubAgentEntry;
+                // calling updateSubAgentResult here would prematurely complete the chip in the JS layer.
+                return
             }
+            activeSubAgentId = null
+            agentManager.client.setSubAgentActive(false)
+            agentManager.settings.setActiveAgentLabel(null)
+            consolePanel().setCurrentAgent(
+                agentManager.activeProfile.displayName,
+                agentManager.activeProfile.id,
+                agentManager.activeProfile.clientCssClass
+            )
             consolePanel().updateSubAgentResult(toolCallId, uiStatus, result, description, autoDenied, denialReason)
         } else if (isInternal) {
             consolePanel().updateSubAgentToolCall(toolCallId, uiStatus, result, description, autoDenied, denialReason)
