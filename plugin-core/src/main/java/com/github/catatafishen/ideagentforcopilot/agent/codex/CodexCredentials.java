@@ -58,15 +58,27 @@ public final class CodexCredentials {
             JsonObject root = JsonParser.parseString(content).getAsJsonObject();
 
             // API key auth: presence of api_key is sufficient
-            if (root.has("api_key")) {
+            if (root.has("api_key") && !root.get("api_key").isJsonNull()) {
                 String key = root.get("api_key").getAsString();
                 if (!key.isBlank()) {
                     return new CodexCredentials(true, null);
                 }
             }
 
-            // OAuth / ChatGPT auth: access_token + optional expires_at
-            if (root.has("access_token")) {
+            // Nested tokens format written by `codex login --device-auth`:
+            // { "auth_mode": "chatgpt", "tokens": { "access_token": "...", ... }, "last_refresh": "..." }
+            if (root.has("tokens") && root.get("tokens").isJsonObject()) {
+                JsonObject tokens = root.getAsJsonObject("tokens");
+                if (tokens.has("access_token") && !tokens.get("access_token").isJsonNull()) {
+                    String token = tokens.get("access_token").getAsString();
+                    if (!token.isBlank()) {
+                        return new CodexCredentials(true, null);
+                    }
+                }
+            }
+
+            // Flat OAuth / ChatGPT auth: access_token + optional expires_at (older format)
+            if (root.has("access_token") && !root.get("access_token").isJsonNull()) {
                 String token = root.get("access_token").getAsString();
                 if (token.isBlank()) {
                     return new CodexCredentials(false, null);
