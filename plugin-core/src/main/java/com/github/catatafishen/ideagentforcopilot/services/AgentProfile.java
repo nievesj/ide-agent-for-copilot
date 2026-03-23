@@ -44,6 +44,15 @@ public final class AgentProfile {
      */
     private boolean supportsOAuthSignIn = false;
 
+    /**
+     * Shell command to run in the embedded terminal when the user clicks "Sign In"
+     * in the auth error banner. Used for agents that authenticate via a CLI command
+     * (e.g. {@code codex login --device-auth}) rather than inline OAuth. Null means no
+     * terminal sign-in button is shown.
+     */
+    @Nullable
+    private String terminalSignInCommand = null;
+
     // ── Binary Discovery ─────────────────────────────────────────────────────
 
     private String binaryName;
@@ -146,6 +155,7 @@ public final class AgentProfile {
         copy.transportType = transportType;
         copy.installUrl = installUrl;
         copy.supportsOAuthSignIn = supportsOAuthSignIn;
+        copy.terminalSignInCommand = terminalSignInCommand;
         copy.binaryName = binaryName;
         copy.alternateNames = new ArrayList<>(alternateNames);
         copy.installHint = installHint;
@@ -180,6 +190,7 @@ public final class AgentProfile {
         copy.transportType = this.transportType;
         copy.installUrl = this.installUrl;
         copy.supportsOAuthSignIn = this.supportsOAuthSignIn;
+        copy.terminalSignInCommand = this.terminalSignInCommand;
         copy.binaryName = binaryName;
         copy.alternateNames = new ArrayList<>(alternateNames);
         copy.installHint = installHint;
@@ -214,6 +225,7 @@ public final class AgentProfile {
         this.transportType = other.transportType;
         this.installUrl = other.installUrl;
         this.supportsOAuthSignIn = other.supportsOAuthSignIn;
+        this.terminalSignInCommand = other.terminalSignInCommand;
         this.binaryName = other.binaryName;
         this.alternateNames = new ArrayList<>(other.alternateNames);
         this.installHint = other.installHint;
@@ -302,6 +314,15 @@ public final class AgentProfile {
 
     public void setSupportsOAuthSignIn(boolean supportsOAuthSignIn) {
         this.supportsOAuthSignIn = supportsOAuthSignIn;
+    }
+
+    @Nullable
+    public String getTerminalSignInCommand() {
+        return terminalSignInCommand;
+    }
+
+    public void setTerminalSignInCommand(@Nullable String terminalSignInCommand) {
+        this.terminalSignInCommand = terminalSignInCommand;
     }
 
     public void setTransportType(@NotNull TransportType transportType) {

@@ -246,6 +246,34 @@ class AuthLoginService(private val project: Project) {
     }
 
     /**
+     * Opens an embedded terminal tab and runs the given [command] for terminal-based sign-in
+     * (e.g. {@code codex login --device-auth}). Falls back to an external terminal if needed.
+     */
+    fun startTerminalSignIn(command: String) {
+        val tabName = "${command.substringBefore(" ").replaceFirstChar { it.uppercase() }} Sign In"
+        runAuthInEmbeddedTerminal(project, command, tabName) {
+            startTerminalSignInExternal(command)
+        }
+    }
+
+    private fun startTerminalSignInExternal(command: String) {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                launchExternalTerminal(command, emptyMap())
+            } catch (e: Exception) {
+                LOG.warn("Could not open external terminal for sign-in: $command", e)
+                ApplicationManager.getApplication().invokeLater {
+                    Messages.showErrorDialog(
+                        project,
+                        "The IntelliJ Terminal plugin is not available and no external terminal could be opened.\n\nRun manually: $command",
+                        "Sign In",
+                    )
+                }
+            }
+        }
+    }
+
+    /**
      * Logs out the active agent by deleting its authentication data.
      * For Copilot, this removes the entire .agent-work/copilot/ directory.
      */

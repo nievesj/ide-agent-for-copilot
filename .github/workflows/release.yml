@@ -95,7 +95,7 @@ jobs:
         if: steps.version.outputs.skip != 'true'
         env:
           PLUGIN_VERSION: ${{ steps.version.outputs.version }}
-        run: ./gradlew :plugin-core:buildPlugin :standalone-mcp:buildPlugin :plugin-experimental:buildPlugin --no-daemon --quiet
+        run: ./gradlew :plugin-core:buildPlugin :plugin-experimental:buildPlugin --no-daemon --quiet
 
       - name: Create tag and GitHub release
         if: steps.version.outputs.skip != 'true'
@@ -118,5 +118,4 @@ jobs:
             --title "Release $TAG" \
             --notes "$NOTES" \
             plugin-core/build/distributions/*.zip \
-            standalone-mcp/build/distributions/*.zip \
             plugin-experimental/build/distributions/*.zip
