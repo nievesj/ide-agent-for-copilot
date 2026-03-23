@@ -133,6 +133,7 @@ public final class CopilotClient extends AcpClient {
     protected void beforeLaunch(String cwd, int mcpPort) throws IOException {
         String configDir = cwd + File.separator + AGENT_WORK_DIR + File.separator + AGENT_ID;
         writeAgentDefinitions(configDir);
+        writeMcpConfig(configDir, mcpPort);
     }
 
     // ─── Identity ────────────────────────────────────
@@ -169,18 +170,14 @@ public final class CopilotClient extends AcpClient {
     @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
         String configDir = cwd + File.separator + AGENT_WORK_DIR + File.separator + AGENT_ID;
-        String mcpConfig = buildMcpConfigJson(mcpPort);
         String agentSlug = getCurrentAgentSlug();
         List<String> cmd = new java.util.ArrayList<>(List.of(
             AGENT_ID, "--acp", "--stdio",
             "--config-dir", configDir,
-            "--additional-mcp-config", mcpConfig,
-            // Suppress the built-in github-mcp-server; we supply our own MCP via --additional-mcp-config.
+            // MCP config is written to mcp-config.json in configDir instead of command line
+            // to avoid Windows command-line escaping issues with JSON
             "--disable-builtin-mcps",
-            // Prevent the subprocess from auto-downloading CLI updates mid-session.
             "--no-auto-update",
-            // Exclude built-in CLI tools that duplicate or conflict with our agentbridge MCP tools.
-            // Currently ignored in ACP mode (bug #556) but will take effect once fixed upstream.
             "--excluded-tools", EXCLUDED_BUILTIN_TOOLS
         ));
         if (agentSlug != null && !agentSlug.isEmpty()) {
@@ -340,6 +337,13 @@ public final class CopilotClient extends AcpClient {
         writeAgentFile(agentsDir.resolve("intellij-default.md"), buildDefaultAgentDefinition());
         writeAgentFile(agentsDir.resolve("intellij-explore.md"), buildExploreAgentDefinition());
         writeAgentFile(agentsDir.resolve("intellij-edit.md"), buildEditAgentDefinition());
+    }
+
+    private void writeMcpConfig(String configDir, int mcpPort) throws IOException {
+        Path configPath = Paths.get(configDir, "mcp-config.json");
+        String json = buildMcpConfigJson(mcpPort);
+        Files.createDirectories(configPath.getParent());
+        Files.writeString(configPath, json, StandardCharsets.UTF_8);
     }
 
     private static void writeAgentFile(Path path, String content) throws IOException {
