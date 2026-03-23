@@ -106,49 +106,9 @@ public class ShellEnvironment {
 
     @NotNull
     private static Map<String, String> captureWindowsEnvironment() {
-        try {
-            // Use PowerShell with simpler output format for better Unicode support
-            ProcessBuilder pb = new ProcessBuilder("powershell.exe", "-NoProfile", "-Command",
-                "[Environment]::GetEnvironmentVariables('Process') | ForEach-Object { $_.GetEnumerator() } | ForEach-Object { \"$($_.Key)=$($_.Value)\" }");
-            pb.redirectErrorStream(true);
-
-            Process process = pb.start();
-            Map<String, String> env = new HashMap<>();
-
-            try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                int lineCount = 0;
-                while ((line = reader.readLine()) != null) {
-                    lineCount++;
-                    int idx = line.indexOf('=');
-                    if (idx > 0) {
-                        String key = line.substring(0, idx);
-                        String value = line.substring(idx + 1);
-                        env.put(key, value);
-                    }
-                }
-                LOG.info("Read " + lineCount + " lines from PowerShell, captured " + env.size() + " variables");
-            }
-
-            boolean finished = process.waitFor(5, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                LOG.warn("Windows environment capture timed out");
-            }
-
-            if (env.isEmpty()) {
-                LOG.warn("Failed to capture Windows environment, using system environment");
-                return System.getenv();
-            }
-
-            LOG.info("Captured Windows environment with PATH: " + env.get("PATH") + ", Path: " + env.get("Path"));
-            return Collections.unmodifiableMap(env);
-
-        } catch (Exception e) {
-            LOG.warn("Failed to capture Windows environment: " + e.getMessage(), e);
-            return System.getenv();
-        }
+        // Just use system environment - we override USERPROFILE/HOME in buildEnvironment() anyway
+        LOG.info("Using system environment for Windows");
+        return System.getenv();
     }
 
     /**
