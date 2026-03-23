@@ -73,7 +73,7 @@ class AuthLoginService(private val project: Project) {
     }
 
     /** Returns null if GH CLI is installed and authenticated, or an error description. */
-    internal fun ghSetupDiagnostics(billing: com.github.catatafishen.ideagentforcopilot.ui.BillingManager): String? {
+    internal fun ghSetupDiagnostics(billing: BillingManager): String? {
         val ghCli = billing.client.findGhCli()
             ?: return "GitHub CLI (gh) is not installed — it is used to display billing and usage information."
         return if (!billing.client.isGhAuthenticated(ghCli))
@@ -95,20 +95,29 @@ class AuthLoginService(private val project: Project) {
     data class DeviceCodeInfo(val code: String, val url: String)
 
     /**
-     * Resolves the auth command from the ACP `authMethod` or falls back to `copilot auth login`.
-     * Splits the result into a list suitable for [ProcessBuilder].
+     * Resolves the auth command for the active agent profile.
+     * Falls back to `copilot login` (the correct Copilot CLI auth command).
      */
     private fun resolveAuthCommand(): List<String> {
-        var command = "copilot auth login"
+        // The Copilot CLI uses `copilot login` — not `copilot auth login`
+        // (which is not a valid subcommand and gets treated as an AI prompt).
+        // For other agents, derive from the authMethod ID advertised in ACP capabilities.
         try {
             val authMethod = ActiveAgentManager.getInstance(project).client.authMethod
-            if (authMethod?.command != null) {
-                val args = authMethod.args?.joinToString(" ") ?: ""
-                command = "${authMethod.command} $args".trim()
+            LOG.info("AuthLoginService: authMethod = $authMethod, id = ${authMethod?.id}")
+            if (authMethod?.id != null) {
+                val command = when {
+                    authMethod.id.contains("copilot") -> "copilot login"
+                    authMethod.id.contains("github") -> "copilot login"
+                    else -> authMethod.id.replace("-", " ")
+                }
+                LOG.info("AuthLoginService: resolved command = '$command'")
+                return command.split(" ").filter { it.isNotEmpty() }
             }
-        } catch (_: Exception) { /* best-effort */
+        } catch (e: Exception) {
+            LOG.warn("AuthLoginService: failed to resolve auth command", e)
         }
-        return command.split(" ").filter { it.isNotEmpty() }
+        return listOf("copilot", "login")
     }
 
     fun startInlineAuth(
@@ -202,10 +211,11 @@ class AuthLoginService(private val project: Project) {
     }
 
     fun startCopilotLogin() {
-        val resolvedCommand = resolveAuthCommand().joinToString(" ")
+        val command = resolveAuthCommand().joinToString(" ")
         val envVars = getAuthEnvironmentVars()
-        runAuthInEmbeddedTerminal(project, resolvedCommand, envVars, "Copilot Sign In") {
-            startCopilotLoginExternal(resolvedCommand)
+        LOG.info("AuthLoginService: starting copilot login with command='$command', envVars=$envVars")
+        runAuthInEmbeddedTerminal(project, command, envVars, "Copilot Sign In") {
+            startCopilotLoginExternal(command)
         }
     }
 
