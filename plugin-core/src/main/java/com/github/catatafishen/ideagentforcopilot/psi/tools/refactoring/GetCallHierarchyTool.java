@@ -3,8 +3,9 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SearchResultRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -68,7 +69,7 @@ public final class GetCallHierarchyTool extends RefactoringTool {
         String filePath = args.get("file").getAsString();
         int line = args.get("line").getAsInt();
 
-        String result = ReadAction.compute(() ->
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
             com.github.catatafishen.ideagentforcopilot.psi.java.RefactoringJavaSupport
                 .getCallHierarchy(project, methodName, filePath, line)
         );

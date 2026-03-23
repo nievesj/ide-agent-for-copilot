@@ -4,10 +4,11 @@ import com.github.catatafishen.ideagentforcopilot.psi.FileAccessTracker;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ReadFileRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 
@@ -44,7 +45,7 @@ public class ReadFileTool extends FileTool {
         return "Read a file via IntelliJ's editor buffer -- always returns the current in-memory content";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -80,7 +81,7 @@ public class ReadFileTool extends FileTool {
         // Use a separate container to capture the actual line range for highlighting
         int[] effectiveRange = new int[]{startLine, endLine};
 
-        String result = ReadAction.compute(() -> {
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 

@@ -3,6 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.quality;
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.google.gson.JsonObject;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
@@ -53,7 +54,7 @@ public final class GetAvailableActionsTool extends QualityTool {
             + "Use apply_action to invoke one, or optimize_imports to fix all missing imports at once.";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -103,8 +104,8 @@ public final class GetAvailableActionsTool extends QualityTool {
         }
 
         CompletableFuture<String> future = new CompletableFuture<>();
-        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread(() ->
-            com.intellij.openapi.application.ReadAction.run(() -> {
+        ApplicationManager.getApplication().executeOnPooledThread(() ->
+            ApplicationManager.getApplication().runReadAction(() -> {
                 try {
                     future.complete(collectQuickFixesOnly(pathStr, targetLine));
                 } catch (Exception e) {

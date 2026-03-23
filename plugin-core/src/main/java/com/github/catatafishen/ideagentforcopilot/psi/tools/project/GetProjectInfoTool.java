@@ -5,13 +5,14 @@ import com.github.catatafishen.ideagentforcopilot.ui.renderers.ProjectInfoRender
 import com.google.gson.JsonObject;
 import com.intellij.execution.RunManager;
 import com.intellij.openapi.application.ApplicationInfo;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.roots.ProjectRootManager;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 
@@ -44,7 +45,7 @@ public final class GetProjectInfoTool extends ProjectTool {
         return "Get project name, SDK, modules, and overall structure";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -62,7 +63,7 @@ public final class GetProjectInfoTool extends ProjectTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             StringBuilder sb = new StringBuilder();
             String basePath = project.getBasePath();
             sb.append("Project: ").append(project.getName()).append("\n");

@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.IdeInfoRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -12,7 +11,6 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiNamedElement;
 import com.intellij.psi.search.GlobalSearchScope;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Gets Javadoc or KDoc for a symbol by fully-qualified name.
@@ -43,7 +41,7 @@ public final class GetDocumentationTool extends RefactoringTool {
         return "Get Javadoc or KDoc for a symbol by fully-qualified name";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -72,7 +70,7 @@ public final class GetDocumentationTool extends RefactoringTool {
         if (symbol.isEmpty())
             return "Error: 'symbol' parameter required (e.g. java.util.List, com.google.gson.Gson.fromJson)";
 
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             try {
                 GlobalSearchScope scope = GlobalSearchScope.allScope(project);
                 String[] parts = splitSymbolParts(symbol);

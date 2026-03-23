@@ -4,10 +4,11 @@ import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.GoToDeclarationRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
@@ -85,8 +86,8 @@ public final class GoToDeclarationTool extends RefactoringTool {
 
         String[] declInfo = new String[2];
 
-        String result = ReadAction.compute(
-            () -> findAndFormatDeclaration(pathStr, targetLine, symbolName, declInfo));
+        String result = ApplicationManager.getApplication().runReadAction(
+            (Computable<String>) () -> findAndFormatDeclaration(pathStr, targetLine, symbolName, declInfo));
 
         if (declInfo[0] != null && declInfo[1] != null) {
             int declLine = Integer.parseInt(declInfo[1]);

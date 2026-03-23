@@ -2,8 +2,9 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.navigation;
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ClassOutlineRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 import org.jetbrains.annotations.NotNull;
 
 public final class GetClassOutlineTool extends NavigationTool {
@@ -30,7 +31,7 @@ public final class GetClassOutlineTool extends NavigationTool {
         return "Get the full API of any class by fully-qualified name, including library and JDK classes";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -61,7 +62,7 @@ public final class GetClassOutlineTool extends NavigationTool {
         boolean includeInherited = args.has(PARAM_INCLUDE_INHERITED)
             && args.get(PARAM_INCLUDE_INHERITED).getAsBoolean();
 
-        return ReadAction.compute(() ->
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
             com.github.catatafishen.ideagentforcopilot.psi.java.CodeNavigationJavaSupport.computeClassOutline(project, className, includeInherited)
         );
     }

@@ -3,8 +3,9 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SearchResultRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -66,7 +67,7 @@ public final class FindImplementationsTool extends RefactoringTool {
         String filePath = args.has("file") ? args.get("file").getAsString() : null;
         int line = args.has("line") ? args.get("line").getAsInt() : 0;
 
-        String result = ReadAction.compute(() ->
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
             com.github.catatafishen.ideagentforcopilot.psi.java.RefactoringJavaSupport
                 .findImplementations(project, symbolName, filePath, line)
         );

@@ -1562,20 +1562,13 @@ class ChatToolWindowContent(
         showAutocompletePopup(matches)
     }
 
-    @Suppress("DEPRECATION")
     private fun showAutocompletePopup(commands: List<String>) {
         autocompletePopup?.cancel()
 
-        val list = com.intellij.ui.components.JBList(commands)
-        list.selectionMode = ListSelectionModel.SINGLE_SELECTION
-        list.selectedIndex = 0
-
         autocompletePopup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
-            .createListPopupBuilder(list)
-            .setItemChosenCallback(Runnable {
-                val selected = list.selectedValue
-                if (selected != null) promptTextArea.text = selected
-            })
+            .createPopupChooserBuilder(commands)
+            .setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
+            .setItemChosenCallback { selected -> promptTextArea.text = selected }
             .createPopup()
 
         autocompletePopup?.showInBestPositionFor(promptTextArea.editor ?: return)

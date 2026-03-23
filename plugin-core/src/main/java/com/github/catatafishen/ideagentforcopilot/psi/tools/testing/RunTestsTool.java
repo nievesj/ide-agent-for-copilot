@@ -6,7 +6,6 @@ import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.TestResultRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.execution.ExecutionManager;
 import com.intellij.execution.RunManager;
 import com.intellij.execution.configurations.ConfigurationType;
@@ -19,6 +18,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
+import com.intellij.openapi.util.Computable;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import org.jetbrains.annotations.NotNull;
@@ -80,7 +80,7 @@ public final class RunTestsTool extends TestingTool {
         return "Run tests by class, method, or wildcard pattern. Uses IntelliJ's built-in test runner; falls back to Gradle for unresolvable targets";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -264,7 +264,7 @@ public final class RunTestsTool extends TestingTool {
     }
 
     private List<String> resolveMatchingTestClasses(String target) {
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<List<String>>) () -> {
             List<String> classes = new ArrayList<>();
             ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
             fileIndex.iterateContent(vf -> processTestFile(vf, fileIndex, target, classes));

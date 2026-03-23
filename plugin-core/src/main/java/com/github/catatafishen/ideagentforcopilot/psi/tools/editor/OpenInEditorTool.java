@@ -5,7 +5,6 @@ import com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -16,7 +15,6 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -44,7 +42,7 @@ public final class OpenInEditorTool extends EditorTool {
         return "Open a file in the editor, optionally navigating to a specific line";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -95,8 +93,8 @@ public final class OpenInEditorTool extends EditorTool {
                     FileEditorManager.getInstance(project).openFile(vf, focus);
                 }
 
-                PsiFile psiFile = ReadAction.compute(
-                    () -> PsiManager.getInstance(project).findFile(vf));
+                PsiFile psiFile = ApplicationManager.getApplication().runReadAction(
+                    (Computable<PsiFile>) () -> PsiManager.getInstance(project).findFile(vf));
                 if (psiFile != null) {
                     DaemonCodeAnalyzer.getInstance(project).restart(psiFile, "File opened in editor");
                 }

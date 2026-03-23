@@ -3,9 +3,10 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.navigation;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ListProjectFilesRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 
@@ -44,7 +45,7 @@ public final class ListProjectFilesTool extends NavigationTool {
         return "List files in a project directory, optionally filtered by glob pattern";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -82,8 +83,8 @@ public final class ListProjectFilesTool extends NavigationTool {
         long maxSize = args.has(PARAM_MAX_SIZE) ? args.get(PARAM_MAX_SIZE).getAsLong() : -1;
         long modifiedAfter = args.has(PARAM_MODIFIED_AFTER) ? ToolUtils.parseDateParam(args.get(PARAM_MODIFIED_AFTER).getAsString()) : -1;
         long modifiedBefore = args.has(PARAM_MODIFIED_BEFORE) ? ToolUtils.parseDateParam(args.get(PARAM_MODIFIED_BEFORE).getAsString()) : -1;
-        return ReadAction.compute(
-            () -> computeFilesList(dir, pattern, sort, minSize, maxSize, modifiedAfter, modifiedBefore));
+        return ApplicationManager.getApplication().runReadAction(
+            (Computable<String>) () -> computeFilesList(dir, pattern, sort, minSize, maxSize, modifiedAfter, modifiedBefore));
     }
 
     private record FileEntry(String relPath, String tag, String typeName, long size, long timestamp) {

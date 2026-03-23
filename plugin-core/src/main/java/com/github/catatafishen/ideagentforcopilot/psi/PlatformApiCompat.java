@@ -335,7 +335,11 @@ public final class PlatformApiCompat {
      * Note: {@code DataPack} is deprecated (scheduled for removal) but there is no non-internal
      * replacement listener API yet. {@code VcsLogProgress.ProgressListener} exists but requires
      * {@code VcsLogData.DATA_PACK_REFRESH} which is {@code @ApiStatus.Internal}. Using deprecated
-     * APIs only produces a verifier warning, while internal APIs produce a verifier failure.
+     * APIs produces only a verifier warning (SCHEDULED_FOR_REMOVAL_API_USAGES), while using
+     * internal APIs would produce a verifier failure (INTERNAL_API_USAGES). Neither
+     * SCHEDULED_FOR_REMOVAL_API_USAGES nor INTERNAL_API_USAGES are in our
+     * {@code intellijPlugin { verifyPlugin { failureLevel } }} configuration, so the build
+     * still passes. This usage is an accepted, documented exception with no viable alternative.
      * <p>
      * This avoids the "Commit or reference 'xxx' not found" notification that
      * {@code showRevisionInMainLog} shows when called before the log has indexed a new commit.
@@ -885,12 +889,17 @@ public final class PlatformApiCompat {
     }
 
     /**
-     * Returns all installed UI themes.
+     * Returns the list of installed UI themes.
      *
-     * <p><b>Why extracted:</b> {@code LafManager.getInstalledThemes()} is annotated
-     * {@code @ApiStatus.Experimental} and its return type changed from {@code Sequence<UIThemeLookAndFeelInfo>}
+     * <p><b>Why extracted:</b> {@link com.intellij.ide.ui.LafManager#getInstalledThemes()} is
+     * annotated {@code @ApiStatus.Experimental} across all supported IDE versions. There is no
+     * non-experimental API to enumerate installed themes — the only way to list them is through
+     * this method. The verifier warns but does not fail the build (EXPERIMENTAL_API_USAGES is
+     * not in our failureLevel). This usage is intentional and accepted.</p>
+     *
+     * <p>Additionally, the return type changed from {@code Sequence<UIThemeLookAndFeelInfo>}
      * to {@code List<UIThemeLookAndFeelInfo>} across supported IDE versions. Centralizing here
-     * isolates callers from the unstable API and the Kotlin sequence adapter.</p>
+     * also isolates callers from the Kotlin sequence adapter.</p>
      *
      * @param lafManager the LafManager instance to query
      * @return list of all installed themes

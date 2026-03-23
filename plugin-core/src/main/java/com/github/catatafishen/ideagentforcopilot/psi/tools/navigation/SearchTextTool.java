@@ -3,11 +3,12 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.navigation;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SearchResultRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 
@@ -80,7 +81,7 @@ public final class SearchTextTool extends NavigationTool {
         int maxResults = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt() : 100;
 
         showSearchFeedback("🔍 Searching text: " + query);
-        String result = ReadAction.compute(() ->
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
             performSearch(query, filePattern, isRegex, caseSensitive, maxResults));
         showSearchFeedback("✓ Text search complete: " + query);
         return result;

@@ -4,7 +4,6 @@ import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -49,7 +48,7 @@ public final class GetHighlightsTool extends QualityTool {
         return "Get cached editor highlights for open files";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -93,7 +92,7 @@ public final class GetHighlightsTool extends QualityTool {
     private void getHighlightsCached(String pathStr, int limit, boolean includeUnindexed,
                                      CompletableFuture<String> resultFuture) {
         StringBuilder result = new StringBuilder();
-        ReadAction.run(() -> {
+        ApplicationManager.getApplication().runReadAction(() -> {
             ProjectFileIndex fileIndex = ProjectRootManager.getInstance(project).getFileIndex();
             Collection<VirtualFile> allFiles =
                 collectFilesForHighlightAnalysis(pathStr, includeUnindexed, fileIndex, resultFuture);

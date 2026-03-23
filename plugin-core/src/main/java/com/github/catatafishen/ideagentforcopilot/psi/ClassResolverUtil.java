@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
@@ -44,7 +43,7 @@ public final class ClassResolverUtil {
      * Resolves a class name (simple or fully-qualified) to its FQN and containing module.
      */
     public static ClassInfo resolveClass(Project project, String className) {
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<ClassInfo>) () -> {
             String searchName = className.contains(".")
                 ? className.substring(className.lastIndexOf('.') + 1) : className;
             List<ClassInfo> matches = new ArrayList<>();

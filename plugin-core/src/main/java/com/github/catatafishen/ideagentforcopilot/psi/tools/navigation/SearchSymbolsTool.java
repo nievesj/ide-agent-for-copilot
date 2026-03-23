@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.navigation;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SearchResultRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -18,7 +17,6 @@ import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.PsiSearchHelper;
 import com.intellij.psi.search.UsageSearchContext;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -49,7 +47,7 @@ public final class SearchSymbolsTool extends NavigationTool {
         return "Search for classes, methods, or fields by name using IntelliJ's symbol index";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -79,7 +77,7 @@ public final class SearchSymbolsTool extends NavigationTool {
         String typeFilter = args.has("type") ? args.get("type").getAsString() : "";
 
         showSearchFeedback("🔍 Searching symbols: " + query);
-        String result = ReadAction.compute(() -> {
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             if (query.isEmpty() || "*".equals(query)) {
                 return searchWildcard(typeFilter);
             }

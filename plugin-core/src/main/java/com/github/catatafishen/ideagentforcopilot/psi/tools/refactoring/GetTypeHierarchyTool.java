@@ -2,8 +2,9 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring;
 
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.TypeHierarchyRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -64,7 +65,7 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
         String direction = args.has(PARAM_DIRECTION) ? args.get(PARAM_DIRECTION).getAsString() : "both";
 
-        return ReadAction.compute(() ->
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
             com.github.catatafishen.ideagentforcopilot.psi.java.RefactoringJavaSupport
                 .getTypeHierarchy(project, symbolName, direction)
         );

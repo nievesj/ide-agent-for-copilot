@@ -10,7 +10,6 @@ import com.intellij.codeInspection.ex.GlobalInspectionContextImpl;
 import com.intellij.codeInspection.ex.InspectionManagerEx;
 import com.intellij.codeInspection.ex.InspectionProfileImpl;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
@@ -229,7 +228,7 @@ public final class RunInspectionsTool extends QualityTool {
                 LOG.info("Used tools count: " + ctx.getUsedTools().size());
                 // Collect synchronously while the context is still valid — the callback is
                 // invoked BEFORE super.notifyInspectionsFinished which calls cleanup().
-                InspectionCollectionResult collected = ReadAction.compute(
+                InspectionCollectionResult collected = ApplicationManager.getApplication().runReadAction(
                     () -> collectInspectionProblems(ctx, severityRank, requiredRank, basePath));
                 cacheAndCompleteInspection(collected, new InspectionPageParams(profileName, offset, limit), resultFuture);
             });
@@ -274,7 +273,7 @@ public final class RunInspectionsTool extends QualityTool {
             return null;
         }
         if (scopeFile.isDirectory()) {
-            PsiDirectory psiDir = ReadAction.compute(
+            PsiDirectory psiDir = ApplicationManager.getApplication().runReadAction(
                 () -> PsiManager.getInstance(project).findDirectory(scopeFile)
             );
             if (psiDir == null) {
@@ -284,7 +283,7 @@ public final class RunInspectionsTool extends QualityTool {
             LOG.info("Analysis scope: directory " + scopePath);
             return new AnalysisScope(psiDir);
         }
-        PsiFile psiFile = ReadAction.compute(
+        PsiFile psiFile = ApplicationManager.getApplication().runReadAction(
             () -> PsiManager.getInstance(project).findFile(scopeFile));
         if (psiFile == null) {
             resultFuture.complete(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + scopePath);

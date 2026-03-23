@@ -3,11 +3,12 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.testing;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ListTestsRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -45,7 +46,7 @@ public final class ListTestsTool extends TestingTool {
         return "List test classes and methods in the project";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -72,7 +73,7 @@ public final class ListTestsTool extends TestingTool {
     public @NotNull String execute(@NotNull JsonObject args) {
         String filePattern = args.has(PARAM_FILE_PATTERN) ? args.get(PARAM_FILE_PATTERN).getAsString() : "";
 
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             List<String> tests = new ArrayList<>();
             String basePath = project.getBasePath();
             ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);

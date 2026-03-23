@@ -5,7 +5,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.IdeInfoRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
@@ -23,6 +23,7 @@ import com.intellij.openapi.roots.OrderRootType;
 import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -73,7 +74,7 @@ public final class EditProjectStructureTool extends ProjectTool {
         return "View and modify module dependencies, libraries, SDKs, and project structure";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -116,7 +117,7 @@ public final class EditProjectStructureTool extends ProjectTool {
     }
 
     private String listModules() {
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             Module[] modules = ModuleManager.getInstance(project).getModules();
             if (modules.length == 0) {
                 return "No modules found in the project.";
@@ -163,7 +164,7 @@ public final class EditProjectStructureTool extends ProjectTool {
             return ToolUtils.ERROR_PREFIX + "'module' parameter is required for list_dependencies";
         }
 
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             Module module = ModuleManager.getInstance(project).findModuleByName(moduleName);
             if (module == null) {
                 return ToolUtils.ERROR_PREFIX + MSG_MODULE_PREFIX + moduleName + MSG_NOT_FOUND;
@@ -457,7 +458,7 @@ public final class EditProjectStructureTool extends ProjectTool {
     }
 
     private String listSdks() {
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             var jdkTable = ProjectJdkTable.getInstance();
             Sdk[] sdks = jdkTable.getAllJdks();
 

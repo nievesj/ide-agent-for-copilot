@@ -3,7 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.quality;
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -42,7 +42,7 @@ public final class GetProblemsTool extends QualityTool {
         return "Get cached editor problems (errors/warnings) for open files";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -68,7 +68,7 @@ public final class GetProblemsTool extends QualityTool {
 
         EdtUtil.invokeLater(() -> {
             try {
-                ReadAction.run(() -> collectProblems(pathStr, resultFuture));
+                ApplicationManager.getApplication().runReadAction(() -> collectProblems(pathStr, resultFuture));
             } catch (Exception e) {
                 resultFuture.complete("Error getting problems: " + e.getMessage());
             }

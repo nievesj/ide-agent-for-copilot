@@ -7,11 +7,13 @@ import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.ComponentManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.messages.Topic;
 import org.jetbrains.annotations.NotNull;
@@ -508,7 +510,7 @@ public final class PsiBridgeService implements Disposable {
      */
     private static long getDocumentStamp(@Nullable com.intellij.openapi.vfs.VirtualFile vf) {
         if (vf == null) return -1L;
-        return com.intellij.openapi.application.ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<Long>) () -> {
             com.intellij.openapi.editor.Document doc =
                 com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf);
             return doc != null ? doc.getModificationStamp() : -1L;

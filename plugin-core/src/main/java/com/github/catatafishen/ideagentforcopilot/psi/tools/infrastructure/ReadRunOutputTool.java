@@ -3,8 +3,9 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.infrastructure;
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.TerminalOutputRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -38,7 +39,7 @@ public final class ReadRunOutputTool extends InfrastructureTool {
         return "Read output from a recent Run panel tab by name";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -63,7 +64,7 @@ public final class ReadRunOutputTool extends InfrastructureTool {
         String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
 
         try {
-            var findResult = ReadAction.compute(() -> {
+            var findResult = ApplicationManager.getApplication().runReadAction((Computable<Object>) () -> {
                     var descriptors = collectRunDescriptors();
                     if (descriptors.isEmpty()) return "No Run or Debug panel tabs available.";
                     return findTargetRunDescriptor(descriptors, tabName);

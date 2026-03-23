@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.navigation;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SearchResultRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
@@ -14,7 +13,6 @@ import com.intellij.psi.search.PsiSearchHelper;
 import com.intellij.psi.search.UsageSearchContext;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -43,7 +41,7 @@ public final class FindReferencesTool extends NavigationTool {
         return "Find all usages of a symbol throughout the project";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -75,7 +73,7 @@ public final class FindReferencesTool extends NavigationTool {
         String filePattern = args.has(PARAM_FILE_PATTERN) ? args.get(PARAM_FILE_PATTERN).getAsString() : "";
 
         showSearchFeedback("🔍 Finding references: " + symbol);
-        String result = ReadAction.compute(() -> {
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             List<String> results = new ArrayList<>();
             String basePath = project.getBasePath();
             GlobalSearchScope scope = GlobalSearchScope.projectScope(project);

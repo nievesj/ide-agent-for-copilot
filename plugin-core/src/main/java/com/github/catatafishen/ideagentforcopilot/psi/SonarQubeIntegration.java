@@ -2,9 +2,10 @@ package com.github.catatafishen.ideagentforcopilot.psi;
 
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.AnAction;
-import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 
 import java.lang.reflect.Field;
@@ -546,8 +547,8 @@ public final class SonarQubeIntegration {
             if (getRangeMethod != null) {
                 Object rangeObj = getRangeMethod.invoke(finding);
                 if (rangeObj instanceof com.intellij.openapi.editor.RangeMarker rm && rm.isValid()) {
-                    return ReadAction.compute(
-                        () -> rm.getDocument().getLineNumber(rm.getStartOffset()) + 1
+                    return ApplicationManager.getApplication().runReadAction((Computable<Integer>) () ->
+                        rm.getDocument().getLineNumber(rm.getStartOffset()) + 1
                     );
                 }
             }

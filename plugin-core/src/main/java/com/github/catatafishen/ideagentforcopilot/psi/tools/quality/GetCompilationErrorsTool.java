@@ -2,7 +2,6 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.quality;
 
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -84,7 +83,7 @@ public final class GetCompilationErrorsTool extends QualityTool {
     }
 
     private void collectCompilationErrors(String pathStr, CompletableFuture<String> resultFuture) {
-        ReadAction.run(() -> {
+        ApplicationManager.getApplication().runReadAction(() -> {
             ProjectFileIndex fileIndex = ProjectRootManager.getInstance(project).getFileIndex();
             Collection<VirtualFile> files = collectFilesForHighlightAnalysis(pathStr, false, fileIndex, resultFuture);
             if (resultFuture.isDone()) return;
