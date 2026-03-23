@@ -361,6 +361,12 @@
       id="com.github.catatafishen.ideagentforcopilot.clientAgents.kiro"
       displayName="Kiro"/>
 
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.CodexClientConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.clientAgents.codex"
+      displayName="Codex (Experimental)"/>
+
     <!-- ── Tool Permissions ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"

@@ -999,7 +999,9 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             throw new AgentException("Codex binary not found at: " + custom, null, false);
         }
         for (String name : candidateNames()) {
-            String found = findOnPath(name);
+            // Use BinaryDetector which spawns a login shell — finds npm global installs,
+            // nvm-managed Node, etc. that are not on the JVM's inherited PATH.
+            String found = com.github.catatafishen.ideagentforcopilot.settings.BinaryDetector.findBinaryPath(name);
             if (found != null) return found;
         }
         throw new AgentException(
@@ -1015,16 +1017,5 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         names.addAll(profile.getAlternateNames());
         if (!names.contains("codex")) names.add("codex");
         return names;
-    }
-
-    @Nullable
-    private static String findOnPath(@NotNull String name) {
-        String pathEnv = System.getenv("PATH");
-        if (pathEnv == null) return null;
-        for (String dir : pathEnv.split(File.pathSeparator)) {
-            Path candidate = Path.of(dir, name);
-            if (Files.isExecutable(candidate)) return candidate.toString();
-        }
-        return null;
     }
 }
