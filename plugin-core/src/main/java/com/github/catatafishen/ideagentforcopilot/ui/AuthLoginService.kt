@@ -359,28 +359,25 @@ class AuthLoginService(private val project: Project) {
         try {
             val agentManager = ActiveAgentManager.getInstance(project)
             val profile = agentManager.getActiveProfile()
-
-            // Use the same environment configuration as agent processes
             val config = ProfileBasedAgentConfig(profile, ToolRegistry.getInstance(project))
-            config.configureAgentEnvironment(pb.environment(), project.basePath)
+            // Use login-specific env so HOME is NOT overridden (overriding HOME breaks copilot npm wrapper)
+            config.configureLoginCommandEnvironment(pb.environment(), project.basePath)
         } catch (e: Exception) {
             LOG.warn("Failed to configure auth environment", e)
         }
     }
 
     /**
-     * Gets environment variables for auth commands to use the same
-     * home directories as the main ACP agent processes.
+     * Gets environment variables for auth (login) commands.
+     * Only sets agent-specific credential-directory vars; does NOT override HOME.
      */
     private fun getAuthEnvironmentVars(): Map<String, String> {
         return try {
             val agentManager = ActiveAgentManager.getInstance(project)
             val profile = agentManager.getActiveProfile()
-
-            // Get environment configuration as agent processes would use
             val config = ProfileBasedAgentConfig(profile, ToolRegistry.getInstance(project))
             val envMap = mutableMapOf<String, String>()
-            config.configureAgentEnvironment(envMap, project.basePath)
+            config.configureLoginCommandEnvironment(envMap, project.basePath)
             envMap
         } catch (e: Exception) {
             LOG.warn("Failed to get auth environment variables", e)

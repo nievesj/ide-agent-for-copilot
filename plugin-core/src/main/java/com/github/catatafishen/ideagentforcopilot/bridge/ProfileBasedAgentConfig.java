@@ -227,8 +227,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
             case "claude" -> environment.put("CLAUDE_CONFIG_DIR", agentWorkDir);
             case "copilot" -> {
                 // Mirror the full environment that CopilotClient.buildEnvironment() sets so that
-                // auth commands (e.g. `copilot login`) store credentials in the same directory
-                // the agent process will read from.
+                // the agent process reads credentials from the project-specific directory.
                 environment.put("COPILOT_HOME", agentWorkDir);
                 environment.put("XDG_CONFIG_HOME", agentWorkDir);
                 environment.put("HOME", agentWorkDir);
@@ -244,6 +243,32 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
                 // Kiro uses --config-dir flag instead
                 // Junie reads from .junie/ in project root (no env var support)
             }
+        }
+    }
+
+    /**
+     * Configures environment variables for a login/auth command (e.g. {@code copilot login}).
+     *
+     * <p>Unlike {@link #configureAgentEnvironment}, this method does NOT override {@code HOME},
+     * {@code XDG_CONFIG_HOME} or {@code USERPROFILE}.  Overriding {@code HOME} breaks the
+     * Copilot npm wrapper (it can no longer locate Node.js tooling), causing the login command
+     * to exit immediately with code 1.  Only {@code COPILOT_HOME} is set so that credentials
+     * are written to the project-specific directory that the ACP agent will also read from.</p>
+     */
+    public void configureLoginCommandEnvironment(@NotNull Map<String, String> environment, @Nullable String projectBasePath) {
+        if (projectBasePath == null) return;
+        String agentId = profile.getId();
+        String agentWorkDir = Path.of(projectBasePath, AGENT_WORK_DIR, agentId).toString();
+
+        switch (agentId) {
+            case "claude" -> environment.put("CLAUDE_CONFIG_DIR", agentWorkDir);
+            case "copilot" -> {
+                // Only override COPILOT_HOME so copilot stores credentials in the right place.
+                // Do NOT override HOME – the npm copilot wrapper needs a real home directory.
+                environment.put("COPILOT_HOME", agentWorkDir);
+                ensureCopilotAuthentication(agentWorkDir);
+            }
+            default -> { /* other agents don't need login env overrides */ }
         }
     }
 
