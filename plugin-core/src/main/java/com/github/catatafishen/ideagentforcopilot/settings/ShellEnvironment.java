@@ -115,7 +115,7 @@ public class ShellEnvironment {
             Map<String, String> env = new HashMap<>();
 
             try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                new InputStreamReader(process.getInputStream(), Charset.defaultCharset()))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     int idx = line.indexOf('=');
