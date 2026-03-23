@@ -139,6 +139,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         p.setInstallHint("Install with: npm install -g @openai/codex, then run 'codex login'.");
         p.setInstallUrl("https://developers.openai.com/codex/cli");
         p.setSupportsOAuthSignIn(false);
+        p.setTerminalSignInCommand("codex login --device-auth");
         p.setAcpArgs(List.of());
         // MCP injected via --config flags at server startup
         p.setMcpMethod(McpInjectionMethod.NONE);
@@ -227,7 +228,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         CodexCredentials creds = CodexCredentials.read();
         if (!creds.isLoggedIn()) {
             throw new AgentException(
-                "Not authenticated with Codex. Run 'codex login' in a terminal, then retry.",
+                "Not authenticated with Codex. Run 'codex login --device-auth' in a terminal, then retry.",
                 null, false);
         }
         launchAppServer();
@@ -282,7 +283,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     public static String checkCredentials() {
         CodexCredentials creds = CodexCredentials.read();
         return creds.isLoggedIn() ? null
-            : "Not authenticated with Codex. Run 'codex login' in a terminal, then retry.";
+            : "Not authenticated with Codex. Run 'codex login --device-auth' in a terminal, then retry.";
     }
 
     // ── Sessions ─────────────────────────────────────────────────────────────

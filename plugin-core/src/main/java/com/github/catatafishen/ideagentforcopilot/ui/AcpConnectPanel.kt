@@ -562,6 +562,14 @@ class AcpConnectPanel(
                     onSignIn = { startInlineAuth() },
                     onRetry = { doConnect() }
                 )
+            } else if (authService.isAuthenticationError(message) && profile.terminalSignInCommand != null) {
+                // Agent with terminal-based sign-in (e.g. codex login --device-auth)
+                val signInCmd = profile.terminalSignInCommand!!
+                statusBanner.showAuthError(
+                    "Not signed in — click Sign In to run '$signInCmd' in a terminal.",
+                    onSignIn = { authService.startTerminalSignIn(signInCmd) },
+                    onRetry = { doConnect() }
+                )
             } else if (authService.isAuthenticationError(message)) {
                 // Non-OAuth agent — show retry hint
                 statusBanner.showError("$message — check your credentials and click Connect to retry.")
