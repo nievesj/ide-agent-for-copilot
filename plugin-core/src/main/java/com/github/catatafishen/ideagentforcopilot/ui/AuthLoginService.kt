@@ -229,6 +229,33 @@ class AuthLoginService(private val project: Project) {
         }
     }
 
+    /**
+     * Logs out the active agent by deleting its authentication data.
+     * For Copilot, this removes the entire .agent-work/copilot/ directory.
+     */
+    fun logout(): Boolean {
+        return try {
+            val agentManager = ActiveAgentManager.getInstance(project)
+            val profile = agentManager.getActiveProfile()
+            val agentId = profile.id
+            val projectBasePath = project.basePath ?: return false
+
+            val agentWorkDir = java.nio.file.Path.of(projectBasePath, ".agent-work", agentId)
+            if (java.nio.file.Files.exists(agentWorkDir)) {
+                agentWorkDir.toFile().deleteRecursively()
+                LOG.info("Deleted auth data for agent '$agentId' at $agentWorkDir")
+                clearPendingAuthError()
+                true
+            } else {
+                LOG.info("No auth data found for agent '$agentId' at $agentWorkDir")
+                false
+            }
+        } catch (e: Exception) {
+            LOG.warn("Failed to logout", e)
+            false
+        }
+    }
+
     // ── External-terminal fallbacks (used only when terminal plugin is absent) ──
 
     private fun startCopilotLoginExternal(command: String) {

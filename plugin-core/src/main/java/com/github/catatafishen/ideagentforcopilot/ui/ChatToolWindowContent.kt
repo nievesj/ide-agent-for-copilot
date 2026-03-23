@@ -938,6 +938,18 @@ class ChatToolWindowContent(
             })
             group.addSeparator()
             group.add(object : AnAction(
+                "Logout",
+                "Delete authentication tokens for the current agent",
+                AllIcons.Actions.Exit
+            ) {
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun actionPerformed(e: AnActionEvent) {
+                    if (authService.logout()) {
+                        disconnectFromAgent()
+                    }
+                }
+            })
+            group.add(object : AnAction(
                 "Disconnect",
                 "Stop the ACP process and return to the connection screen",
                 AllIcons.Actions.Cancel
