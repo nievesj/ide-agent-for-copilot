@@ -146,23 +146,44 @@ public abstract class AcpClient extends AbstractAgentClient {
     @Override
     public final void start() throws AgentStartException {
         try {
+            LOG.info(displayName() + " starting...");
             int mcpPort = resolveMcpPort();
+            LOG.info(displayName() + " launching process (MCP port: " + mcpPort + ")");
             agentProcess = launchProcess(mcpPort);
+            LOG.info(displayName() + " process launched, starting transport");
             transport.start(agentProcess);
             transport.setDebugLogger(line -> {
                 if (McpServerSettings.getInstance(project).isDebugLoggingEnabled()) {
                     LOG.info("[ACP] " + truncateForLog(line));
                 }
             });
+            LOG.info(displayName() + " transport started, registering handlers");
             registerHandlers();
+            LOG.info(displayName() + " handlers registered, initializing");
             capabilities = initialize();
+            LOG.info(displayName() + " initialized, authenticating");
             authenticate();
+            LOG.info(displayName() + " authenticated, fetching models");
             eagerFetchModels();
             LOG.info(displayName() + " agent started successfully");
         } catch (Exception e) {
+            LOG.warn(displayName() + " startup failed at: " + getStartupStepFromException(e), e);
             stop();
             throw new AgentStartException("Failed to start " + displayName(), e);
         }
+    }
+
+    private String getStartupStepFromException(Exception e) {
+        StackTraceElement[] stack = e.getStackTrace();
+        if (stack.length > 0) {
+            String method = stack[0].getMethodName();
+            if (method.contains("launch")) return "process launch";
+            if (method.contains("start")) return "transport start";
+            if (method.contains("initialize")) return "initialization";
+            if (method.contains("authenticate")) return "authentication";
+            if (method.contains("fetchModels")) return "model fetch";
+        }
+        return "unknown step";
     }
 
     @Override
