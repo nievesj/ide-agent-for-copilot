@@ -2,7 +2,7 @@
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 
-const componentsPath = resolve(__dirname, '../src/main/resources/chat/chat-components.js');
+const componentsPath = resolve(__dirname, '../build/generated/resources/chat-ui/chat/chat-components.js');
 const code = readFileSync(componentsPath, 'utf-8');
 
 // Provide a minimal _bridge stub
