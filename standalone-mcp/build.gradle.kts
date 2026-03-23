@@ -66,6 +66,15 @@ val repackagePluginCore by tasks.registering(Jar::class) {
     }
 }
 
+// plugin-core classes (without plugin.xml) must be on the runtime classpath so that
+// buildSearchableOptions can instantiate service/configurable types defined in plugin-core.
+// IPP's buildSearchableOptions uses a fresh sandbox separate from the regular prepareSandbox
+// output, so it does not pick up the jar copied via doLast — it needs the jar on the runtime
+// configuration so IPP bundles it automatically.
+dependencies {
+    runtimeOnly(files(repackagePluginCore))
+}
+
 // Include plugin-core classes in the standalone plugin
 tasks.named("prepareSandbox") {
     dependsOn(repackagePluginCore)
