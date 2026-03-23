@@ -1127,9 +1127,8 @@ public abstract class AcpClient extends AbstractAgentClient {
                 }
             }
         } else {
-            // MCP tools are our own server-side tools, so we keep the existing auto-approval path.
-            LOG.info(displayName() + ": permission request for MCP tool '" + toolId + "' requires user approval");
-            LOG.warn(displayName() + ": auto-approving MCP tool '" + toolId + "' - this should require user approval");
+            // MCP tools: auto-approve at ACP level, MCP server will handle permission checks
+            LOG.info(displayName() + ": auto-approving MCP tool '" + toolId + "' at ACP level (MCP server will check permissions)");
             chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
 
             if (chosenOption == null) {
