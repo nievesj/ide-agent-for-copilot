@@ -4,6 +4,7 @@ import com.github.catatafishen.ideagentforcopilot.agent.claude.ClaudeCliClient
 import com.github.catatafishen.ideagentforcopilot.agent.claude.ClaudeCliCredentials
 import com.github.catatafishen.ideagentforcopilot.bridge.ProfileBasedAgentConfig
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
+import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry
 import com.github.catatafishen.ideagentforcopilot.settings.BinaryDetector
 import com.intellij.openapi.application.ApplicationManager
@@ -266,6 +267,18 @@ class AuthLoginService(private val project: Project) {
             if (agentId == ClaudeCliClient.PROFILE_ID) {
                 val deleted = ClaudeCliCredentials.logout()
                 LOG.info("Claude CLI logout: credentials deleted=$deleted")
+                clearPendingAuthError()
+                return true
+            }
+
+            // Kiro CLI manages its own credentials — delegate to `kiro-cli logout`
+            if (agentId == AgentProfileManager.KIRO_PROFILE_ID) {
+                val binary = profile.binaryName ?: "kiro-cli"
+                val result = ProcessBuilder(binary, "logout")
+                    .redirectErrorStream(true)
+                    .start()
+                    .waitFor()
+                LOG.info("Kiro logout exit code: $result")
                 clearPendingAuthError()
                 return true
             }
