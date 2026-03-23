@@ -21,6 +21,9 @@ public class ContentBlockSerializer implements JsonSerializer<ContentBlock> {
         if (src instanceof ContentBlock.Text t) {
             obj.addProperty("type", "text");
             obj.addProperty("text", t.text());
+        } else if (src instanceof ContentBlock.Thinking t) {
+            obj.addProperty("type", "thinking");
+            obj.addProperty("thinking", t.thinking());
         } else if (src instanceof ContentBlock.Image img) {
             obj.addProperty("type", "image");
             obj.addProperty("data", img.data());

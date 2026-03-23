@@ -37,7 +37,9 @@ class AcpMessageParser {
      * Implemented by {@link AcpClient} and overridden by its concrete subclasses.
      */
     interface Delegate {
-        /** Map a raw protocol tool title to a display/resolved ID. Default: identity. */
+        /**
+         * Map a raw protocol tool title to a display/resolved ID. Default: identity.
+         */
         String resolveToolId(String protocolTitle);
 
         /**
@@ -51,7 +53,7 @@ class AcpMessageParser {
          * a sub-agent call.
          */
         @Nullable String extractSubAgentType(@NotNull JsonObject params, @NotNull String resolvedTitle,
-                                              @Nullable JsonObject argumentsObj);
+                                             @Nullable JsonObject argumentsObj);
     }
 
     private final Delegate delegate;
@@ -248,6 +250,8 @@ class AcpMessageParser {
         String blockType = block.has("type") ? block.get("type").getAsString() : "text";
         if ("text".equals(blockType) && block.has("text")) {
             return new ContentBlock.Text(block.get("text").getAsString());
+        } else if ("thinking".equals(blockType) && block.has("thinking")) {
+            return new ContentBlock.Thinking(block.get("thinking").getAsString());
         } else if (KEY_CONTENT.equals(blockType) && block.has(KEY_CONTENT)) {
             // Spec: tool_call_update content items wrap blocks as {type:"content", content:{type,text}}
             JsonElement inner = block.get(KEY_CONTENT);

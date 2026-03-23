@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.acp.client;
 
+import com.github.catatafishen.ideagentforcopilot.acp.model.ContentBlock;
 import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -214,6 +215,15 @@ public final class KiroClient extends AcpClient {
 
     @Override
     protected SessionUpdate processUpdate(SessionUpdate update) {
+        // Kiro sends thinking as agent_message_chunk with ContentBlock.Thinking blocks —
+        // convert to agent_thought_chunk for proper UI rendering.
+        if (update instanceof SessionUpdate.AgentMessageChunk chunk) {
+            boolean hasThinking = chunk.content().stream()
+                .anyMatch(block -> block instanceof ContentBlock.Thinking);
+            if (hasThinking) {
+                return new SessionUpdate.AgentThoughtChunk(chunk.content());
+            }
+        }
         if (update instanceof SessionUpdate.ToolCall tc) {
             // Kiro sends multiple tool_call updates for the same toolCallId:
             // 1. First with just title (e.g., "search_text") - NO rawInput

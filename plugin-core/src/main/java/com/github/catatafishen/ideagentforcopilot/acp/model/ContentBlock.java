@@ -2,8 +2,6 @@ package com.github.catatafishen.ideagentforcopilot.acp.model;
 
 import org.jetbrains.annotations.Nullable;
 
-import java.util.List;
-
 /**
  * Content blocks used in prompts and agent messages.
  * Discriminated union — serialized with a "type" field.
@@ -12,22 +10,30 @@ import java.util.List;
  */
 public sealed interface ContentBlock {
 
-    record Text(String text) implements ContentBlock {}
+    record Text(String text) implements ContentBlock {
+    }
 
-    record Image(String data, String mimeType) implements ContentBlock {}
+    record Thinking(String thinking) implements ContentBlock {
+    }
 
-    record Audio(String data, String mimeType) implements ContentBlock {}
+    record Image(String data, String mimeType) implements ContentBlock {
+    }
 
-    record Resource(ResourceLink resource) implements ContentBlock {}
+    record Audio(String data, String mimeType) implements ContentBlock {
+    }
+
+    record Resource(ResourceLink resource) implements ContentBlock {
+    }
 
     /**
      * A reference to an embedded resource (file content, selection, etc.).
      */
     record ResourceLink(
-            String uri,
-            @Nullable String name,
-            @Nullable String mimeType,
-            @Nullable String text,
-            @Nullable String blob
-    ) {}
+        String uri,
+        @Nullable String name,
+        @Nullable String mimeType,
+        @Nullable String text,
+        @Nullable String blob
+    ) {
+    }
 }
