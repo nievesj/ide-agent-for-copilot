@@ -183,6 +183,7 @@ class ChatToolWindowContent(
         agentManager.isConnected = true
         restartSessionGroup?.updateIconForActiveAgent()
         updatePromptPlaceholder()
+        setSendingState(false)  // Ensure send button is enabled
     }
 
     /**
