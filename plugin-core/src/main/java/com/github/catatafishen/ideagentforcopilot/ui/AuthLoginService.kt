@@ -49,21 +49,13 @@ class AuthLoginService(private val project: Project) {
 
     /** Returns null if the active agent is installed and authenticated, or an error description. */
     fun copilotSetupDiagnostics(): String? {
-        // If there's a pending auth error that hasn't been cleared, return it
-        // BUT give it a chance to recover by checking fresh auth periodically
         val agentManager = ActiveAgentManager.getInstance(project)
-
-        // Always attempt fresh auth check - don't rely solely on sticky pendingAuthError
         return try {
-            val authCheck = agentManager.client.checkAuthentication()
-            // If auth check succeeds (returns null), clear any stale pending error
-            if (authCheck == null) {
-                pendingAuthError = null
-            }
+            val authCheck = agentManager.checkAuthentication()
+            if (authCheck == null) pendingAuthError = null
             authCheck
         } catch (e: Exception) {
             val errorMsg = e.message ?: "Failed to connect to agent"
-            // Only set pendingAuthError for auth-related failures, not network/process issues
             if (errorMsg.lowercase().contains("auth") || errorMsg.lowercase().contains("sign in")) {
                 pendingAuthError = errorMsg
             }
@@ -273,7 +265,7 @@ class AuthLoginService(private val project: Project) {
 
             // Kiro CLI manages its own credentials — delegate to `kiro-cli logout`
             if (agentId == AgentProfileManager.KIRO_PROFILE_ID) {
-                val binary = profile.binaryName ?: "kiro-cli"
+                val binary = profile.binaryName.ifEmpty { "kiro-cli" }
                 val result = ProcessBuilder(binary, "logout")
                     .redirectErrorStream(true)
                     .start()

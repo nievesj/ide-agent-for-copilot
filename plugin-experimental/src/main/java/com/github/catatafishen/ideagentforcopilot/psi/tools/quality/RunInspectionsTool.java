@@ -13,6 +13,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDirectory;
 import com.intellij.psi.PsiFile;
@@ -229,7 +230,7 @@ public final class RunInspectionsTool extends QualityTool {
                 // Collect synchronously while the context is still valid — the callback is
                 // invoked BEFORE super.notifyInspectionsFinished which calls cleanup().
                 InspectionCollectionResult collected = ApplicationManager.getApplication().runReadAction(
-                    () -> collectInspectionProblems(ctx, severityRank, requiredRank, basePath));
+                    (Computable<InspectionCollectionResult>) () -> collectInspectionProblems(ctx, severityRank, requiredRank, basePath));
                 cacheAndCompleteInspection(collected, new InspectionPageParams(profileName, offset, limit), resultFuture);
             });
 
@@ -274,7 +275,7 @@ public final class RunInspectionsTool extends QualityTool {
         }
         if (scopeFile.isDirectory()) {
             PsiDirectory psiDir = ApplicationManager.getApplication().runReadAction(
-                () -> PsiManager.getInstance(project).findDirectory(scopeFile)
+                (Computable<PsiDirectory>) () -> PsiManager.getInstance(project).findDirectory(scopeFile)
             );
             if (psiDir == null) {
                 resultFuture.complete("Error: Cannot resolve directory: " + scopePath);
@@ -284,7 +285,7 @@ public final class RunInspectionsTool extends QualityTool {
             return new AnalysisScope(psiDir);
         }
         PsiFile psiFile = ApplicationManager.getApplication().runReadAction(
-            () -> PsiManager.getInstance(project).findFile(scopeFile));
+            (Computable<PsiFile>) () -> PsiManager.getInstance(project).findFile(scopeFile));
         if (psiFile == null) {
             resultFuture.complete(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + scopePath);
             return null;

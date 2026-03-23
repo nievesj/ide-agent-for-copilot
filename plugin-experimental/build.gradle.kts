@@ -3,7 +3,7 @@ import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLeve
 plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "2.3.10"
-    id("org.jetbrains.intellij.platform") version "2.11.0"
+    id("org.jetbrains.intellij.platform") version "2.13.1"
 }
 
 repositories {
@@ -104,19 +104,19 @@ tasks.named("patchPluginXml") {
     dependsOn(generatePluginXml)
 }
 
-// Include plugin-core classes in the sandbox
+// Include plugin-core classes in the plugin sandbox.
+// IPP 2.x places the sandbox at <rootProject>/.intellijPlatform/sandbox/<module>/<IDE-version>/
+// The doLast runs after prepareSandbox has created the sandbox structure, so the lib dir exists.
 tasks.named("prepareSandbox") {
     dependsOn(repackagePluginCore)
     doLast {
         val coreJar = repackagePluginCore.get().outputs.files.singleFile
-        val ideDirs = File(
-            layout.buildDirectory.asFile.get(),
-            "idea-sandbox"
-        ).listFiles { f -> f.isDirectory && f.name.startsWith("IU-") }
-        ideDirs?.forEach { ideDir ->
-            val sandboxLib = File(ideDir, "plugins/plugin-experimental/lib")
-            sandboxLib.mkdirs()
-            coreJar.copyTo(File(sandboxLib, "plugin-core.jar"), overwrite = true)
+        val sandboxBase = project.rootProject.projectDir.resolve(".intellijPlatform/sandbox/${project.name}")
+        sandboxBase.listFiles { f -> f.isDirectory }?.forEach { ideVersionDir ->
+            val libDir = ideVersionDir.resolve("plugins/${project.name}/lib")
+            if (libDir.exists()) {
+                coreJar.copyTo(libDir.resolve("plugin-core.jar"), overwrite = true)
+            }
         }
     }
 }
