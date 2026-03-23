@@ -77,7 +77,9 @@ public final class ClaudeCliCredentials {
         }
     }
 
-    /** Returns true if the user is logged in with a non-expired token. */
+    /**
+     * Returns true if the user is logged in with a non-expired token.
+     */
     public boolean isLoggedIn() {
         return loggedIn;
     }
@@ -88,5 +90,19 @@ public final class ClaudeCliCredentials {
     @Nullable
     public String getDisplayName() {
         return displayName;
+    }
+
+    /**
+     * Deletes the credentials file, effectively logging the user out of the Claude CLI.
+     *
+     * @return true if the file was deleted, false if it did not exist or deletion failed
+     */
+    public static boolean logout() {
+        try {
+            return Files.deleteIfExists(CREDENTIALS_PATH);
+        } catch (IOException e) {
+            LOG.warn("Failed to delete Claude CLI credentials: " + e.getMessage());
+            return false;
+        }
     }
 }

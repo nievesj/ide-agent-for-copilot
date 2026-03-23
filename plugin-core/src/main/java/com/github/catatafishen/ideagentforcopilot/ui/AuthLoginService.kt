@@ -1,5 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
+import com.github.catatafishen.ideagentforcopilot.agent.claude.ClaudeCliClient
+import com.github.catatafishen.ideagentforcopilot.agent.claude.ClaudeCliCredentials
 import com.github.catatafishen.ideagentforcopilot.bridge.ProfileBasedAgentConfig
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry
@@ -259,8 +261,16 @@ class AuthLoginService(private val project: Project) {
             val agentManager = ActiveAgentManager.getInstance(project)
             val profile = agentManager.getActiveProfile()
             val agentId = profile.id
-            val projectBasePath = project.basePath ?: return false
 
+            // Claude CLI stores credentials at ~/.claude/.credentials.json, not in .agent-work/
+            if (agentId == ClaudeCliClient.PROFILE_ID) {
+                val deleted = ClaudeCliCredentials.logout()
+                LOG.info("Claude CLI logout: credentials deleted=$deleted")
+                clearPendingAuthError()
+                return true
+            }
+
+            val projectBasePath = project.basePath ?: return false
             val agentWorkDir = java.nio.file.Path.of(projectBasePath, ".agent-work", agentId)
             if (java.nio.file.Files.exists(agentWorkDir)) {
                 agentWorkDir.toFile().deleteRecursively()
