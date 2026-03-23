@@ -16,6 +16,7 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 import java.awt.*;
+import java.io.File;
 
 public final class CopilotClientConfigurable implements Configurable {
 
@@ -38,6 +39,14 @@ public final class CopilotClientConfigurable implements Configurable {
     public @NotNull JComponent createComponent() {
         statusLabel = new JBLabel();
 
+        JButton recheckButton = new JButton("Recheck");
+        recheckButton.addActionListener(e -> refreshStatusAsync());
+        recheckButton.setToolTipText("Check if the binary is available");
+
+        JPanel statusRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        statusRow.add(statusLabel);
+        statusRow.add(recheckButton);
+
         binaryPathField = new JBTextField();
         binaryPathField.getEmptyText().setText("Auto-detect (leave empty)");
         binaryPathField.setToolTipText("Absolute path to the copilot binary. Leave empty to find it on PATH.");
@@ -51,7 +60,7 @@ public final class CopilotClientConfigurable implements Configurable {
         installNote.setFont(JBUI.Fonts.smallFont());
 
         JPanel configPanel = FormBuilder.createFormBuilder()
-            .addLabeledComponent("Status:", statusLabel)
+            .addLabeledComponent("Status:", statusRow)
             .addComponent(installNote, 2)
             .addComponent(installLink, 2)
             .addSeparator(8)
@@ -115,9 +124,39 @@ public final class CopilotClientConfigurable implements Configurable {
         statusLabel.setForeground(UIUtil.getLabelForeground());
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            String customPath = AcpClient.loadCustomBinaryPath(AGENT_ID);
-            String binary = customPath != null ? customPath : AGENT_ID;
-            String version = BinaryDetector.detectBinaryVersion(binary, new String[]{"copilot-cli"});
+            String customPath = binaryPathField != null ? binaryPathField.getText().trim() : null;
+            if (customPath == null || customPath.isEmpty()) {
+                customPath = AcpClient.loadCustomBinaryPath(AGENT_ID);
+            }
+
+            String version;
+            if (customPath != null && !customPath.isEmpty()) {
+                // Custom path provided - check if file exists first
+                File file = new File(customPath);
+                if (!file.exists()) {
+                    String finalCustomPath = customPath;
+                    SwingUtilities.invokeLater(() -> {
+                        if (statusLabel == null) return;
+                        statusLabel.setText("✗ File not found: " + finalCustomPath);
+                        statusLabel.setForeground(Color.RED);
+                    });
+                    return;
+                }
+                if (!file.canExecute()) {
+                    String finalCustomPath1 = customPath;
+                    SwingUtilities.invokeLater(() -> {
+                        if (statusLabel == null) return;
+                        statusLabel.setText("✗ File not executable: " + finalCustomPath1);
+                        statusLabel.setForeground(Color.RED);
+                    });
+                    return;
+                }
+                version = BinaryDetector.detectBinaryVersion(customPath, new String[0]);
+            } else {
+                // Auto-detect on PATH
+                version = BinaryDetector.detectBinaryVersion(AGENT_ID, new String[]{"copilot-cli"});
+            }
+
             SwingUtilities.invokeLater(() -> {
                 if (statusLabel == null) return;
                 if (version != null) {
