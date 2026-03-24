@@ -492,15 +492,13 @@ working-indicator .working-text {
     border-color: color-mix(in srgb, var(--kind-other) 18%, transparent);
 }
 
-/* Default tool chip border is dashed — origin unknown / agent used a native tool (EXTERNAL/PENDING/FAILED).
-   Only chips confirmed handled by our MCP server get a solid border (COMPLETE). */
+/* Default tool chip border is dashed — becomes solid once AgentBridge MCP handles the call. */
 .turn-chip.tool {
     border-style: dashed;
 }
 
 .turn-chip.tool.status-denied {
     border-color: var(--error) !important;
-    border-style: dotted !important;
     background: var(--error-a05) !important;
     color: var(--error) !important;
 }
