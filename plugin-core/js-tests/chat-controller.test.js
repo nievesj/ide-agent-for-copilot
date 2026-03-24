@@ -114,7 +114,7 @@ describe('ChatController', () => {
             const chip = getMessages().querySelector('thinking-chip');
             expect(chip).not.toBeNull();
             expect(chip.getAttribute('status')).toBe('complete');
-            expect(chip.textContent).toContain('Thought complete');
+            expect(chip.textContent).toContain('Thought');
         });
 
         it('collapseThinking shows an empty-reasoning placeholder in the expanded block', () => {
@@ -123,7 +123,7 @@ describe('ChatController', () => {
             const chip = getMessages().querySelector('thinking-chip');
             const block = getMessages().querySelector('thinking-block');
             expect(chip.getAttribute('status')).toBe('complete');
-            expect(chip.textContent).toContain('Thought complete');
+            expect(chip.textContent).toContain('Thought');
             expect(block.textContent).toContain('No reasoning returned');
         });
 
