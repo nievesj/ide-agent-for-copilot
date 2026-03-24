@@ -1,7 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.services.ChatWebServer;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.components.JBCheckBox;
@@ -126,27 +125,37 @@ public final class ChatWebServerConfigurable implements Configurable {
         ChatWebServer ws = ChatWebServer.getInstance(project);
         if (ws.isRunning()) {
             ws.stop();
+            refresh();
         } else {
             apply(); // save port before starting
-            ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            startStopButton.setEnabled(false);
+            startStopButton.setText("Starting…");
+            new Thread(() -> {
                 try {
                     ws.start();
                 } catch (Exception e) {
-                    ApplicationManager.getApplication().invokeLater(() ->
+                    SwingUtilities.invokeLater(() -> {
                         JOptionPane.showMessageDialog(mainPanel,
                             "Failed to start web server: " + e.getMessage(),
-                            "Chat Web Server Error", JOptionPane.ERROR_MESSAGE));
+                            "Chat Web Server Error", JOptionPane.ERROR_MESSAGE);
+                        refresh();
+                    });
+                    return;
                 }
-                ApplicationManager.getApplication().invokeLater(this::refresh);
-            });
-            return;
+                SwingUtilities.invokeLater(this::refresh);
+            }, "ChatWebServer-start").start();
         }
-        refresh();
     }
 
     private void refresh() {
-        if (startStopButton != null) startStopButton.setText(getStartStopLabel());
+        if (startStopButton == null) return;
+        startStopButton.setEnabled(true);
+        startStopButton.setText(getStartStopLabel());
         updateUrlLabel();
+        if (mainPanel != null) {
+            mainPanel.revalidate();
+            mainPanel.repaint();
+        }
     }
 
     private String getStartStopLabel() {

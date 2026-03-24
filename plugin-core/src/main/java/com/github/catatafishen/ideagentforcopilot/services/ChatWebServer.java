@@ -12,6 +12,7 @@ import com.sun.net.httpserver.HttpServer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -114,6 +115,9 @@ public final class ChatWebServer implements Disposable {
         httpServer.createContext("/", this::handleRoot);
         httpServer.createContext("/chat.css", ex -> serveClasspath(ex, "/chat/chat.css", "text/css; charset=utf-8"));
         httpServer.createContext("/chat.bundle.js", ex -> serveClasspath(ex, "/chat/chat-components.js", "application/javascript; charset=utf-8"));
+        httpServer.createContext("/icon.svg", this::handleIconSvg);
+        httpServer.createContext("/icon-192.png", ex -> handleIconPng(ex, 192));
+        httpServer.createContext("/icon-512.png", ex -> handleIconPng(ex, 512));
         httpServer.createContext("/manifest.json", this::handleManifest);
         httpServer.createContext("/sw.js", this::handleServiceWorker);
         httpServer.createContext("/events", this::handleSse);
@@ -244,21 +248,27 @@ public final class ChatWebServer implements Disposable {
         String manifest = "{"
             + "\"name\":\"AgentBridge\","
             + "\"short_name\":\"AgentBridge\","
+            + "\"id\":\"/\","
             + "\"start_url\":\"/\","
+            + "\"scope\":\"/\","
             + "\"display\":\"standalone\","
-            + "\"theme_color\":\"#2b2b2b\","
-            + "\"background_color\":\"#2b2b2b\","
-            + "\"icons\":[{\"src\":\"/icon.svg\",\"sizes\":\"any\",\"type\":\"image/svg+xml\"}]"
-            + "}";
+            + "\"theme_color\":\"#1e1f22\","
+            + "\"background_color\":\"#1e1f22\","
+            + "\"icons\":["
+            + "{\"src\":\"/icon-192.png\",\"sizes\":\"192x192\",\"type\":\"image/png\",\"purpose\":\"any maskable\"},"
+            + "{\"src\":\"/icon-512.png\",\"sizes\":\"512x512\",\"type\":\"image/png\",\"purpose\":\"any maskable\"},"
+            + "{\"src\":\"/icon.svg\",\"sizes\":\"any\",\"type\":\"image/svg+xml\"}"
+            + "]}";
         sendJson(exchange, manifest);
     }
 
     private void handleServiceWorker(HttpExchange exchange) throws IOException {
         String sw = "self.addEventListener('install',()=>self.skipWaiting());\n"
             + "self.addEventListener('activate',e=>e.waitUntil(clients.claim()));\n"
+            + "self.addEventListener('fetch',e=>e.respondWith(fetch(e.request).catch(()=>new Response('Offline',{status:503}))));\n"
             + "self.addEventListener('message',e=>{\n"
             + "  if(e.data&&e.data.type==='SHOW_NOTIFICATION'){\n"
-            + "    e.waitUntil(self.registration.showNotification(e.data.title||'AgentBridge',{body:e.data.body||'',icon:'/icon.svg',tag:'agentbridge'}));\n"
+            + "    e.waitUntil(self.registration.showNotification(e.data.title||'AgentBridge',{body:e.data.body||'',icon:'/icon-192.png',tag:'agentbridge'}));\n"
             + "  }\n"
             + "});\n";
         byte[] bytes = sw.getBytes(StandardCharsets.UTF_8);
@@ -267,6 +277,124 @@ public final class ChatWebServer implements Disposable {
         exchange.sendResponseHeaders(200, bytes.length);
         exchange.getResponseBody().write(bytes);
         exchange.close();
+    }
+
+    private void handleIconSvg(HttpExchange exchange) throws IOException {
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        byte[] bytes = buildIconSvg().getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "image/svg+xml");
+        exchange.getResponseHeaders().set("Cache-Control", "public, max-age=86400");
+        exchange.sendResponseHeaders(200, bytes.length);
+        exchange.getResponseBody().write(bytes);
+        exchange.close();
+    }
+
+    private void handleIconPng(HttpExchange exchange, int size) throws IOException {
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        byte[] bytes = size <= 192 ? ICON_192_PNG : ICON_512_PNG;
+        exchange.getResponseHeaders().set("Content-Type", "image/png");
+        exchange.getResponseHeaders().set("Cache-Control", "public, max-age=86400");
+        exchange.sendResponseHeaders(200, bytes.length);
+        exchange.getResponseBody().write(bytes);
+        exchange.close();
+    }
+
+    // ── Icon assets ───────────────────────────────────────────────────────────
+
+    private static final byte[] ICON_192_PNG;
+    private static final byte[] ICON_512_PNG;
+
+    static {
+        ICON_192_PNG = generateIconPng(192);
+        ICON_512_PNG = generateIconPng(512);
+    }
+
+    private static String buildIconSvg() {
+        // Web-optimised version: dark background, near-white icon elements
+        return "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"256\" height=\"256\" viewBox=\"0 0 13 13\">"
+            + "<rect width=\"13\" height=\"13\" rx=\"2.6\" fill=\"#1E1F22\"/>"
+            + "<path d=\"M 7.925 0 L 3.907 6.5 H 6.98 L 3.907 13 L 9.58 5.318 H 6.389 Z\" fill=\"#ECEEF2\"/>"
+            + "<circle cx=\"1.536\" cy=\"1.536\" r=\"1.182\" fill=\"none\" stroke=\"#ECEEF2\" stroke-width=\"0.709\"/>"
+            + "<circle cx=\"11.464\" cy=\"1.536\" r=\"1.182\" fill=\"none\" stroke=\"#ECEEF2\" stroke-width=\"0.709\"/>"
+            + "<circle cx=\"1.536\" cy=\"11.464\" r=\"1.182\" fill=\"none\" stroke=\"#ECEEF2\" stroke-width=\"0.709\"/>"
+            + "<circle cx=\"11.464\" cy=\"11.464\" r=\"1.182\" fill=\"none\" stroke=\"#ECEEF2\" stroke-width=\"0.709\"/>"
+            + "<polyline points=\"1.536,2.718 1.536,5.082 2.955,6.5\" fill=\"none\" stroke=\"#ECEEF2\" stroke-width=\"0.709\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+            + "<polyline points=\"11.464,2.718 11.464,5.082 10.045,6.5\" fill=\"none\" stroke=\"#ECEEF2\" stroke-width=\"0.709\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+            + "<polyline points=\"1.536,10.282 1.536,7.918 2.955,6.5\" fill=\"none\" stroke=\"#ECEEF2\" stroke-width=\"0.709\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+            + "<polyline points=\"11.464,10.282 11.464,7.918 10.045,6.5\" fill=\"none\" stroke=\"#ECEEF2\" stroke-width=\"0.709\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+            + "</svg>";
+    }
+
+    private static byte[] generateIconPng(int size) {
+        java.awt.image.BufferedImage img =
+            new java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        java.awt.Graphics2D g = img.createGraphics();
+        g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(java.awt.RenderingHints.KEY_STROKE_CONTROL, java.awt.RenderingHints.VALUE_STROKE_PURE);
+
+        // Dark rounded-square background
+        int arc = size / 5;
+        g.setColor(new java.awt.Color(0x1E1F22));
+        g.fillRoundRect(0, 0, size, size, arc, arc);
+
+        // Transform into SVG coordinate space (viewBox 0 0 13 13) with padding
+        double pad = size * 0.10;
+        double scale = (size - 2 * pad) / 13.0;
+        g.translate(pad, pad);
+        g.scale(scale, scale);
+
+        g.setColor(new java.awt.Color(0xECEEF2));
+
+        // Lightning bolt (filled)
+        java.awt.geom.Path2D.Double bolt = new java.awt.geom.Path2D.Double();
+        bolt.moveTo(7.925, 0);
+        bolt.lineTo(3.907, 6.5);
+        bolt.lineTo(6.98, 6.5);
+        bolt.lineTo(3.907, 13);
+        bolt.lineTo(9.58, 5.318);
+        bolt.lineTo(6.389, 5.318);
+        bolt.closePath();
+        g.fill(bolt);
+
+        // Corner decorations (circles + arms, stroked)
+        float sw = 0.709f;
+        g.setStroke(new java.awt.BasicStroke(sw, java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
+        double r = 1.182;
+        double[][] corners = {{1.536, 1.536}, {11.464, 1.536}, {1.536, 11.464}, {11.464, 11.464}};
+        for (double[] c : corners) {
+            g.draw(new java.awt.geom.Ellipse2D.Double(c[0] - r, c[1] - r, r * 2, r * 2));
+        }
+        java.awt.geom.Path2D.Double arms = new java.awt.geom.Path2D.Double();
+        arms.moveTo(1.536, 2.718);
+        arms.lineTo(1.536, 5.082);
+        arms.lineTo(2.955, 6.5);
+        arms.moveTo(11.464, 2.718);
+        arms.lineTo(11.464, 5.082);
+        arms.lineTo(10.045, 6.5);
+        arms.moveTo(1.536, 10.282);
+        arms.lineTo(1.536, 7.918);
+        arms.lineTo(2.955, 6.5);
+        arms.moveTo(11.464, 10.282);
+        arms.lineTo(11.464, 7.918);
+        arms.lineTo(10.045, 6.5);
+        g.draw(arms);
+
+        g.dispose();
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try {
+            javax.imageio.ImageIO.write(img, "PNG", baos);
+        } catch (IOException ignored) {
+        }
+        return baos.toByteArray();
     }
 
     private void handleSse(HttpExchange exchange) throws IOException {
@@ -523,7 +651,7 @@ public final class ChatWebServer implements Disposable {
         + "#ab-status.running{background:var(--agent);animation:ab-pulse 1.5s infinite;}\n"
         + "@keyframes ab-pulse{0%,100%{opacity:1}50%{opacity:.35}}\n"
         + "#ab-chat{flex:1;overflow:hidden;position:relative;}\n"
-        + "chat-container{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;}\n"
+        + "chat-container{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 8px;box-sizing:border-box;}\n"
         + "#ab-footer{flex:0 0 auto;border-top:1px solid var(--fg-a16);padding:6px 8px;display:flex;gap:6px;align-items:flex-end;background:var(--bg);padding-bottom:max(6px,env(safe-area-inset-bottom));}\n"
         + "#ab-input{flex:1;border:1px solid var(--fg-a16);border-radius:var(--r-md);background:var(--fg-a05);color:var(--fg);padding:6px 8px;font:inherit;resize:none;min-height:36px;max-height:120px;overflow-y:auto;outline:none;}\n"
         + "#ab-input:focus{border-color:var(--user-a25);}\n"
@@ -563,6 +691,13 @@ public final class ChatWebServer implements Disposable {
         + "const inputEl=document.getElementById('ab-input');\n"
         + "const sendBtn=document.getElementById('ab-send');\n"
         + "const nudgeBtn=document.getElementById('ab-nudge');\n"
+        + "const chatEl=document.querySelector('chat-container');\n"
+        // Auto-scroll: track whether user is near the bottom
+        + "let atBottom=true;\n"
+        + "chatEl.addEventListener('scroll',()=>{"
+        + "  atBottom=chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<120;"
+        + "},{passive:true});\n"
+        + "function scrollToBottom(){chatEl.scrollTop=chatEl.scrollHeight;}\n"
         // Track agent state via ChatController overrides
         + "let agentRunning=false;\n"
         + "const _origWI=ChatController.showWorkingIndicator.bind(ChatController);\n"
@@ -589,6 +724,7 @@ public final class ChatWebServer implements Disposable {
         + "fetch('/state').then(r=>r.json()).then(st=>{"
         + "  (st.events||[]).forEach(ev=>processEvent(ev,true));"
         + "  lastSeq=st.seq||0;"
+        + "  requestAnimationFrame(scrollToBottom);"
         + "  connectSSE();"
         + "}).catch(()=>connectSSE());\n"
         // Event processing
@@ -596,6 +732,7 @@ public final class ChatWebServer implements Disposable {
         + "  if(ev.notification){if(!replaying)showNotification(ev.title||'AgentBridge',ev.body||'');return;}\n"
         + "  if(ev.js){try{(0,eval)(ev.js);}catch(e){console.warn('event eval:',e,ev.js&&ev.js.substring(0,80));}}\n"
         + "  if(ev.seq>lastSeq)lastSeq=ev.seq;"
+        + "  if(!replaying&&atBottom)requestAnimationFrame(scrollToBottom);"
         + "}\n"
         // SSE
         + "function connectSSE(){"
