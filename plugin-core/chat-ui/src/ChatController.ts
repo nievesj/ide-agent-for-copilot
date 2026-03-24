@@ -220,7 +220,12 @@ const ChatController = {
         }
         chip.setAttribute('label', title);
         chip.setAttribute('status', initialStatus || 'pending');
-        if (kind) chip.setAttribute('kind', kind);
+        if (kind) {
+            const currentKind = chip.getAttribute('kind');
+            if (!currentKind || currentKind === 'other') {
+                chip.setAttribute('kind', kind);
+            }
+        }
         if (paramsJson) chip.dataset.params = paramsJson;
     },
 
@@ -258,7 +263,10 @@ const ChatController = {
     updateToolCallKind(id: string, kind: string): void {
         const chip = document.querySelector('[data-chip-for="' + id + '"]');
         if (chip) {
-            chip.setAttribute('kind', kind);
+            const currentKind = chip.getAttribute('kind');
+            if (!currentKind || currentKind === 'other') {
+                chip.setAttribute('kind', kind);
+            }
         }
     },
 
@@ -326,7 +334,12 @@ const ChatController = {
         const chip = document.createElement('tool-chip');
         chip.setAttribute('label', title);
         chip.setAttribute('status', 'running');
-        if (kind) chip.setAttribute('kind', kind);
+        if (kind) {
+            const currentKind = chip.getAttribute('kind');
+            if (!currentKind || currentKind === 'other') {
+                chip.setAttribute('kind', kind);
+            }
+        }
         if (isExternal) chip.setAttribute('external', 'true');
         chip.dataset.chipFor = toolDomId;
         if (paramsJson) chip.dataset.params = paramsJson;
