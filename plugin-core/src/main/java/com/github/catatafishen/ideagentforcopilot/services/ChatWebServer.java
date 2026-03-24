@@ -523,7 +523,10 @@ public final class ChatWebServer implements Disposable {
     private void handleServiceWorker(HttpExchange exchange) throws IOException {
         String sw = "self.addEventListener('install',()=>self.skipWaiting());\n"
             + "self.addEventListener('activate',e=>e.waitUntil(clients.claim()));\n"
-            + "self.addEventListener('fetch',e=>e.respondWith(fetch(e.request).catch(()=>new Response('Offline',{status:503}))));\n"
+            + "self.addEventListener('fetch',e=>{"
+            + "if(e.request.headers.get('accept')==='text/event-stream')return;"
+            + "e.respondWith(fetch(e.request).catch(()=>new Response('Offline',{status:503})));"
+            + "});\n"
             + "self.addEventListener('message',e=>{\n"
             + "  if(e.data&&e.data.type==='SHOW_NOTIFICATION'){\n"
             + "    e.waitUntil(self.registration.showNotification(e.data.title||'AgentBridge',{body:e.data.body||'',icon:'/icon-192.png',tag:'agentbridge'}));\n"
