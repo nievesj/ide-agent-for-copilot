@@ -12,6 +12,7 @@ import com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse;
 import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption;
 import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings;
+import com.github.catatafishen.ideagentforcopilot.psi.tools.infrastructure.AskUserTool;
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
@@ -819,18 +820,19 @@ public final class CodexAppServerClient extends AbstractAgentClient {
                 handleNativeApprovalRequest(id, method, params);
             case "item/tool/call" -> {
                 String toolName = params.has(F_TOOL) ? params.get(F_TOOL).getAsString() : "unknown";
-                LOG.info("Declining client-side tool call: " + toolName);
-                String replyText = "request_user_input".equals(toolName)
-                    ? "Asking the user for input is not supported in this context. Please proceed using your best judgment."
-                    : "Tool '" + toolName + "' is not available in this context.";
-                JsonObject error = new JsonObject();
-                error.addProperty(F_TYPE, F_ERROR);
-                error.addProperty(F_TEXT, replyText);
-                JsonArray content = new JsonArray();
-                content.add(error);
-                JsonObject resp = new JsonObject();
-                resp.add("content", content);
-                sendResponse(id, resp);
+                if ("request_user_input".equals(toolName) && project != null) {
+                    handleNativeAskUserRequest(id, params);
+                } else {
+                    LOG.info("Declining client-side tool call: " + toolName);
+                    JsonObject error = new JsonObject();
+                    error.addProperty(F_TYPE, F_ERROR);
+                    error.addProperty(F_TEXT, "Tool '" + toolName + "' is not available in this context.");
+                    JsonArray content = new JsonArray();
+                    content.add(error);
+                    JsonObject resp = new JsonObject();
+                    resp.add("content", content);
+                    sendResponse(id, resp);
+                }
             }
             default -> {
                 // Unknown server request — send a generic error response
@@ -1063,6 +1065,73 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             "{\"command\":\"" + cmd.replace("\"", "\\\"") + "\"}", null, null, null, null, null));
         cb.accept(new SessionUpdate.ToolCallUpdate(id, SessionUpdate.ToolCallStatus.FAILED,
             null, "Declined: native shell execution is not permitted. Use MCP tools instead.", null));
+    }
+
+    /**
+     * Routes Codex's native {@code request_user_input} tool call to our {@link AskUserTool},
+     * then returns the user's response to Codex. Blocks the reader thread until the user replies
+     * (same pattern as {@link #requestNativeApproval}).
+     */
+    private void handleNativeAskUserRequest(@NotNull JsonElement id, @NotNull JsonObject params) {
+        JsonObject arguments = params.has(F_ARGUMENTS) && params.get(F_ARGUMENTS).isJsonObject()
+            ? params.getAsJsonObject(F_ARGUMENTS) : new JsonObject();
+
+        // Codex uses "question" or "prompt" for the question text
+        String question = null;
+        for (String key : List.of("question", "prompt", "message", "text")) {
+            if (arguments.has(key) && arguments.get(key).isJsonPrimitive()) {
+                question = arguments.get(key).getAsString().trim();
+                if (!question.isEmpty()) break;
+            }
+        }
+        if (question == null || question.isEmpty()) {
+            question = "The agent has a question for you. Please provide your response.";
+        }
+
+        // Build args matching AskUserTool's expected schema
+        JsonObject toolArgs = new JsonObject();
+        toolArgs.addProperty("question", question);
+        JsonArray options = new JsonArray();
+        if (arguments.has("options") && arguments.get("options").isJsonArray()) {
+            options = arguments.getAsJsonArray("options");
+        }
+        if (options.isEmpty()) {
+            options.add("Continue");
+        }
+        toolArgs.add("options", options);
+
+        // Emit a ToolCall chip so the user sees the ask_user tool being invoked
+        String chipId = UUID.randomUUID().toString();
+        Consumer<SessionUpdate> cb = activeTurnCallback;
+        if (cb != null) {
+            cb.accept(new SessionUpdate.ToolCall(chipId, "ask_user", SessionUpdate.ToolKind.OTHER,
+                toolArgs.toString(), null, null, null, null, null));
+        }
+
+        String userResponse;
+        try {
+            userResponse = new AskUserTool(project).execute(toolArgs);
+        } catch (Exception e) {
+            LOG.warn("AskUserTool failed during Codex native request_user_input", e);
+            userResponse = "Error: failed to get user input";
+        }
+
+        if (cb != null) {
+            boolean success = !userResponse.startsWith("Error:");
+            cb.accept(new SessionUpdate.ToolCallUpdate(chipId,
+                success ? SessionUpdate.ToolCallStatus.COMPLETED : SessionUpdate.ToolCallStatus.FAILED,
+                success ? userResponse : null, success ? null : userResponse, null));
+        }
+
+        // Send response back to Codex
+        JsonObject textBlock = new JsonObject();
+        textBlock.addProperty(F_TYPE, "text");
+        textBlock.addProperty(F_TEXT, userResponse);
+        JsonArray content = new JsonArray();
+        content.add(textBlock);
+        JsonObject resp = new JsonObject();
+        resp.add("content", content);
+        sendResponse(id, resp);
     }
 
     private void handleNativeApprovalRequest(@NotNull JsonElement id, @NotNull String method, @NotNull JsonObject params) {

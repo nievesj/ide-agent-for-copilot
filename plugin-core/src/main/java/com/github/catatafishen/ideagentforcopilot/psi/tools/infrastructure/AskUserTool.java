@@ -6,7 +6,12 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.openapi.wm.WindowManager;
+import com.intellij.ui.AppIcon;
+import com.intellij.ui.SystemNotifications;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -77,6 +82,8 @@ public final class AskUserTool extends InfrastructureTool {
             return askViaDialog(question, options);
         }
 
+        notifyIfUnfocused(question);
+
         CompletableFuture<String> responseFuture = new CompletableFuture<>();
         String reqId = UUID.randomUUID().toString();
         EdtUtil.invokeLater(() ->
@@ -113,6 +120,17 @@ public final class AskUserTool extends InfrastructureTool {
             }
         }
         return options;
+    }
+
+    private void notifyIfUnfocused(@NotNull String question) {
+        var frame = WindowManager.getInstance().getFrame(project);
+        if (frame == null || frame.isActive()) return;
+        String title = "Agent Needs Your Input";
+        String content = question.length() > 80 ? question.substring(0, 80) + "…" : question;
+        ToolWindowManager.getInstance(project)
+            .notifyByBalloon("AgentBridge", MessageType.INFO, "<b>" + title + "</b><br>" + content);
+        SystemNotifications.getInstance().notify("AgentBridge Notifications", title, content);
+        AppIcon.getInstance().requestAttention(project, false);
     }
 
     private @NotNull String askViaDialog(@NotNull String question, @NotNull List<String> options) {
