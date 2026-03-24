@@ -941,6 +941,16 @@ class ChatToolWindowContent(
             // ── Session management ───────────────────────────────────
             if (agents.isNotEmpty() || options.isNotEmpty()) group.addSeparator()
             group.add(object : AnAction(
+                "Disconnect",
+                "Stop the ACP process and return to the connection screen",
+                AllIcons.Actions.Cancel
+            ) {
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun actionPerformed(e: AnActionEvent) = disconnectFromAgent()
+            })
+
+            val dangerousActionsGroup = DefaultActionGroup("Session", true)
+            dangerousActionsGroup.add(object : AnAction(
                 "Restart (Keep History)",
                 "Start a new agent session while keeping the conversation visible",
                 AllIcons.Actions.Restart
@@ -948,7 +958,7 @@ class ChatToolWindowContent(
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
                 override fun actionPerformed(e: AnActionEvent) = resetSessionKeepingHistory()
             })
-            group.add(object : AnAction(
+            dangerousActionsGroup.add(object : AnAction(
                 "Clear and Restart",
                 "Clear the conversation and start a completely fresh session",
                 AllIcons.Actions.GC
@@ -956,8 +966,8 @@ class ChatToolWindowContent(
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
                 override fun actionPerformed(e: AnActionEvent) = resetSession()
             })
-            group.addSeparator()
-            group.add(object : AnAction(
+            dangerousActionsGroup.addSeparator()
+            dangerousActionsGroup.add(object : AnAction(
                 "Logout",
                 "Delete authentication tokens for the current agent",
                 AllIcons.Actions.Exit
@@ -969,14 +979,7 @@ class ChatToolWindowContent(
                     }
                 }
             })
-            group.add(object : AnAction(
-                "Disconnect",
-                "Stop the ACP process and return to the connection screen",
-                AllIcons.Actions.Cancel
-            ) {
-                override fun getActionUpdateThread() = ActionUpdateThread.EDT
-                override fun actionPerformed(e: AnActionEvent) = disconnectFromAgent()
-            })
+            group.add(dangerousActionsGroup)
 
             val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createActionGroupPopup(
                 null, group, e.dataContext,
