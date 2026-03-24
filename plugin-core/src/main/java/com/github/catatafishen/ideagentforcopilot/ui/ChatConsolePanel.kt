@@ -30,6 +30,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override var onQuickReply: ((String) -> Unit)? = null
     override var onStatusMessage: ((type: String, message: String) -> Unit)? = null
     var onCancelNudge: ((String) -> Unit)? = null
+    var onCancelQueuedMessage: ((id: String, text: String) -> Unit)? = null
 
     // ── Data model (same types as V1 for serialization compat) ─────
     private val entries = mutableListOf<EntryData>()
@@ -82,6 +83,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private var openScratchBridgeJs = ""
     private var showToolPopupBridgeJs = ""
     private var cancelNudgeBridgeJs = ""
+    private var cancelQueuedMessageBridgeJs = ""
 
     @Volatile
     private var htmlPageFuture: java.util.concurrent.CompletableFuture<String>? = null
@@ -195,6 +197,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             cancelNudgeQuery.addHandler { id -> onCancelNudge?.invoke(id); null }
             Disposer.register(this, cancelNudgeQuery)
             cancelNudgeBridgeJs = cancelNudgeQuery.inject("id")
+
+            val cancelQueuedMessageQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
+            cancelQueuedMessageQuery.addHandler { json ->
+                val obj = JsonParser.parseString(json).asJsonObject
+                onCancelQueuedMessage?.invoke(obj["id"].asString, obj["text"].asString)
+                null
+            }
+            Disposer.register(this, cancelQueuedMessageQuery)
+            cancelQueuedMessageBridgeJs = cancelQueuedMessageQuery.inject("JSON.stringify({id: id, text: text})")
 
             add(browser.component, BorderLayout.CENTER)
 
@@ -382,18 +393,19 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         }
     }
 
-    override fun updateToolCall(
+    fun updateToolCall(
         id: String,
         status: String,
-        details: String?,
-        description: String?,
-        kind: String?,
-        autoDenied: Boolean,
-        denialReason: String?,
-        arguments: String?
+        details: String? = null,
+        description: String? = null,
+        kind: String? = null,
+        autoDenied: Boolean = false,
+        denialReason: String? = null,
+        arguments: String? = null,
+        title: String? = null
     ) {
         val chipId = registry.findChipIdByClientId(id)
-        val did = if (chipId != null) "t-$chipId" else domId(id)
+        var did = if (chipId != null) "t-$chipId" else domId(id)
 
         // Try to re-correlate if we have new arguments and status is running
         if (arguments != null && status == "running") {
@@ -403,12 +415,43 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 val newChipId = registration.chipId()
                 val newDid = "t-$newChipId"
 
-                if (newDid != did && registration.initialState() == ToolChipRegistry.ChipState.RUNNING) {
+                if (newDid != did) {
+                    val entry = toolCallEntries.remove(did)
+                    if (entry != null) {
+                        toolCallEntries[newDid] = entry
+                    }
+                    val name = toolCallNames.remove(did)
+                    if (name != null) {
+                        toolCallNames[newDid] = name
+                    }
+
                     // Remove old chip DOM element
                     executeJs("ChatController.removeToolChip('$did')")
-                    // Mark the entry as MCP handled
-                    toolCallEntries[newDid]?.mcpHandled = true
-                    LOG.debug("updateToolCall: re-correlated chip $id: $did -> $newDid (MCP handled)")
+
+                    // Create new chip with correct hash-based ID
+                    val cleanTitle = (title ?: name ?: "Tool").trim('\'', '"')
+                    val resolvedKind = kind ?: entry?.kind ?: "other"
+                    val def = toolRegistry?.findById(cleanTitle)
+                    val info = TOOL_DISPLAY_INFO[cleanTitle]
+                    val displayName =
+                        def?.displayName() ?: info?.displayName ?: cleanTitle.replaceFirstChar { it.uppercaseChar() }
+                    val short = formatToolSubtitle(cleanTitle, arguments)
+                    val label = if (short != null) "$displayName — $short" else displayName
+                    val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
+                    val paramsJson = if (!hasCustomRenderer) escJs(arguments) else ""
+
+                    executeJs("ChatController.upsertToolChip('$currentTurnId','main','$newDid','${escJs(label)}','$paramsJson','${
+                        escJs(
+                            resolvedKind
+                        )
+                    }','running')")
+
+                    did = newDid
+                    if (registration.initialState() == ToolChipRegistry.ChipState.RUNNING) {
+                        executeJs("ChatController.markMcpHandled('$did')")
+                        toolCallEntries[did]?.mcpHandled = true
+                    }
+                    LOG.debug("updateToolCall: re-correlated chip $id: $did -> $newDid")
                 }
             } catch (e: Exception) {
                 LOG.warn("updateToolCall: failed to re-correlate chip $id", e)
@@ -1182,6 +1225,18 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         executeJs("ChatController.removeNudgeBubble('${escJs(id)}');")
     }
 
+    override fun showQueuedMessage(id: String, text: String) {
+        executeJs("ChatController.showQueuedMessage('${escJs(id)}','${escJs(text)}');")
+    }
+
+    override fun removeQueuedMessage(id: String) {
+        executeJs("ChatController.removeQueuedMessage('${escJs(id)}');")
+    }
+
+    override fun removeQueuedMessageByText(text: String) {
+        executeJs("ChatController.removeQueuedMessageByText('${escJs(text)}');")
+    }
+
     // ── Open in scratch file ─────────────────────────────────────────
 
     private fun handleOpenScratch(data: String) {
@@ -1323,7 +1378,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 permissionResponse: function(data) { $permissionResponseBridgeJs },
                 openScratch: function(lang, content) { $openScratchBridgeJs },
                 showToolPopup: function(id) { $showToolPopupBridgeJs },
-                cancelNudge: function(id) { $cancelNudgeBridgeJs }
+                cancelNudge: function(id) { $cancelNudgeBridgeJs },
+                cancelQueuedMessage: function(id, text) { $cancelQueuedMessageBridgeJs }
             };
         """.trimIndent()
         val css = loadResource("/chat/chat.css")

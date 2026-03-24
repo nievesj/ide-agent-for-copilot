@@ -113,7 +113,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         p.setId(PROFILE_ID);
         p.setDisplayName("Codex");
         p.setBuiltIn(true);
-        p.setExperimental(true);
+        p.setExperimental(false);
         p.setTransportType(TransportType.CODEX_APP_SERVER);
         p.setDescription("""
             OpenAI Codex CLI profile — drives the locally-installed 'codex' binary as a \

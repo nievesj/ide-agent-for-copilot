@@ -71,6 +71,7 @@ public final class PsiBridgeService implements Disposable {
         java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final java.util.concurrent.atomic.AtomicReference<String> pendingNudge =
         new java.util.concurrent.atomic.AtomicReference<>();
+    private final java.util.Queue<String> messageQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
     private volatile Runnable onNudgeConsumed;
 
     public PsiBridgeService(@NotNull Project project) {
@@ -151,6 +152,25 @@ public final class PsiBridgeService implements Disposable {
 
     public void setOnNudgeConsumed(@Nullable Runnable callback) {
         onNudgeConsumed = callback;
+    }
+
+    public void enqueueMessage(@NotNull String message) {
+        if (!message.trim().isEmpty()) {
+            messageQueue.offer(message.trim());
+        }
+    }
+
+    public void removeQueuedMessage(@NotNull String message) {
+        messageQueue.remove(message.trim());
+    }
+
+    @Nullable
+    public String getNextQueuedMessage() {
+        return messageQueue.poll();
+    }
+
+    public boolean hasQueuedMessages() {
+        return !messageQueue.isEmpty();
     }
 
     @Nullable

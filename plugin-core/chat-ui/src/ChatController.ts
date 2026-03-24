@@ -669,6 +669,43 @@ const ChatController = {
         document.getElementById('nudge-' + id)?.remove();
     },
 
+    showQueuedMessage(id: string, text: string): void {
+        const msg = document.createElement('chat-message');
+        msg.id = 'queued-' + id;
+        msg.setAttribute('type', 'user');
+        msg.classList.add('message-queued');
+        const meta = document.createElement('message-meta');
+        meta.innerHTML = '<span class="ts">⏳ Queued for end of turn</span>';
+        msg.appendChild(meta);
+        const bubble = document.createElement('message-bubble');
+        bubble.setAttribute('type', 'user');
+        bubble.textContent = text;
+        msg.appendChild(bubble);
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'quick-reply-btn nudge-cancel-btn';
+        cancelBtn.textContent = '✕ Cancel message';
+        cancelBtn.onclick = () => (globalThis as any)._bridge?.cancelQueuedMessage(id, text);
+        msg.appendChild(cancelBtn);
+        this._msgs().appendChild(msg);
+        this._container()?.scrollIfNeeded();
+    },
+
+    removeQueuedMessage(id: string): void {
+        document.getElementById('queued-' + id)?.remove();
+    },
+
+    removeQueuedMessageByText(text: string): void {
+        const msgs = this._msgs();
+        const rows = Array.from(msgs.children).filter(c => c.tagName === 'CHAT-MESSAGE' && c.classList.contains('message-queued'));
+        for (const row of rows) {
+            if (row.querySelector('message-bubble')?.textContent === text) {
+                row.remove();
+                break;
+            }
+        }
+    },
+
 };
 
 export default ChatController;

@@ -20,7 +20,7 @@
     <ul>
         <li><b>GitHub Copilot</b> &mdash; OAuth sign-in, dynamic model discovery</li>
         <li><b>Claude CLI</b> (Claude Code) &mdash; Anthropic's Claude via the <code>claude</code> CLI</li>
-        <li><b>Codex</b> (Experimental) &mdash; OpenAI Codex via <code>codex app-server</code>, with device-auth sign-in</li>
+        <li><b>Codex</b> &mdash; OpenAI Codex via <code>codex app-server</code>, with device-auth sign-in</li>
         <li><b>Kiro</b> &mdash; Amazon Kiro agent</li>
         <li><b>Junie</b> &mdash; JetBrains Junie agent</li>
         <li><b>opencode</b> &mdash; open-source multi-model agent</li>
@@ -85,7 +85,7 @@
         <li><b>Claude CLI</b> (Claude Code) &mdash; Anthropic's Claude via the <code>claude</code> CLI</li>
         <li><b>Kiro</b> &mdash; Amazon Kiro agent with thinking support</li>
         <li><b>Junie</b> &mdash; JetBrains Junie agent</li>
-        <li><b>Codex</b> (Experimental) &mdash; OpenAI Codex via <code>codex app-server</code>; Sign In button
+        <li><b>Codex</b> &mdash; OpenAI Codex via <code>codex app-server</code>; Sign In button
         runs <code>codex login --device-auth</code> in the IDE terminal</li>
     </ul>
 
@@ -400,7 +400,7 @@
       parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
       instance="com.github.catatafishen.ideagentforcopilot.settings.CodexClientConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.clientAgents.codex"
-      displayName="Codex (Experimental)"/>
+      displayName="Codex"/>
 
     <!-- ── Tool Permissions ── -->
     <projectConfigurable

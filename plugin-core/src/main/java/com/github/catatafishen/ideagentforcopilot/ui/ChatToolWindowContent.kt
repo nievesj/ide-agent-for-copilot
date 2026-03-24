@@ -569,6 +569,7 @@ class ChatToolWindowContent(
                     if (::processingTimerPanel.isInitialized) processingTimerPanel.setCodeChangeStats(a, r)
                 },
                 onClientUpdate = ::handleClientUpdate,
+                sendPromptDirectly = ::sendPromptDirectly,
             )
         )
 
@@ -1323,6 +1324,11 @@ class ChatToolWindowContent(
                 ApplicationManager.getApplication().invokeLater { consolePanel.removeNudgeBubble(id) }
             }
         }
+        chatConsolePanel.onCancelQueuedMessage = { id, text ->
+            val psiBridge = com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project)
+            psiBridge.removeQueuedMessage(text)
+            ApplicationManager.getApplication().invokeLater { consolePanel.removeQueuedMessage(id) }
+        }
         consolePanel.onQuickReply = { text ->
             ApplicationManager.getApplication().invokeLater {
                 if (!consolePanel.consumePendingAskUserResponse(text)) {
@@ -1393,6 +1399,7 @@ class ChatToolWindowContent(
         registerEnterSend(contentComponent)
         registerShiftEnterNewLine(editor, contentComponent)
         registerCtrlEnterNudge(contentComponent)
+        registerCtrlShiftEnterQueue(contentComponent)
         registerPasteIntercept(editor, contentComponent)
         registerTriggerCharDetection(editor)
     }
@@ -1446,6 +1453,31 @@ class ChatToolWindowContent(
             ),
             contentComponent
         )
+    }
+
+    private fun registerCtrlShiftEnterQueue(contentComponent: JComponent) {
+        object : AnAction() {
+            override fun actionPerformed(e: AnActionEvent) = onQueueMessageClicked()
+        }.registerCustomShortcutSet(
+            CustomShortcutSet(
+                KeyStroke.getKeyStroke(
+                    java.awt.event.KeyEvent.VK_ENTER,
+                    java.awt.event.InputEvent.CTRL_DOWN_MASK or java.awt.event.InputEvent.SHIFT_DOWN_MASK
+                )
+            ),
+            contentComponent
+        )
+    }
+
+    private fun onQueueMessageClicked() {
+        val rawText = promptTextArea.text.trim()
+        if (rawText.isEmpty()) return
+        if (authService.pendingAuthError != null) return
+        val id = System.currentTimeMillis().toString()
+        promptTextArea.text = ""
+        consolePanel.showQueuedMessage(id, rawText)
+        com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project)
+            .enqueueMessage(rawText)
     }
 
     private fun onForceStopAndSend() {

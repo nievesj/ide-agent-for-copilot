@@ -558,11 +558,10 @@ var __chatUI = (() => {
     }
     _render() {
       const status = this.getAttribute("status") || "complete";
+      this.innerHTML = '<span class="thought-bubble">\u{1F4AD}</span> Thought';
       if (status === "running" || status === "thinking") {
-        this.innerHTML = '<span class="thought-bubble">\u{1F4AD}</span> Thought';
         this.classList.add("thinking-active");
       } else {
-        this.textContent = "\u{1F4AC} Thought";
         this.classList.remove("thinking-active");
       }
     }
@@ -985,7 +984,12 @@ var __chatUI = (() => {
       }
       chip.setAttribute("label", title);
       chip.setAttribute("status", initialStatus || "pending");
-      if (kind) chip.setAttribute("kind", kind);
+      if (kind) {
+        const currentKind = chip.getAttribute("kind");
+        if (!currentKind || currentKind === "other") {
+          chip.setAttribute("kind", kind);
+        }
+      }
       if (paramsJson) chip.dataset.params = paramsJson;
     },
     markMcpHandled(id) {
@@ -1018,7 +1022,10 @@ var __chatUI = (() => {
     updateToolCallKind(id, kind) {
       const chip = document.querySelector('[data-chip-for="' + id + '"]');
       if (chip) {
-        chip.setAttribute("kind", kind);
+        const currentKind = chip.getAttribute("kind");
+        if (!currentKind || currentKind === "other") {
+          chip.setAttribute("kind", kind);
+        }
       }
     },
     addOrphanMcpCall(_turnId, _agentId, _toolName) {
@@ -1081,7 +1088,12 @@ var __chatUI = (() => {
       const chip = document.createElement("tool-chip");
       chip.setAttribute("label", title);
       chip.setAttribute("status", "running");
-      if (kind) chip.setAttribute("kind", kind);
+      if (kind) {
+        const currentKind = chip.getAttribute("kind");
+        if (!currentKind || currentKind === "other") {
+          chip.setAttribute("kind", kind);
+        }
+      }
       if (isExternal) chip.setAttribute("external", "true");
       chip.dataset.chipFor = toolDomId;
       if (paramsJson) chip.dataset.params = paramsJson;
@@ -1309,7 +1321,14 @@ var __chatUI = (() => {
     },
     showNudgeBubble(id, text) {
       const existing = document.getElementById("nudge-" + id);
-      if (existing) return;
+      if (existing) {
+        const bubble2 = existing.querySelector("message-bubble");
+        if (bubble2) {
+          bubble2.textContent = (bubble2.textContent || "") + "\n\n" + text;
+          this._container()?.scrollIfNeeded();
+        }
+        return;
+      }
       const msg = document.createElement("chat-message");
       msg.id = "nudge-" + id;
       msg.setAttribute("type", "user");
@@ -1340,6 +1359,34 @@ var __chatUI = (() => {
     },
     removeNudgeBubble(id) {
       document.getElementById("nudge-" + id)?.remove();
+    },
+    showQueuedMessage(id, text) {
+      const msg = document.createElement("chat-message");
+      msg.id = "queued-" + id;
+      msg.setAttribute("type", "user");
+      msg.classList.add("message-queued");
+      const meta = document.createElement("message-meta");
+      meta.innerHTML = '<span class="ts">\u23F3 Queued for end of turn</span>';
+      msg.appendChild(meta);
+      const bubble = document.createElement("message-bubble");
+      bubble.setAttribute("type", "user");
+      bubble.textContent = text;
+      msg.appendChild(bubble);
+      this._msgs().appendChild(msg);
+      this._container()?.scrollIfNeeded();
+    },
+    removeQueuedMessage(id) {
+      document.getElementById("queued-" + id)?.remove();
+    },
+    removeQueuedMessageByText(text) {
+      const msgs = this._msgs();
+      const rows = Array.from(msgs.children).filter((c) => c.tagName === "CHAT-MESSAGE" && c.classList.contains("message-queued"));
+      for (const row of rows) {
+        if (row.querySelector("message-bubble")?.textContent === text) {
+          row.remove();
+          break;
+        }
+      }
     }
   };
   var ChatController_default = ChatController;

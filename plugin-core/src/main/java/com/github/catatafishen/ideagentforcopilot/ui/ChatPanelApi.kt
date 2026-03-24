@@ -54,7 +54,8 @@ interface ChatPanelApi : Disposable {
         kind: String? = null,
         autoDenied: Boolean = false,
         denialReason: String? = null,
-        arguments: String? = null
+        arguments: String? = null,
+        title: String? = null
     )
 
     // ── Sub-agents ─────────────────────────────────────────────────
@@ -149,4 +150,8 @@ interface ChatPanelApi : Disposable {
     fun showNudgeBubble(id: String, text: String)
     fun resolveNudgeBubble(id: String)
     fun removeNudgeBubble(id: String)
+
+    fun showQueuedMessage(id: String, text: String)
+    fun removeQueuedMessage(id: String)
+    fun removeQueuedMessageByText(text: String)
 }

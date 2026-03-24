@@ -31,6 +31,8 @@ data class PromptOrchestratorCallbacks(
     val onTimerSetCodeChangeStats: (added: Int, removed: Int) -> Unit,
     /** Called for plan-tree and file-tracking side-effects (remains in ChatToolWindowContent). */
     val onClientUpdate: (SessionUpdate) -> Unit,
+    /** Trigger a new prompt execution (used for queued messages). */
+    val sendPromptDirectly: (String) -> Unit,
 )
 
 /** Stored banner message to re-display at the start of the next prompt turn. */
@@ -383,6 +385,14 @@ class PromptOrchestrator(
             ApplicationManager.getApplication().invokeLater { consolePanel().showQuickReplies(quickReplies) }
         }
 
+        val nextMsg = PsiBridgeService.getInstance(project).nextQueuedMessage
+        if (nextMsg != null) {
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel().removeQueuedMessageByText(nextMsg)
+                callbacks.sendPromptDirectly(nextMsg)
+            }
+        }
+
         ApplicationManager.getApplication().invokeLater {
             consolePanel().component.revalidate()
             consolePanel().component.repaint()
@@ -518,7 +528,8 @@ class PromptOrchestrator(
             isInternal,
             autoDenied,
             denialReason,
-            arguments
+            arguments,
+            callType
         )
 
         if (status == SessionUpdate.ToolCallStatus.COMPLETED || status == SessionUpdate.ToolCallStatus.FAILED) {
@@ -536,7 +547,8 @@ class PromptOrchestrator(
         isInternal: Boolean,
         autoDenied: Boolean = false,
         denialReason: String? = null,
-        arguments: String? = null
+        arguments: String? = null,
+        title: String? = null
     ) {
         if (isSubAgent) {
             if (uiStatus == "running") {
@@ -564,7 +576,8 @@ class PromptOrchestrator(
                 kind,
                 autoDenied,
                 denialReason,
-                arguments
+                arguments,
+                title
             )
         }
     }
