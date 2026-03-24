@@ -23,11 +23,20 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.Inet4Address;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -47,6 +56,7 @@ import java.util.function.Consumer;
  *   <li>Serves {@code POST /nudge} — nudges the running agent</li>
  *   <li>Serves {@code POST /stop} — stops the running agent</li>
  *   <li>Serves {@code POST /permission} — responds to a permission request</li>
+ *   <li>Serves {@code GET /cert.crt} — downloads the TLS certificate for device trust installation</li>
  *   <li>Serves {@code POST /cancel-nudge} — cancels a pending nudge</li>
  *   <li>Serves {@code GET /manifest.json} — PWA manifest</li>
  *   <li>Serves {@code GET /sw.js} — service worker</li>
@@ -65,6 +75,7 @@ public final class ChatWebServer implements Disposable {
     private HttpsServer httpsServer;
     private HttpServer httpServer;
     private volatile boolean running;
+    private KeyStore sslKeyStore;
 
     // ── Event log ─────────────────────────────────────────────────────────────
     // Stored as raw JSON strings: {"seq":N,"js":"..."}
@@ -173,6 +184,7 @@ public final class ChatWebServer implements Disposable {
         server.createContext("/icon-512.png", ex -> handleIconPng(ex, 512));
         server.createContext("/manifest.json", this::handleManifest);
         server.createContext("/sw.js", this::handleServiceWorker);
+        server.createContext("/cert.crt", this::handleCert);
         server.createContext("/events", this::handleSse);
         server.createContext("/state", this::handleState);
         server.createContext("/info", this::handleInfo);
@@ -298,16 +310,30 @@ public final class ChatWebServer implements Disposable {
     /**
      * Builds an SSLContext with a self-signed RSA certificate.
      * Stores the keystore in the plugin config directory so it persists across restarts.
-     * Uses the 'keytool' command to generate a PKCS12 keystore.
+     * Includes all local non-loopback IPv4 addresses in the SAN so Android and other devices
+     * on the same LAN can trust the certificate after installing it via {@code /cert.crt}.
+     * If the existing certificate does not cover the current LAN IPs, it is deleted and regenerated.
      */
-    private static SSLContext buildSelfSignedSslContext() throws Exception {
+    private SSLContext buildSelfSignedSslContext() throws Exception {
         java.nio.file.Path ksPath = getKeystorePath();
         java.io.File ksFile = ksPath.toFile();
+
+        List<String> localIps = collectLocalIpv4Addresses();
+
+        if (ksFile.exists() && !certCoversAllIps(ksFile, localIps)) {
+            LOG.info("[ChatWebServer] Regenerating certificate — local IPs changed");
+            java.nio.file.Files.delete(ksPath);
+        }
 
         if (!ksFile.exists()) {
             java.nio.file.Path dir = ksPath.getParent();
             if (dir != null && !java.nio.file.Files.exists(dir)) {
                 java.nio.file.Files.createDirectories(dir);
+            }
+
+            StringBuilder sanBuilder = new StringBuilder("dns:localhost,ip:127.0.0.1");
+            for (String ip : localIps) {
+                sanBuilder.append(",ip:").append(ip);
             }
 
             String[] cmd = {
@@ -321,7 +347,7 @@ public final class ChatWebServer implements Disposable {
                 "-storepass", KEYSTORE_PASSWORD,
                 "-keypass", KEYSTORE_PASSWORD,
                 "-dname", "CN=AgentBridge, O=AgentBridge, C=US",
-                "-ext", "SAN=dns:localhost,ip:127.0.0.1"
+                "-ext", "SAN=" + sanBuilder
             };
 
             Process process = new ProcessBuilder(cmd).start();
@@ -338,6 +364,7 @@ public final class ChatWebServer implements Disposable {
         try (java.io.FileInputStream fis = new java.io.FileInputStream(ksFile)) {
             ks.load(fis, KEYSTORE_PASSWORD.toCharArray());
         }
+        sslKeyStore = ks;
 
         KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
         kmf.init(ks, KEYSTORE_PASSWORD.toCharArray());
@@ -345,6 +372,70 @@ public final class ChatWebServer implements Disposable {
         SSLContext ctx = SSLContext.getInstance("TLS");
         ctx.init(kmf.getKeyManagers(), null, null);
         return ctx;
+    }
+
+    private static List<String> collectLocalIpv4Addresses() {
+        List<String> ips = new ArrayList<>();
+        try {
+            Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
+            if (ifaces == null) return ips;
+            for (NetworkInterface ni : Collections.list(ifaces)) {
+                if (!ni.isUp() || ni.isLoopback()) continue;
+                for (InetAddress addr : Collections.list(ni.getInetAddresses())) {
+                    if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
+                        ips.add(addr.getHostAddress());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOG.warn("[ChatWebServer] Could not enumerate network interfaces for SAN", e);
+        }
+        return ips;
+    }
+
+    private static boolean certCoversAllIps(java.io.File ksFile, List<String> requiredIps) {
+        if (requiredIps.isEmpty()) return true;
+        try {
+            KeyStore ks = KeyStore.getInstance("PKCS12");
+            try (java.io.FileInputStream fis = new java.io.FileInputStream(ksFile)) {
+                ks.load(fis, KEYSTORE_PASSWORD.toCharArray());
+            }
+            java.security.cert.Certificate cert = ks.getCertificate("agentbridge");
+            if (!(cert instanceof X509Certificate x509)) return false;
+            Collection<List<?>> sans = x509.getSubjectAlternativeNames();
+            if (sans == null) return false;
+            Set<String> certIps = new HashSet<>();
+            for (List<?> san : sans) {
+                if (san.get(0) instanceof Integer type && type == 7) {
+                    certIps.add((String) san.get(1));
+                }
+            }
+            return certIps.containsAll(requiredIps);
+        } catch (Exception e) {
+            LOG.warn("[ChatWebServer] Could not read existing certificate SANs", e);
+            return false;
+        }
+    }
+
+    private void handleCert(HttpExchange exchange) throws IOException {
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        try {
+            java.security.cert.Certificate cert = sslKeyStore.getCertificate("agentbridge");
+            byte[] derBytes = cert.getEncoded();
+            exchange.getResponseHeaders().set("Content-Type", "application/x-x509-ca-cert");
+            exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"agentbridge-ca.crt\"");
+            exchange.getResponseHeaders().set("Cache-Control", "no-cache");
+            exchange.sendResponseHeaders(200, derBytes.length);
+            exchange.getResponseBody().write(derBytes);
+        } catch (Exception e) {
+            LOG.warn("[ChatWebServer] Failed to serve certificate", e);
+            exchange.sendResponseHeaders(500, -1);
+        }
+        exchange.close();
     }
 
     // ── Handlers ─────────────────────────────────────────────────────────────

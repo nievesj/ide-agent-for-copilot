@@ -1,5 +1,47 @@
 # Release Notes
 
+## 1.16.0
+
+### Certificate Download for Mobile Devices
+- New `GET /cert.crt` endpoint — download the server's self-signed TLS certificate directly from any browser
+- Install on Android (or iOS) to make the PWA trusted over HTTPS on your local network
+- The certificate is regenerated automatically if your machine's LAN IP changes, keeping the SAN list current
+
+### PWA Installability
+- Fixed PWA installability on Android — proper web app manifest, icons, and service worker
+- Dynamic prompt placeholder matches the current agent profile
+
+### Web UI: Queued Messages
+- Queued (pending) messages are now always rendered at the bottom of the chat, below all resolved content
+- Cancel button (`✕`) on queued messages now renders correctly
+
+### Nudge Feature
+- New **Nudge** action (`Ctrl+Enter`) — guide or redirect the agent while a turn is in progress
+- Nudges append to any pending nudge rather than replacing it
+- Cancel Nudge removes the pending nudge before it is sent
+
+### Codex Integration
+- Full support for OpenAI Codex agents via the ACP protocol
+- Routes `request_user_input` to the `ask_user` tool
+- Window notification when a prompt is received while the IDE is unfocused
+- Fixed stop button and tool-chip correlation for Codex sessions
+
+### Tool Chips
+- Thinking chip text is preserved across streaming updates
+- Duplicate chip creation resolved for Junie tool calls
+- Tool chip `kind` is no longer overwritten once set to a non-default value
+- No-output placeholder shown when a tool produces no visible result
+
+### Timeouts
+- Global turn and inactivity timeouts configurable per project
+- Codex timeout defaults raised; all timeouts consolidated into shared project settings
+
+### Bug Fixes
+- `updateToolCall` missing `override` modifier in `ChatConsolePanel`
+- Tool chip border rendered correctly for all chip states
+
+---
+
 ## 1.12.0
 
 ### Renamed to AgentBridge
