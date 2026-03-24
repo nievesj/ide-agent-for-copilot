@@ -14,7 +14,8 @@ import org.jetbrains.annotations.Nullable;
  */
 public final class GenericSettings {
 
-    private static final int DEFAULT_PROMPT_TIMEOUT = 300;
+    private static final int DEFAULT_TURN_TIMEOUT = 300;
+    private static final int DEFAULT_INACTIVITY_TIMEOUT = 300;
     private static final int DEFAULT_MAX_TOOL_CALLS = 0;
     private static final String TOOL_PERM_IN_PREFIX = "tool.perm.in.";
     private static final String TOOL_PERM_OUT_PREFIX = "tool.perm.out.";
@@ -55,6 +56,14 @@ public final class GenericSettings {
 
     private String key(@NotNull String suffix) {
         return prefix + suffix;
+    }
+
+    private static int parseIntOrDefault(@NotNull String value, int defaultValue) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
     }
 
     // ── Model selection ──────────────────────────────────────────────────────
@@ -113,12 +122,32 @@ public final class GenericSettings {
 
     // ── Timeouts & limits ────────────────────────────────────────────────────
 
-    public int getPromptTimeout() {
-        return getProperties().getInt(key("promptTimeout"), DEFAULT_PROMPT_TIMEOUT);
+    public int getTurnTimeout() {
+        String legacy = getProperties().getValue(key("promptTimeout"));
+        int fallback = legacy != null ? parseIntOrDefault(legacy, DEFAULT_TURN_TIMEOUT) : DEFAULT_TURN_TIMEOUT;
+        return getProperties().getInt(key("turnTimeout"), fallback);
     }
 
+    public void setTurnTimeout(int seconds) {
+        getProperties().setValue(key("turnTimeout"), seconds, DEFAULT_TURN_TIMEOUT);
+    }
+
+    public int getInactivityTimeout() {
+        return getProperties().getInt(key("inactivityTimeout"), DEFAULT_INACTIVITY_TIMEOUT);
+    }
+
+    public void setInactivityTimeout(int seconds) {
+        getProperties().setValue(key("inactivityTimeout"), seconds, DEFAULT_INACTIVITY_TIMEOUT);
+    }
+
+    @Deprecated
+    public int getPromptTimeout() {
+        return getTurnTimeout();
+    }
+
+    @Deprecated
     public void setPromptTimeout(int seconds) {
-        getProperties().setValue(key("promptTimeout"), seconds, DEFAULT_PROMPT_TIMEOUT);
+        setTurnTimeout(seconds);
     }
 
     public int getMaxToolCallsPerTurn() {

@@ -8,20 +8,24 @@ import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
 import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentException;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
+import com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse;
 import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption;
 import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
+import com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings;
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
+import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
 import com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings;
+import com.github.catatafishen.ideagentforcopilot.ui.ChatConsolePanel;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.google.gson.JsonPrimitive;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -55,8 +59,8 @@ import java.util.function.Consumer;
  * and each user prompt starts a {@code turn} within that thread.</p>
  *
  * <p>Native tool approval requests ({@code item/commandExecution/requestApproval} and
- * {@code item/fileChange/requestApproval}) are intercepted and declined, routing all
- * file and code operations through the plugin's MCP server instead.</p>
+ * {@code item/fileChange/requestApproval}) follow the same allow/ask/deny settings model
+ * as the internal tools, including the permission prompt UI and session-scoped approval cache.</p>
  *
  * <p>Shell tools ({@code shell}, {@code shell_command}, {@code exec_command}, etc.) are
  * disabled at server-startup time via {@code --config features.shell_tool=false} and
@@ -90,6 +94,8 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     private static final String F_ARGUMENTS = "arguments";
     private static final String F_COMMAND = "command";
     private static final String AGENTS_MD = "AGENTS.md";
+
+    private static final long TURN_WAIT_POLL_MILLIS = 1000;
 
     // ── Session options ──────────────────────────────────────────────────────
 
@@ -167,16 +173,25 @@ public final class CodexAppServerClient extends AbstractAgentClient {
      */
     private final Map<String, Map<String, String>> sessionOptions = new ConcurrentHashMap<>();
     private final Map<String, AtomicBoolean> sessionCancelled = new ConcurrentHashMap<>();
+    private final Map<String, java.util.Set<String>> sessionApprovalAllows = new ConcurrentHashMap<>();
 
     // Active turn state — one turn at a time over stdio
     private volatile String activeTurnId;
     private volatile Consumer<SessionUpdate> activeTurnCallback;
     private volatile CompletableFuture<String> activeTurnResult;
     private volatile String activeTurnSessionId;
+
+    /**
+     * Monotonic timestamp of the last output/activity seen for the active turn.
+     */
+    private volatile long activeTurnLastOutputNanos;
     /**
      * True once a thinking chip has been opened for the current turn (suppresses duplicate placeholders).
      */
     private volatile boolean reasoningActive = false;
+
+    @Nullable
+    private volatile Consumer<PermissionPrompt> permissionRequestListener;
 
     private String resolvedBinaryPath;
 
@@ -284,6 +299,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     public void cancelSession(@NotNull String sessionId) {
         AtomicBoolean flag = sessionCancelled.get(sessionId);
         if (flag != null) flag.set(true);
+        sessionApprovalAllows.remove(sessionId);
         // Interrupt the active turn if it belongs to this session
         String turnId = activeTurnId;
         if (turnId != null && sessionId.equals(activeTurnSessionId)) {
@@ -301,6 +317,11 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     @Override
     public void setSessionOption(@NotNull String sessionId, @NotNull String key, @NotNull String value) {
         sessionOptions.computeIfAbsent(sessionId, k -> new ConcurrentHashMap<>()).put(key, value);
+    }
+
+    @Override
+    public void setPermissionRequestListener(@Nullable Consumer<PermissionPrompt> listener) {
+        this.permissionRequestListener = listener;
     }
 
     @Override
@@ -328,7 +349,6 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
     // ── Prompts ──────────────────────────────────────────────────────────────
 
-    @Override
     public @NotNull PromptResponse sendPrompt(@NotNull PromptRequest request,
                                               @NotNull Consumer<SessionUpdate> onUpdate) throws Exception {
         ensureConnected();
@@ -348,21 +368,20 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
         // Set up the active turn future
         CompletableFuture<String> turnResult = new CompletableFuture<>();
+        long turnStartNanos = System.nanoTime();
         activeTurnResult = turnResult;
         activeTurnCallback = onUpdate;
         activeTurnSessionId = sessionId;
+        activeTurnLastOutputNanos = turnStartNanos;
 
         // Start the turn
         String turnId = startTurn(threadId, fullPrompt, model, sessionId);
         activeTurnId = turnId;
 
-        // Wait for turn completion
+        // Wait for turn completion, extending the timeout whenever Codex produces output.
         try {
-            String stopReason = turnResult.get(300, TimeUnit.SECONDS);
+            String stopReason = awaitTurnResult(turnResult, turnId, turnStartNanos);
             return new PromptResponse(stopReason, null);
-        } catch (java.util.concurrent.TimeoutException e) {
-            sendInterrupt(turnId);
-            throw new AgentException("Codex turn timed out after 300 seconds", e, true);
         } catch (java.util.concurrent.ExecutionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof AgentException ae) throw ae;
@@ -376,6 +395,60 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     }
 
     // ── App-server lifecycle ──────────────────────────────────────────────────
+
+    private int getTurnTimeoutSeconds() {
+        try {
+            return project != null
+                ? ActiveAgentManager.getInstance(project).getSettings().getTurnTimeout()
+                : 300;
+        } catch (Exception e) {
+            LOG.warn("Falling back to default Codex turn timeout", e);
+            return 300;
+        }
+    }
+
+    private int getInactivityTimeoutSeconds() {
+        try {
+            return project != null
+                ? ActiveAgentManager.getInstance(project).getSettings().getInactivityTimeout()
+                : 300;
+        } catch (Exception e) {
+            LOG.warn("Falling back to default Codex inactivity timeout", e);
+            return 300;
+        }
+    }
+
+    private String awaitTurnResult(@NotNull CompletableFuture<String> turnResult,
+                                   @NotNull String turnId,
+                                   long turnStartNanos)
+        throws InterruptedException, java.util.concurrent.ExecutionException, AgentException {
+        long turnTimeoutNanos = TimeUnit.SECONDS.toNanos(getTurnTimeoutSeconds());
+        long inactivityTimeoutNanos = TimeUnit.SECONDS.toNanos(getInactivityTimeoutSeconds());
+        while (true) {
+            long now = System.nanoTime();
+            long inactivityDeadlineNanos = activeTurnLastOutputNanos + inactivityTimeoutNanos;
+            long turnDeadlineNanos = turnStartNanos + turnTimeoutNanos;
+            long remainingNanos = Math.min(turnDeadlineNanos, inactivityDeadlineNanos) - now;
+            if (remainingNanos <= 0) {
+                sendInterrupt(turnId);
+                if (turnDeadlineNanos <= inactivityDeadlineNanos) {
+                    long elapsedSec = TimeUnit.NANOSECONDS.toSeconds(now - turnStartNanos);
+                    throw new AgentException("Codex turn timed out after " + elapsedSec + " seconds", null, true);
+                }
+                long silenceSec = TimeUnit.NANOSECONDS.toSeconds(now - activeTurnLastOutputNanos);
+                throw new AgentException("Codex turn timed out after " + silenceSec + " seconds of inactivity", null, true);
+            }
+
+            long waitMillis = Math.max(1L, Math.min(TURN_WAIT_POLL_MILLIS, TimeUnit.NANOSECONDS.toMillis(remainingNanos)));
+            try {
+                return turnResult.get(waitMillis, TimeUnit.MILLISECONDS);
+            } catch (java.util.concurrent.TimeoutException ignored) {
+                if (turnResult.isDone()) {
+                    return turnResult.get();
+                }
+            }
+        }
+    }
 
     private void launchAppServer() throws AgentException {
         List<String> cmd = buildServerCommand();
@@ -684,6 +757,9 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             if (isDebugLoggingEnabled()) {
                 LOG.info("[Codex] <<< " + line);
             }
+            if (activeTurnResult != null && !activeTurnResult.isDone()) {
+                activeTurnLastOutputNanos = System.nanoTime();
+            }
             dispatchMessage(msg);
         } catch (RuntimeException e) {
             LOG.warn("codex app-server: could not parse line: " + line, e);
@@ -745,11 +821,6 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
     // ── Server-initiated request handling ────────────────────────────────────
 
-    /**
-     * Handles server-initiated requests (approval prompts, dynamic tool calls).
-     * Always declines native tool approvals; tool calls are routed to our MCP server
-     * so there is no need to serve {@code item/tool/call} from this client.
-     */
     private void handleServerRequest(@NotNull JsonObject msg) {
         String method = msg.get(F_METHOD).getAsString();
         JsonElement id = msg.get(F_ID);
@@ -758,12 +829,8 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         LOG.info("codex app-server request: " + method);
 
         switch (method) {
-            case "item/commandExecution/requestApproval", "item/fileChange/requestApproval" -> {
-                // Decline all native file/command approvals — routing is via MCP instead
-                LOG.info("Declining native tool approval: " + method);
-                sendResponse(id, new JsonPrimitive("decline"));
-                emitToolDeclinedBanner(method, params);
-            }
+            case "item/commandExecution/requestApproval", "item/fileChange/requestApproval" ->
+                handleNativeApprovalRequest(id, method, params);
             case "item/tool/call" -> {
                 String toolName = params.has(F_TOOL) ? params.get(F_TOOL).getAsString() : "unknown";
                 LOG.info("Declining client-side tool call: " + toolName);
@@ -1012,15 +1079,178 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             null, "Declined: native shell execution is not permitted. Use MCP tools instead.", null));
     }
 
+    private void handleNativeApprovalRequest(@NotNull JsonElement id, @NotNull String method, @NotNull JsonObject params) {
+        String sessionId = activeTurnSessionId;
+        String permissionKey = method.contains("commandExecution") ? "run_command" : "write_file";
+        ToolPermission permission = resolveNativeApprovalPermission(permissionKey);
+
+        if (sessionId != null && isSessionApprovalAllowed(sessionId, permissionKey)) {
+            LOG.info("Allowing native approval from session cache: " + method + " -> " + permissionKey);
+            sendNativeApprovalDecision(id, "accept");
+            return;
+        }
+
+        switch (permission) {
+            case ALLOW -> {
+                LOG.info("Allowing native approval from settings: " + method + " -> " + permissionKey);
+                sendNativeApprovalDecision(id, "accept");
+                if (sessionId != null) allowSessionApproval(sessionId, permissionKey);
+            }
+            case DENY -> {
+                LOG.info("Denying native approval from settings: " + method + " -> " + permissionKey);
+                sendNativeApprovalDecision(id, "decline");
+                emitToolDeclinedBanner(method, params);
+            }
+            case ASK -> {
+                PermissionResponse response = requestNativeApproval(method, permissionKey, params);
+                switch (response) {
+                    case ALLOW_SESSION -> {
+                        if (sessionId != null) allowSessionApproval(sessionId, permissionKey);
+                        sendNativeApprovalDecision(id, "acceptForSession");
+                    }
+                    case ALLOW_ONCE -> sendNativeApprovalDecision(id, "accept");
+                    case DENY -> {
+                        sendNativeApprovalDecision(id, "decline");
+                        emitToolDeclinedBanner(method, params);
+                    }
+                }
+            }
+        }
+    }
+
+    private ToolPermission resolveNativeApprovalPermission(@NotNull String permissionKey) {
+        if (project == null) {
+            return ToolPermission.DENY;
+        }
+        ToolLayerSettings settings = ToolLayerSettings.getInstance(project);
+        return settings.getToolPermission(permissionKey);
+    }
+
+    private boolean isSessionApprovalAllowed(@NotNull String sessionId, @NotNull String permissionKey) {
+        java.util.Set<String> allowed = sessionApprovalAllows.get(sessionId);
+        return allowed != null && allowed.contains(permissionKey);
+    }
+
+    private void allowSessionApproval(@NotNull String sessionId, @NotNull String permissionKey) {
+        sessionApprovalAllows.computeIfAbsent(sessionId, k -> ConcurrentHashMap.newKeySet()).add(permissionKey);
+    }
+
+    private PermissionResponse requestNativeApproval(@NotNull String method,
+                                                     @NotNull String permissionKey,
+                                                     @NotNull JsonObject params) {
+        String displayName = "item/commandExecution/requestApproval".equals(method)
+            ? "Run command"
+            : "Edit file";
+        String description = buildNativeApprovalDescription(method, params);
+        CompletableFuture<PermissionResponse> future = new CompletableFuture<>();
+
+        String promptId = method + ":" + permissionKey + ":" + UUID.randomUUID();
+        PermissionPrompt prompt = new PermissionPrompt() {
+            @Override
+            public String toolCallId() {
+                return promptId;
+            }
+
+            @Override
+            public String toolName() {
+                return displayName;
+            }
+
+            @Override
+            public @Nullable String arguments() {
+                return description;
+            }
+
+            @Override
+            public List<String> options() {
+                return List.of("allow_once", "allow_session", "deny");
+            }
+
+            @Override
+            public void allow(String optionId) {
+                if (optionId != null && optionId.contains("session")) {
+                    future.complete(PermissionResponse.ALLOW_SESSION);
+                } else {
+                    future.complete(PermissionResponse.ALLOW_ONCE);
+                }
+            }
+
+            @Override
+            public void deny(String reason) {
+                future.complete(PermissionResponse.DENY);
+            }
+        };
+
+        Consumer<PermissionPrompt> listener = permissionRequestListener;
+        if (listener != null) {
+            listener.accept(prompt);
+        } else if (project != null) {
+            ChatConsolePanel chatPanel = ChatConsolePanel.Companion.getInstance(project);
+            if (chatPanel != null) {
+                String reqId = UUID.randomUUID().toString();
+                chatPanel.showPermissionRequest(reqId, displayName, description, response -> {
+                    future.complete(response);
+                    return kotlin.Unit.INSTANCE;
+                });
+            }
+        }
+
+        try {
+            PermissionResponse response = future.get(120, TimeUnit.SECONDS);
+            return response != null ? response : PermissionResponse.DENY;
+        } catch (java.util.concurrent.TimeoutException e) {
+            LOG.info("Native approval timed out for " + method);
+            return PermissionResponse.DENY;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return PermissionResponse.DENY;
+        } catch (java.util.concurrent.ExecutionException e) {
+            LOG.warn("Native approval failed for " + method, e);
+            return PermissionResponse.DENY;
+        }
+    }
+
+    private static String buildNativeApprovalDescription(@NotNull String method, @NotNull JsonObject params) {
+        String detail = extractNativeApprovalDetail(params);
+        if (detail.isEmpty()) {
+            return method;
+        }
+        return method + "\n" + detail;
+    }
+
+    private static String extractNativeApprovalDetail(@NotNull JsonObject params) {
+        for (String key : List.of(F_COMMAND, "path", "filePath", "reason")) {
+            if (params.has(key) && !params.get(key).isJsonNull()) {
+                JsonElement value = params.get(key);
+                if (value.isJsonPrimitive()) {
+                    return value.getAsString();
+                }
+                return value.toString();
+            }
+        }
+        if (params.entrySet().isEmpty()) {
+            return "";
+        }
+        return params.toString();
+    }
+
+    private void sendNativeApprovalDecision(@NotNull JsonElement id, @NotNull String decision) {
+        JsonObject result = new JsonObject();
+        result.addProperty("decision", decision);
+        sendResponse(id, result);
+    }
+
     private void emitToolDeclinedBanner(@NotNull String method, @NotNull JsonObject params) {
         // Surface a soft warning if the model is trying to use native tools
         Consumer<SessionUpdate> cb = activeTurnCallback;
         if (cb == null) return;
         String detail;
-        if (params.has(F_COMMAND)) {
-            detail = params.get(F_COMMAND).toString();
-        } else if (params.has("reason")) {
-            detail = params.get("reason").getAsString();
+        if (params.has(F_COMMAND) && !params.get(F_COMMAND).isJsonNull()) {
+            JsonElement command = params.get(F_COMMAND);
+            detail = command.isJsonPrimitive() ? command.getAsString() : command.toString();
+        } else if (params.has("reason") && !params.get("reason").isJsonNull()) {
+            JsonElement reason = params.get("reason");
+            detail = reason.isJsonPrimitive() ? reason.getAsString() : reason.toString();
         } else {
             detail = method;
         }

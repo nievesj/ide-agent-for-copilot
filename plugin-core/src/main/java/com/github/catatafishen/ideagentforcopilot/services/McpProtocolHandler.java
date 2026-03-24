@@ -52,6 +52,8 @@ public final class McpProtocolHandler {
                 case "initialize" -> handleInitialize(msg);
                 case "tools/list" -> handleToolsList(msg);
                 case "tools/call" -> handleToolsCall(msg);
+                case "resources/list" -> handleResourcesList(msg);
+                case "resources/read" -> handleResourcesRead(msg);
                 case "ping" -> respondResult(msg, new JsonObject());
                 default -> respondError(msg, -32601, "Method not found: " + method);
             };
@@ -64,15 +66,6 @@ public final class McpProtocolHandler {
         }
     }
 
-    /**
-     * Handles the MCP initialize request.
-     *
-     * <p>The {@code instructions} field in the result is the MCP-spec mechanism for servers to
-     * inject context into the client's system prompt. Agents that properly implement MCP (e.g.
-     * OpenCode, Goose, Continue) will incorporate this into the model context automatically —
-     * no project-file mutation needed. Copilot ignores this field (known bug), so it relies on
-     * the separate {@code CopilotInstructionsManager} file-injection workaround instead.</p>
-     */
     private JsonObject handleInitialize(JsonObject msg) {
         JsonObject serverInfo = new JsonObject();
         serverInfo.addProperty("name", SERVER_NAME);
@@ -83,6 +76,10 @@ public final class McpProtocolHandler {
         JsonObject toolsCap = new JsonObject();
         toolsCap.addProperty("listChanged", false);
         capabilities.add("tools", toolsCap);
+
+        JsonObject resourcesCap = new JsonObject();
+        resourcesCap.addProperty("listChanged", false);
+        capabilities.add("resources", resourcesCap);
 
         JsonObject result = new JsonObject();
         result.addProperty("protocolVersion", PROTOCOL_VERSION);
@@ -129,6 +126,70 @@ public final class McpProtocolHandler {
         JsonObject result = new JsonObject();
         result.add("tools", tools);
         return respondResult(msg, result);
+    }
+
+    private JsonObject handleResourcesList(JsonObject msg) {
+        JsonArray resources = new JsonArray();
+        JsonObject resource = new JsonObject();
+        resource.addProperty("uri", "resource://default-startup-instructions.md");
+        resource.addProperty("name", "default-startup-instructions");
+        resource.addProperty("mimeType", "text/markdown");
+        resource.addProperty("description", "Default startup instructions injected during initialize");
+        resources.add(resource);
+
+        JsonObject result = new JsonObject();
+        result.add("resources", resources);
+        return respondResult(msg, result);
+    }
+
+    private JsonObject handleResourcesRead(JsonObject msg) {
+        JsonObject params = msg.has("params") ? msg.getAsJsonObject("params") : new JsonObject();
+        String uri = null;
+        if (params.has("uri") && !params.get("uri").isJsonNull()) {
+            uri = params.get("uri").getAsString();
+        } else if (params.has("resource") && params.get("resource").isJsonObject()) {
+            JsonObject resource = params.getAsJsonObject("resource");
+            if (resource.has("uri") && !resource.get("uri").isJsonNull()) {
+                uri = resource.get("uri").getAsString();
+            }
+        }
+
+        if (uri == null || uri.isEmpty()) {
+            return respondError(msg, -32602, "Missing resource URI");
+        }
+
+        String text = readResourceText(uri);
+        if (text == null) {
+            return respondError(msg, -32602, "Unknown resource: " + uri);
+        }
+
+        JsonObject content = new JsonObject();
+        content.addProperty("uri", uri);
+        content.addProperty("mimeType", "text/markdown");
+        content.addProperty("text", text);
+
+        JsonArray contents = new JsonArray();
+        contents.add(content);
+
+        JsonObject result = new JsonObject();
+        result.add("contents", contents);
+        return respondResult(msg, result);
+    }
+
+    private static String readResourceText(String uri) {
+        if (!"resource://default-startup-instructions.md".equals(uri)) {
+            return null;
+        }
+        try (java.io.InputStream is = McpProtocolHandler.class.getResourceAsStream("/default-startup-instructions.md")) {
+            if (is == null) {
+                LOG.warn("Resource /default-startup-instructions.md not found in classpath for MCP resources/read");
+                return null;
+            }
+            return new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException e) {
+            LOG.error("Failed to read /default-startup-instructions.md from classpath for MCP resources/read", e);
+            return null;
+        }
     }
 
     private JsonObject handleToolsCall(JsonObject msg) {

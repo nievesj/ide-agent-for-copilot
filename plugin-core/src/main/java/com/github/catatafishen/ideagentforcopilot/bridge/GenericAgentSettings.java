@@ -26,8 +26,13 @@ public final class GenericAgentSettings implements AgentSettings {
     }
 
     @Override
-    public int getPromptTimeout() {
-        return settings.getPromptTimeout();
+    public int getTurnTimeout() {
+        return settings.getTurnTimeout();
+    }
+
+    @Override
+    public int getInactivityTimeout() {
+        return settings.getInactivityTimeout();
     }
 
     @Override

@@ -67,9 +67,23 @@ public interface AgentUiSettings {
 
     // ── Timeout & limits ─────────────────────────────────────────────────────
 
-    int getPromptTimeout();
+    int getTurnTimeout();
 
-    void setPromptTimeout(int seconds);
+    void setTurnTimeout(int seconds);
+
+    int getInactivityTimeout();
+
+    void setInactivityTimeout(int seconds);
+
+    @Deprecated
+    default int getPromptTimeout() {
+        return getTurnTimeout();
+    }
+
+    @Deprecated
+    default void setPromptTimeout(int seconds) {
+        setTurnTimeout(seconds);
+    }
 
     int getMaxToolCallsPerTurn();
 
