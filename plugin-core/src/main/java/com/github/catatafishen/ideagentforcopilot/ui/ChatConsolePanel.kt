@@ -393,16 +393,16 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         }
     }
 
-    fun updateToolCall(
+    override fun updateToolCall(
         id: String,
         status: String,
-        details: String? = null,
-        description: String? = null,
-        kind: String? = null,
-        autoDenied: Boolean = false,
-        denialReason: String? = null,
-        arguments: String? = null,
-        title: String? = null
+        details: String?,
+        description: String?,
+        kind: String?,
+        autoDenied: Boolean,
+        denialReason: String?,
+        arguments: String?,
+        title: String?
     ) {
         val chipId = registry.findChipIdByClientId(id)
         var did = if (chipId != null) "t-$chipId" else domId(id)
@@ -476,11 +476,6 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 executeJs("ChatController.updateToolCallKind('$did','$jsKind')")
             }
             return
-        }
-
-        val jsStatus = if (autoDenied) "denied" else when (status) {
-            "failed" -> "failed"
-            else -> "complete"
         }
 
         // For terminal states, notify the registry — it determines COMPLETE vs EXTERNAL vs FAILED,
