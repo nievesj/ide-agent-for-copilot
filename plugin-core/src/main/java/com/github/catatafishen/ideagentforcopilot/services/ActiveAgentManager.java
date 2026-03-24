@@ -149,10 +149,8 @@ public final class ActiveAgentManager implements Disposable {
     }
 
     public int getSharedTurnTimeoutMinutes() {
-        PropertiesComponent properties = PropertiesComponent.getInstance(project);
         return normalizeSharedTurnTimeoutMinutes(
-            properties.getValue(KEY_SHARED_TURN_TIMEOUT_MINUTES),
-            migrateLegacyTurnTimeoutMinutes()
+            PropertiesComponent.getInstance(project).getValue(KEY_SHARED_TURN_TIMEOUT_MINUTES)
         );
     }
 
@@ -169,10 +167,8 @@ public final class ActiveAgentManager implements Disposable {
     }
 
     public int getSharedInactivityTimeoutSeconds() {
-        PropertiesComponent properties = PropertiesComponent.getInstance(project);
         return normalizeSharedInactivityTimeoutSeconds(
-            properties.getValue(KEY_SHARED_INACTIVITY_TIMEOUT_SECONDS),
-            migrateLegacyInactivityTimeoutSeconds()
+            PropertiesComponent.getInstance(project).getValue(KEY_SHARED_INACTIVITY_TIMEOUT_SECONDS)
         );
     }
 
@@ -380,18 +376,12 @@ public final class ActiveAgentManager implements Disposable {
         }
     }
 
-    static int normalizeSharedTurnTimeoutMinutes(@Nullable String storedMinutes, int legacySeconds) {
-        if (storedMinutes != null) {
-            return clamp(parseIntOrDefault(storedMinutes, DEFAULT_TURN_TIMEOUT_MINUTES), 1, 1440);
-        }
-        return clamp((legacySeconds + 59) / 60, 1, 1440);
+    static int normalizeSharedTurnTimeoutMinutes(@Nullable String storedMinutes) {
+        return clamp(parseIntOrDefault(storedMinutes, DEFAULT_TURN_TIMEOUT_MINUTES), 1, 1440);
     }
 
-    static int normalizeSharedInactivityTimeoutSeconds(@Nullable String storedSeconds, int legacySeconds) {
-        if (storedSeconds != null) {
-            return clamp(parseIntOrDefault(storedSeconds, DEFAULT_INACTIVITY_TIMEOUT_SECONDS), 30, 86_400);
-        }
-        return clamp(legacySeconds, 30, 86_400);
+    static int normalizeSharedInactivityTimeoutSeconds(@Nullable String storedSeconds) {
+        return clamp(parseIntOrDefault(storedSeconds, DEFAULT_INACTIVITY_TIMEOUT_SECONDS), 30, 86_400);
     }
 
     static int normalizeSharedMaxToolCallsPerTurn(@Nullable String storedCount, int legacyCount) {
@@ -399,19 +389,6 @@ public final class ActiveAgentManager implements Disposable {
             return Math.max(0, parseIntOrDefault(storedCount, DEFAULT_MAX_TOOL_CALLS_PER_TURN));
         }
         return Math.max(0, legacyCount);
-    }
-
-    private int migrateLegacyTurnTimeoutMinutes() {
-        int legacySeconds = findLegacySharedInt(GenericSettings::getTurnTimeout, GenericSettings.DEFAULT_TURN_TIMEOUT_SECONDS);
-        return clamp((legacySeconds + 59) / 60, 1, 1440);
-    }
-
-    private int migrateLegacyInactivityTimeoutSeconds() {
-        return clamp(
-            findLegacySharedInt(GenericSettings::getInactivityTimeout, DEFAULT_INACTIVITY_TIMEOUT_SECONDS),
-            30,
-            86_400
-        );
     }
 
     private int migrateLegacyMaxToolCallsPerTurn() {

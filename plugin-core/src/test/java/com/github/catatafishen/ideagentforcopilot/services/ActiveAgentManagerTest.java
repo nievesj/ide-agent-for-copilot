@@ -7,27 +7,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class ActiveAgentManagerTest {
 
     @Test
-    void normalizeSharedTurnTimeoutMinutesUsesStoredMinutesAndClamps() {
-        assertEquals(1440, ActiveAgentManager.normalizeSharedTurnTimeoutMinutes("2000", 300));
-        assertEquals(120, ActiveAgentManager.normalizeSharedTurnTimeoutMinutes("bad", 3600));
+    void normalizeSharedTurnTimeoutMinutesUsesStoredValueOrDefaultAndClamps() {
+        assertEquals(1440, ActiveAgentManager.normalizeSharedTurnTimeoutMinutes("2000"));
+        assertEquals(120, ActiveAgentManager.normalizeSharedTurnTimeoutMinutes("bad"));
+        assertEquals(120, ActiveAgentManager.normalizeSharedTurnTimeoutMinutes(null));
     }
 
     @Test
-    void normalizeSharedTurnTimeoutMinutesFallsBackToLegacySecondsRoundedUp() {
-        assertEquals(60, ActiveAgentManager.normalizeSharedTurnTimeoutMinutes(null, 3600));
-        assertEquals(1, ActiveAgentManager.normalizeSharedTurnTimeoutMinutes(null, 1));
-    }
-
-    @Test
-    void normalizeSharedTurnTimeoutMinutesDefaultsToTwoHoursWhenLegacyUnset() {
-        assertEquals(120, ActiveAgentManager.normalizeSharedTurnTimeoutMinutes(null, GenericSettings.DEFAULT_TURN_TIMEOUT_SECONDS));
-    }
-
-    @Test
-    void normalizeSharedInactivityTimeoutSecondsUsesStoredValueAndClamps() {
-        assertEquals(30, ActiveAgentManager.normalizeSharedInactivityTimeoutSeconds("10", 900));
-        assertEquals(300, ActiveAgentManager.normalizeSharedInactivityTimeoutSeconds("bad", 900));
-        assertEquals(900, ActiveAgentManager.normalizeSharedInactivityTimeoutSeconds(null, 900));
+    void normalizeSharedInactivityTimeoutSecondsUsesStoredValueOrDefaultAndClamps() {
+        assertEquals(30, ActiveAgentManager.normalizeSharedInactivityTimeoutSeconds("10"));
+        assertEquals(300, ActiveAgentManager.normalizeSharedInactivityTimeoutSeconds("bad"));
+        assertEquals(300, ActiveAgentManager.normalizeSharedInactivityTimeoutSeconds(null));
     }
 
     @Test

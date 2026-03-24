@@ -397,21 +397,11 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     private int getTurnTimeoutSeconds() {
-        try {
-            return ActiveAgentManager.getInstance(project).getSharedTurnTimeoutSeconds();
-        } catch (Exception e) {
-            LOG.warn("Falling back to default turn timeout", e);
-            return 300;
-        }
+        return ActiveAgentManager.getInstance(project).getSharedTurnTimeoutSeconds();
     }
 
     private int getInactivityTimeoutSeconds() {
-        try {
-            return ActiveAgentManager.getInstance(project).getSharedInactivityTimeoutSeconds();
-        } catch (Exception e) {
-            LOG.warn("Falling back to default inactivity timeout", e);
-            return 300;
-        }
+        return ActiveAgentManager.getInstance(project).getSharedInactivityTimeoutSeconds();
     }
 
     @Override

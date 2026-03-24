@@ -14,7 +14,6 @@ import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings;
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
-import com.github.catatafishen.ideagentforcopilot.services.GenericSettings;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
@@ -145,7 +144,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     private final AgentConfig config;
     @Nullable
     private final ToolRegistry registry;
-    @Nullable
+    @NotNull
     private final Project project;
     private final int mcpPort;
 
@@ -199,7 +198,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     public CodexAppServerClient(@NotNull AgentProfile profile,
                                 @NotNull AgentConfig config,
                                 @Nullable ToolRegistry registry,
-                                @Nullable Project project,
+                                @NotNull Project project,
                                 int mcpPort) {
         this.profile = profile;
         this.config = config;
@@ -398,25 +397,11 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     // ── App-server lifecycle ──────────────────────────────────────────────────
 
     private int getTurnTimeoutSeconds() {
-        try {
-            return project != null
-                ? ActiveAgentManager.getInstance(project).getSharedTurnTimeoutSeconds()
-                : GenericSettings.DEFAULT_TURN_TIMEOUT_SECONDS;
-        } catch (Exception e) {
-            LOG.warn("Falling back to default Codex turn timeout", e);
-            return GenericSettings.DEFAULT_TURN_TIMEOUT_SECONDS;
-        }
+        return ActiveAgentManager.getInstance(project).getSharedTurnTimeoutSeconds();
     }
 
     private int getInactivityTimeoutSeconds() {
-        try {
-            return project != null
-                ? ActiveAgentManager.getInstance(project).getSharedInactivityTimeoutSeconds()
-                : 300;
-        } catch (Exception e) {
-            LOG.warn("Falling back to default Codex inactivity timeout", e);
-            return 300;
-        }
+        return ActiveAgentManager.getInstance(project).getSharedInactivityTimeoutSeconds();
     }
 
     private String awaitTurnResult(@NotNull CompletableFuture<String> turnResult,

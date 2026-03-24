@@ -67,26 +67,6 @@ final class GenericAgentUiSettings implements AgentUiSettings {
     }
 
     @Override
-    public int getTurnTimeout() {
-        return settings.getTurnTimeout();
-    }
-
-    @Override
-    public void setTurnTimeout(int seconds) {
-        settings.setTurnTimeout(seconds);
-    }
-
-    @Override
-    public int getInactivityTimeout() {
-        return settings.getInactivityTimeout();
-    }
-
-    @Override
-    public void setInactivityTimeout(int seconds) {
-        settings.setInactivityTimeout(seconds);
-    }
-
-    @Override
     public int getMaxToolCallsPerTurn() {
         return settings.getMaxToolCallsPerTurn();
     }

@@ -65,25 +65,7 @@ public interface AgentUiSettings {
 
     // ── Tool permissions ─────────────────────────────────────────────────────
 
-    // ── Timeout & limits ─────────────────────────────────────────────────────
-
-    int getTurnTimeout();
-
-    void setTurnTimeout(int seconds);
-
-    int getInactivityTimeout();
-
-    void setInactivityTimeout(int seconds);
-
-    @Deprecated
-    default int getPromptTimeout() {
-        return getTurnTimeout();
-    }
-
-    @Deprecated
-    default void setPromptTimeout(int seconds) {
-        setTurnTimeout(seconds);
-    }
+    // ── Limits ───────────────────────────────────────────────────────────────
 
     int getMaxToolCallsPerTurn();
 
