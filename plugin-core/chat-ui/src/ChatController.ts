@@ -614,7 +614,14 @@ const ChatController = {
 
     showNudgeBubble(id: string, text: string): void {
         const existing = document.getElementById('nudge-' + id);
-        if (existing) return;
+        if (existing) {
+            const bubble = existing.querySelector('message-bubble');
+            if (bubble) {
+                bubble.textContent = (bubble.textContent || '') + '\n\n' + text;
+                this._container()?.scrollIfNeeded();
+            }
+            return;
+        }
         const msg = document.createElement('chat-message');
         msg.id = 'nudge-' + id;
         msg.setAttribute('type', 'user');

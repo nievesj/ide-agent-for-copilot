@@ -142,7 +142,11 @@ public final class PsiBridgeService implements Disposable {
     }
 
     public void setPendingNudge(@Nullable String nudge) {
-        pendingNudge.set(nudge);
+        if (nudge == null) {
+            pendingNudge.set(null);
+            return;
+        }
+        pendingNudge.updateAndGet(existing -> (existing == null || existing.isEmpty()) ? nudge : existing + "\n\n" + nudge);
     }
 
     public void setOnNudgeConsumed(@Nullable Runnable callback) {
