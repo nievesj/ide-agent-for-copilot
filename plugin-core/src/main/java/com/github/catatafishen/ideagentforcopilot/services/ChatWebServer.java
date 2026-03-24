@@ -320,8 +320,8 @@ public final class ChatWebServer implements Disposable {
 
         List<String> localIps = collectLocalIpv4Addresses();
 
-        if (ksFile.exists() && !certCoversAllIps(ksFile, localIps)) {
-            LOG.info("[ChatWebServer] Regenerating certificate — local IPs changed");
+        if (ksFile.exists() && (!certCoversAllIps(ksFile, localIps) || !certHasCaFlag(ksFile))) {
+            LOG.info("[ChatWebServer] Regenerating certificate — local IPs changed or CA flag missing");
             java.nio.file.Files.delete(ksPath);
         }
 
@@ -347,7 +347,10 @@ public final class ChatWebServer implements Disposable {
                 "-storepass", KEYSTORE_PASSWORD,
                 "-keypass", KEYSTORE_PASSWORD,
                 "-dname", "CN=AgentBridge, O=AgentBridge, C=US",
-                "-ext", "SAN=" + sanBuilder
+                "-ext", "SAN=" + sanBuilder,
+                // Required for Android (and iOS) CA trust: marks this as a CA certificate.
+                // Without BasicConstraints CA:TRUE the mobile CA installer rejects it.
+                "-ext", "BC:critical=ca:true"
             };
 
             Process process = new ProcessBuilder(cmd).start();
@@ -413,6 +416,24 @@ public final class ChatWebServer implements Disposable {
             return certIps.containsAll(requiredIps);
         } catch (Exception e) {
             LOG.warn("[ChatWebServer] Could not read existing certificate SANs", e);
+            return false;
+        }
+    }
+
+    /**
+     * Returns {@code true} if the certificate in the keystore has BasicConstraints CA:TRUE.
+     */
+    private static boolean certHasCaFlag(java.io.File ksFile) {
+        try {
+            KeyStore ks = KeyStore.getInstance("PKCS12");
+            try (java.io.FileInputStream fis = new java.io.FileInputStream(ksFile)) {
+                ks.load(fis, KEYSTORE_PASSWORD.toCharArray());
+            }
+            java.security.cert.Certificate cert = ks.getCertificate("agentbridge");
+            if (!(cert instanceof X509Certificate x509)) return false;
+            return x509.getBasicConstraints() >= 0; // >= 0 means CA:TRUE
+        } catch (Exception e) {
+            LOG.warn("[ChatWebServer] Could not read existing certificate BasicConstraints", e);
             return false;
         }
     }
