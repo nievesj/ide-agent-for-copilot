@@ -15,6 +15,7 @@ import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
+import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
 import com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -88,29 +89,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     private static final String F_TOOL = "tool";
     private static final String F_ARGUMENTS = "arguments";
     private static final String F_COMMAND = "command";
-    private static final String F_REASONING = "reasoning";
     private static final String AGENTS_MD = "AGENTS.md";
-
-    // ── Known models ─────────────────────────────────────────────────────────
-
-    private static final List<Model> KNOWN_MODELS = buildKnownModels();
-    private static final String DEFAULT_MODEL = "gpt-4.1";
-
-    private static List<Model> buildKnownModels() {
-        Object[][] rows = {
-            {"gpt-4.1", "GPT-4.1 (default)"},
-            {"gpt-4.1-mini", "GPT-4.1 Mini (fast)"},
-            {"gpt-4.1-nano", "GPT-4.1 Nano (fastest)"},
-            {"gpt-5.4", "GPT-5.4"},
-            {"o3", "o3 (deep reasoning)"},
-            {"o4-mini", "o4-mini (fast reasoning)"},
-        };
-        List<Model> list = new ArrayList<>(rows.length);
-        for (Object[] row : rows) {
-            list.add(new Model((String) row[0], (String) row[1], null, null));
-        }
-        return Collections.unmodifiableList(list);
-    }
 
     // ── Session options ──────────────────────────────────────────────────────
 
@@ -166,6 +145,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     private volatile Process appServerProcess;
     private volatile OutputStream stdin;
     private volatile boolean connected = false;
+    private volatile List<Model> dynamicModels = null;
 
     private final AtomicInteger nextId = new AtomicInteger(1);
     private final Map<Integer, CompletableFuture<JsonObject>> pendingRequests = new ConcurrentHashMap<>();
@@ -193,6 +173,10 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     private volatile Consumer<SessionUpdate> activeTurnCallback;
     private volatile CompletableFuture<String> activeTurnResult;
     private volatile String activeTurnSessionId;
+    /**
+     * True once a thinking chip has been opened for the current turn (suppresses duplicate placeholders).
+     */
+    private volatile boolean reasoningActive = false;
 
     private String resolvedBinaryPath;
 
@@ -326,7 +310,9 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
     @Override
     public List<Model> getAvailableModels() {
-        return KNOWN_MODELS;
+        List<Model> models = dynamicModels;
+        if (models == null) throw new IllegalStateException("Model list not loaded — agent not initialized");
+        return models;
     }
 
     @Override
@@ -466,6 +452,46 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
         // Send initialized notification (no ID, no response expected)
         sendNotification("initialized", new JsonObject());
+
+        fetchModelList();
+    }
+
+    private void fetchModelList() throws AgentException {
+        JsonObject params = new JsonObject();
+        params.addProperty("includeHidden", false);
+        try {
+            JsonObject result = sendRequest("model/list", params).get(10, TimeUnit.SECONDS);
+            if (result == null || !result.has("data") || !result.get("data").isJsonArray()) {
+                throw new AgentException("model/list returned unexpected format: " + result, null, true);
+            }
+            List<Model> models = new ArrayList<>();
+            for (JsonElement el : result.getAsJsonArray("data")) {
+                Model model = parseModelEntry(el);
+                if (model != null) models.add(model);
+            }
+            if (models.isEmpty()) {
+                throw new AgentException("model/list returned no models", null, true);
+            }
+            dynamicModels = Collections.unmodifiableList(models);
+            LOG.info("Loaded " + models.size() + " Codex model(s) from model/list");
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new AgentException("model/list interrupted", ie, true);
+        } catch (AgentException ae) {
+            throw ae;
+        } catch (Exception e) {
+            throw new AgentException("model/list failed: " + e.getMessage(), e, true);
+        }
+    }
+
+    @Nullable
+    private static Model parseModelEntry(@NotNull JsonElement el) {
+        if (!el.isJsonObject()) return null;
+        JsonObject m = el.getAsJsonObject();
+        String id = m.has("id") ? m.get("id").getAsString() : null;
+        if (id == null || id.isEmpty()) return null;
+        String name = m.has("name") ? m.get("name").getAsString() : id;
+        return new Model(id, name, null, null);
     }
 
     // ── Thread management ─────────────────────────────────────────────────────
@@ -600,8 +626,12 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         OutputStream out = stdin;
         if (out == null) return false;
         try {
+            String json = msg.toString();
+            if (isDebugLoggingEnabled()) {
+                LOG.info("[Codex] >>> " + json);
+            }
             synchronized (out) {
-                out.write(msg.toString().getBytes(StandardCharsets.UTF_8));
+                out.write(json.getBytes(StandardCharsets.UTF_8));
                 out.write('\n');
                 out.flush();
             }
@@ -610,6 +640,10 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             LOG.debug("codex app-server: write failed: " + e.getMessage());
             return false;
         }
+    }
+
+    private boolean isDebugLoggingEnabled() {
+        return project != null && McpServerSettings.getInstance(project).isDebugLoggingEnabled();
     }
 
     // ── Reader thread ─────────────────────────────────────────────────────────
@@ -647,9 +681,12 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     private void processLine(@NotNull String line) {
         try {
             JsonObject msg = JsonParser.parseString(line).getAsJsonObject();
+            if (isDebugLoggingEnabled()) {
+                LOG.info("[Codex] <<< " + line);
+            }
             dispatchMessage(msg);
         } catch (RuntimeException e) {
-            LOG.debug("codex app-server: could not parse line: " + line, e);
+            LOG.warn("codex app-server: could not parse line: " + line, e);
         }
     }
 
@@ -659,12 +696,13 @@ public final class CodexAppServerClient extends AbstractAgentClient {
      * <p>Three categories:
      * <ol>
      *   <li>Response to our request: has numeric {@code id} and {@code result}/{@code error} fields.</li>
-     *   <li>Notification from server: has {@code method} but no {@code id}.</li>
-     *   <li>Server-initiated request: has both {@code method} and {@code id} (string) — e.g. approval requests.</li>
+     *   <li>Notification from server: has {@code method} but no {@code id} (or null {@code id}).</li>
+     *   <li>Server-initiated request: has both {@code method} and a non-null {@code id} — e.g. approval requests.</li>
      * </ol>
      */
     private void dispatchMessage(@NotNull JsonObject msg) {
-        boolean hasId = msg.has(F_ID);
+        // id is "present and non-null" — some implementations send "id": null in notifications
+        boolean hasId = msg.has(F_ID) && !msg.get(F_ID).isJsonNull();
         boolean hasMethod = msg.has(F_METHOD);
         boolean hasResult = msg.has(F_RESULT) || msg.has(F_ERROR);
 
@@ -727,13 +765,14 @@ public final class CodexAppServerClient extends AbstractAgentClient {
                 emitToolDeclinedBanner(method, params);
             }
             case "item/tool/call" -> {
-                // Dynamic client-side tool call — we don't register client-side tools,
-                // so decline gracefully. Real tool calls come through MCP.
                 String toolName = params.has(F_TOOL) ? params.get(F_TOOL).getAsString() : "unknown";
                 LOG.info("Declining client-side tool call: " + toolName);
+                String replyText = "request_user_input".equals(toolName)
+                    ? "Asking the user for input is not supported in this context. Please proceed using your best judgment."
+                    : "Tool '" + toolName + "' is not available in this context.";
                 JsonObject error = new JsonObject();
                 error.addProperty(F_TYPE, F_ERROR);
-                error.addProperty(F_TEXT, "Tool '" + toolName + "' is not available in this context.");
+                error.addProperty(F_TEXT, replyText);
                 JsonArray content = new JsonArray();
                 content.add(error);
                 JsonObject resp = new JsonObject();
@@ -742,7 +781,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             }
             default -> {
                 // Unknown server request — send a generic error response
-                LOG.debug("Unknown server request method: " + method);
+                LOG.warn("Unknown server request method: " + method);
                 JsonObject error = new JsonObject();
                 error.addProperty("code", -32601);
                 error.addProperty(F_MESSAGE, "Method not found: " + method);
@@ -762,11 +801,12 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
         switch (method) {
             case "item/agentMessage/delta" -> handleTextDelta(params);
+            case "item/reasoning/summaryTextDelta", "item/reasoning/textDelta" -> handleReasoningDelta(params);
             case "item/started" -> handleItemStarted(params);
             case "item/completed" -> handleItemCompleted(params);
             case "turn/completed" -> handleTurnCompleted(params);
             case "turn/failed" -> handleTurnFailed(params);
-            // turn/started, thread/started, etc. — no action needed
+            // turn/started, thread/started, item/reasoning/textDelta, etc. — no action needed
             default -> LOG.debug("codex notification: " + method);
         }
     }
@@ -794,8 +834,16 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         if (cb == null || !params.has(F_ITEM)) return;
         JsonObject item = params.getAsJsonObject(F_ITEM);
         String type = item.has(F_TYPE) ? item.get(F_TYPE).getAsString() : "";
-        if ("mcp_tool_call".equals(type)) {
-            emitMcpToolCallStart(item, cb);
+        switch (type) {
+            case "mcpToolCall" -> emitMcpToolCallStart(item, cb);
+            case "reasoning" -> {
+                // Emit one thinking chip per turn, then stream any available reasoning text into it.
+                if (!reasoningActive) {
+                    reasoningActive = true;
+                    cb.accept(new SessionUpdate.AgentThoughtChunk(List.of(new ContentBlock.Text("Thinking..."))));
+                }
+                appendReasoningContent(item, cb);
+            }
         }
     }
 
@@ -806,55 +854,117 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         String type = item.has(F_TYPE) ? item.get(F_TYPE).getAsString() : "";
 
         switch (type) {
-            case "mcp_tool_call" -> {
+            case "mcpToolCall" -> {
                 if (cb != null) emitMcpToolCallEnd(item, cb);
             }
-            case F_REASONING -> {
-                // Emit reasoning as a thought block
-                if (cb != null && item.has(F_REASONING)) {
-                    String thinking = item.get(F_REASONING).getAsString();
-                    if (!thinking.isEmpty()) {
-                        cb.accept(new SessionUpdate.AgentThoughtChunk(List.of(new ContentBlock.Text(thinking))));
-                    }
-                }
-            }
-            case "command_execution" -> {
+            case "commandExecution" -> {
                 // Native command attempted — emit as a tool call (already declined, just for UI)
                 if (cb != null) emitNativeCommandItem(item, cb);
             }
-            default -> { /* no other item types require handling */ }
+            default -> { /* reasoning is streamed via summaryTextDelta; no other types require handling */ }
         }
     }
 
-    private void handleTurnCompleted(@NotNull JsonObject params) {
-        // Emit usage stats if available
+    private void handleReasoningDelta(@NotNull JsonObject params) {
         Consumer<SessionUpdate> cb = activeTurnCallback;
-        if (cb != null && params.has(F_TURN)) {
-            JsonObject turn = params.getAsJsonObject(F_TURN);
-            if (turn.has(F_USAGE)) {
-                emitUsageStats(turn.getAsJsonObject(F_USAGE), cb);
-            }
+        if (cb == null) return;
+        String text = extractReasoningText(params.get(F_DELTA));
+        if (!text.isEmpty()) {
+            cb.accept(new SessionUpdate.AgentThoughtChunk(List.of(new ContentBlock.Text(text))));
         }
-        String status = params.has(F_TURN) && params.getAsJsonObject(F_TURN).has(F_STATUS)
-            ? params.getAsJsonObject(F_TURN).get(F_STATUS).getAsString()
-            : "completed";
+    }
+
+    private void appendReasoningContent(@NotNull JsonObject item, @NotNull Consumer<SessionUpdate> cb) {
+        String text = extractReasoningText(item);
+        if (!text.isEmpty()) {
+            cb.accept(new SessionUpdate.AgentThoughtChunk(List.of(new ContentBlock.Text(text))));
+        }
+    }
+
+    @NotNull
+    private String extractReasoningText(@Nullable JsonElement el) {
+        if (el == null || el.isJsonNull()) return "";
+        if (el.isJsonPrimitive()) return el.getAsString();
+        if (el.isJsonArray()) {
+            StringBuilder sb = new StringBuilder();
+            for (JsonElement child : el.getAsJsonArray()) {
+                String childText = extractReasoningText(child);
+                if (!childText.isEmpty()) sb.append(childText);
+            }
+            return sb.toString();
+        }
+        if (!el.isJsonObject()) return "";
+
+        JsonObject obj = el.getAsJsonObject();
+        if (obj.has(F_TEXT) && obj.get(F_TEXT).isJsonPrimitive()) return obj.get(F_TEXT).getAsString();
+        if (obj.has("thinking") && obj.get("thinking").isJsonPrimitive()) return obj.get("thinking").getAsString();
+        if (obj.has("summary")) return extractReasoningText(obj.get("summary"));
+        if (obj.has(F_DELTA)) return extractReasoningText(obj.get(F_DELTA));
+        if (obj.has("content")) return extractReasoningText(obj.get("content"));
+        return "";
+    }
+
+    private void handleTurnCompleted(@NotNull JsonObject params) {
+        reasoningActive = false;
+        Consumer<SessionUpdate> cb = activeTurnCallback;
+        JsonObject turn = params.has(F_TURN) ? params.getAsJsonObject(F_TURN) : new JsonObject();
+        String status = turn.has(F_STATUS) ? turn.get(F_STATUS).getAsString() : "completed";
+
+        if ("failed".equals(status)) {
+            // Extract and display the error to the user via the status banner
+            String errorMsg = extractTurnErrorMessage(turn);
+            if (cb != null) {
+                cb.accept(new SessionUpdate.Banner(errorMsg, SessionUpdate.BannerLevel.ERROR, SessionUpdate.ClearOn.MANUAL));
+            }
+            CompletableFuture<String> f = activeTurnResult;
+            if (f != null) f.complete(F_ERROR);
+            return;
+        }
+
+        // Emit usage stats if available
+        if (cb != null && turn.has(F_USAGE)) {
+            emitUsageStats(turn.getAsJsonObject(F_USAGE), cb);
+        }
         CompletableFuture<String> f = activeTurnResult;
         if (f != null) f.complete("interrupted".equals(status) ? "cancelled" : "end_turn");
     }
 
+    /**
+     * Extracts a human-readable error message from a failed turn's error object.
+     * The {@code message} field may itself be a JSON string (nested error envelope),
+     * in which case we try to unwrap the inner {@code error.message}.
+     */
+    @NotNull
+    private static String extractTurnErrorMessage(@NotNull JsonObject turn) {
+        if (!turn.has(F_ERROR)) return "Codex turn failed";
+        JsonElement errEl = turn.get(F_ERROR);
+        if (!errEl.isJsonObject()) return errEl.isJsonNull() ? "Codex turn failed" : errEl.getAsString();
+        JsonObject err = errEl.getAsJsonObject();
+        String raw = err.has(F_MESSAGE) ? err.get(F_MESSAGE).getAsString() : err.toString();
+        // The message field is sometimes a JSON string itself; try to unwrap it
+        if (raw.startsWith("{")) {
+            try {
+                JsonObject nested = JsonParser.parseString(raw).getAsJsonObject();
+                if (nested.has(F_ERROR) && nested.getAsJsonObject(F_ERROR).has(F_MESSAGE)) {
+                    return nested.getAsJsonObject(F_ERROR).get(F_MESSAGE).getAsString();
+                }
+            } catch (RuntimeException ignored) {
+                // Fall through to returning the raw string
+            }
+        }
+        return raw;
+    }
+
     private void handleTurnFailed(@NotNull JsonObject params) {
+        reasoningActive = false;
         String errorMsg = "Codex turn failed";
         if (params.has(F_TURN)) {
             JsonObject turn = params.getAsJsonObject(F_TURN);
-            if (turn.has(F_ERROR)) {
-                JsonObject err = turn.getAsJsonObject(F_ERROR);
-                errorMsg = err.has(F_MESSAGE) ? err.get(F_MESSAGE).getAsString() : err.toString();
-            }
+            errorMsg = extractTurnErrorMessage(turn);
         }
         Consumer<SessionUpdate> cb = activeTurnCallback;
         if (cb != null) {
-            cb.accept(new SessionUpdate.AgentMessageChunk(
-                List.of(new ContentBlock.Text("\n[Error: " + errorMsg + "]"))));
+            cb.accept(new SessionUpdate.Banner(errorMsg, SessionUpdate.BannerLevel.ERROR, SessionUpdate.ClearOn.MANUAL));
         }
         CompletableFuture<String> f = activeTurnResult;
         if (f != null) f.complete(F_ERROR);
@@ -965,10 +1075,11 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     @NotNull
-    private String resolveModel(@NotNull String sessionId, @Nullable String requestModel) {
+    private String resolveModel(@NotNull String sessionId, @Nullable String requestModel) throws AgentException {
         if (requestModel != null && !requestModel.isEmpty()) return requestModel;
         String stored = sessionModels.get(sessionId);
-        return (stored != null && !stored.isEmpty()) ? stored : DEFAULT_MODEL;
+        if (stored != null && !stored.isEmpty()) return stored;
+        throw new AgentException("No model selected — please select a model before sending a prompt", null, false);
     }
 
     @Nullable
