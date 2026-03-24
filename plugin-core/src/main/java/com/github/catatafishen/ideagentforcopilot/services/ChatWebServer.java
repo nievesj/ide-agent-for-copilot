@@ -2,22 +2,30 @@ package com.github.catatafishen.ideagentforcopilot.services;
 
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.settings.ChatWebServerSettings;
+import com.github.catatafishen.ideagentforcopilot.ui.ChatTheme;
 import com.google.gson.Gson;
+import com.intellij.ide.ui.LafManager;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import com.sun.net.httpserver.HttpsConfigurator;
+import com.sun.net.httpserver.HttpsServer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -54,6 +62,7 @@ public final class ChatWebServer implements Disposable {
     private static final Gson GSON = new Gson();
 
     private final Project project;
+    private HttpsServer httpsServer;
     private HttpServer httpServer;
     private volatile boolean running;
 
@@ -97,73 +106,117 @@ public final class ChatWebServer implements Disposable {
         ChatWebServerSettings settings = ChatWebServerSettings.getInstance(project);
         int port = settings.getPort();
 
+        SSLContext sslContext;
+        try {
+            sslContext = buildSelfSignedSslContext();
+        } catch (Exception e) {
+            throw new IOException("Failed to create TLS context for Chat Web Server", e);
+        }
+
         IOException lastError = null;
         for (int attempt = 0; attempt < 10; attempt++) {
             try {
-                httpServer = HttpServer.create(new InetSocketAddress("0.0.0.0", port + attempt), 0);
+                int httpsPort = port + attempt;
+                int httpPort = httpsPort + 1;
+
+                httpsServer = HttpsServer.create(new InetSocketAddress("0.0.0.0", httpsPort), 0);
+                httpServer = HttpServer.create(new InetSocketAddress("0.0.0.0", httpPort), 0);
+
                 if (attempt > 0) {
-                    settings.setPort(port + attempt);
+                    settings.setPort(httpsPort);
                 }
                 break;
             } catch (IOException e) {
+                if (httpsServer != null) {
+                    httpsServer.stop(0);
+                    httpsServer = null;
+                }
+                if (httpServer != null) {
+                    httpServer.stop(0);
+                    httpServer = null;
+                }
                 lastError = e;
             }
         }
-        if (httpServer == null)
-            throw new IOException("Cannot bind Chat Web Server to any port near " + port, lastError);
+        if (httpsServer == null || httpServer == null)
+            throw new IOException("Cannot bind Chat Web Server (HTTPS/HTTP) to any port near " + port, lastError);
 
-        httpServer.createContext("/", this::handleRoot);
-        httpServer.createContext("/chat.css", ex -> serveClasspath(ex, "/chat/chat.css", "text/css; charset=utf-8"));
-        httpServer.createContext("/chat.bundle.js", ex -> serveClasspath(ex, "/chat/chat-components.js", "application/javascript; charset=utf-8"));
-        httpServer.createContext("/icon.svg", this::handleIconSvg);
-        httpServer.createContext("/icon-192.png", ex -> handleIconPng(ex, 192));
-        httpServer.createContext("/icon-512.png", ex -> handleIconPng(ex, 512));
-        httpServer.createContext("/manifest.json", this::handleManifest);
-        httpServer.createContext("/sw.js", this::handleServiceWorker);
-        httpServer.createContext("/events", this::handleSse);
-        httpServer.createContext("/state", this::handleState);
-        httpServer.createContext("/info", this::handleInfo);
-        httpServer.createContext("/prompt", ex -> handleAction(ex, body -> {
+        SSLContext finalSslContext = sslContext;
+        httpsServer.setHttpsConfigurator(new HttpsConfigurator(finalSslContext) {
+            @Override
+            public void configure(com.sun.net.httpserver.HttpsParameters params) {
+                SSLParameters sslParams = finalSslContext.getDefaultSSLParameters();
+                params.setSSLParameters(sslParams);
+            }
+        });
+
+        registerContexts(httpsServer);
+        registerContexts(httpServer);
+
+        var executor = Executors.newCachedThreadPool();
+        httpsServer.setExecutor(executor);
+        httpServer.setExecutor(executor);
+
+        httpsServer.start();
+        httpServer.start();
+        running = true;
+        LOG.info("[ChatWebServer] started (HTTPS:" + httpsServer.getAddress().getPort()
+            + ", HTTP:" + httpServer.getAddress().getPort() + ") for project: " + project.getBasePath());
+    }
+
+    private void registerContexts(HttpServer server) {
+        server.createContext("/", this::handleRoot);
+        server.createContext("/chat.css", ex -> serveClasspath(ex, "/chat/chat.css", "text/css; charset=utf-8"));
+        server.createContext("/chat.bundle.js", ex -> serveClasspath(ex, "/chat/chat-components.js", "application/javascript; charset=utf-8"));
+        server.createContext("/icon.svg", this::handleIconSvg);
+        server.createContext("/icon-192.png", ex -> handleIconPng(ex, 192));
+        server.createContext("/icon-512.png", ex -> handleIconPng(ex, 512));
+        server.createContext("/manifest.json", this::handleManifest);
+        server.createContext("/sw.js", this::handleServiceWorker);
+        server.createContext("/events", this::handleSse);
+        server.createContext("/state", this::handleState);
+        server.createContext("/info", this::handleInfo);
+        server.createContext("/prompt", ex -> handleAction(ex, body -> {
             String text = jsonString(body, "text");
             if (text != null && !text.isEmpty() && onSendPrompt != null) onSendPrompt.accept(text);
         }));
-        httpServer.createContext("/reply", ex -> handleAction(ex, body -> {
+        server.createContext("/reply", ex -> handleAction(ex, body -> {
             String text = jsonString(body, "text");
             if (text != null && !text.isEmpty() && onQuickReply != null) onQuickReply.accept(text);
         }));
-        httpServer.createContext("/nudge", ex -> handleAction(ex, body -> {
+        server.createContext("/nudge", ex -> handleAction(ex, body -> {
             String text = jsonString(body, "text");
             if (text != null && !text.isEmpty() && onNudge != null) onNudge.accept(text);
         }));
-        httpServer.createContext("/stop", ex -> handleAction(ex, body -> {
+        server.createContext("/stop", ex -> handleAction(ex, body -> {
             if (onStop != null) onStop.run();
         }));
-        httpServer.createContext("/cancel-nudge", ex -> handleAction(ex, body -> {
+        server.createContext("/cancel-nudge", ex -> handleAction(ex, body -> {
             String id = jsonString(body, "id");
             if (id != null && onCancelNudge != null) onCancelNudge.accept(id);
         }));
-        httpServer.createContext("/permission", ex -> handleAction(ex, body -> {
+        server.createContext("/permission", ex -> handleAction(ex, body -> {
             String reqId = jsonString(body, "reqId");
             String response = jsonString(body, "response");
             if (reqId != null && response != null && onPermissionResponse != null) {
                 onPermissionResponse.accept(reqId + ":" + response);
             }
         }));
-
-        httpServer.setExecutor(Executors.newCachedThreadPool());
-        httpServer.start();
-        running = true;
-        LOG.info("[ChatWebServer] started on port " + httpServer.getAddress().getPort()
-            + " for project: " + project.getBasePath());
     }
 
     public synchronized void stop() {
-        if (!running || httpServer == null) return;
+        if (!running) return;
         // Signal all SSE clients to close
         for (SseClient c : sseClients) c.close();
         sseClients.clear();
-        httpServer.stop(0);
-        httpServer = null;
+        if (httpsServer != null) {
+            httpsServer.stop(0);
+            httpsServer = null;
+        }
+        if (httpServer != null) {
+            httpServer.stop(0);
+            httpServer = null;
+        }
         running = false;
         LOG.info("[ChatWebServer] stopped for project: " + project.getBasePath());
     }
@@ -173,6 +226,10 @@ public final class ChatWebServer implements Disposable {
     }
 
     public int getPort() {
+        return httpsServer != null ? httpsServer.getAddress().getPort() : 0;
+    }
+
+    public int getHttpPort() {
         return httpServer != null ? httpServer.getAddress().getPort() : 0;
     }
 
@@ -226,6 +283,68 @@ public final class ChatWebServer implements Disposable {
 
     public void setAgentRunning(boolean running) {
         agentRunning = running;
+    }
+
+    // ── TLS ───────────────────────────────────────────────────────────────────
+
+    private static final String KEYSTORE_NAME = "chat-web-server.p12";
+    private static final String KEYSTORE_PASSWORD = "agentbridge-ephemeral";
+
+    private static java.nio.file.Path getKeystorePath() {
+        String configPath = com.intellij.openapi.application.PathManager.getConfigPath();
+        return java.nio.file.Path.of(configPath, "plugins", "intellij-copilot-plugin", KEYSTORE_NAME);
+    }
+
+    /**
+     * Builds an SSLContext with a self-signed RSA certificate.
+     * Stores the keystore in the plugin config directory so it persists across restarts.
+     * Uses the 'keytool' command to generate a PKCS12 keystore.
+     */
+    private static SSLContext buildSelfSignedSslContext() throws Exception {
+        java.nio.file.Path ksPath = getKeystorePath();
+        java.io.File ksFile = ksPath.toFile();
+
+        if (!ksFile.exists()) {
+            java.nio.file.Path dir = ksPath.getParent();
+            if (dir != null && !java.nio.file.Files.exists(dir)) {
+                java.nio.file.Files.createDirectories(dir);
+            }
+
+            String[] cmd = {
+                "keytool", "-genkeypair",
+                "-alias", "agentbridge",
+                "-keyalg", "RSA",
+                "-keysize", "2048",
+                "-validity", "3650",
+                "-keystore", ksFile.getAbsolutePath(),
+                "-storetype", "PKCS12",
+                "-storepass", KEYSTORE_PASSWORD,
+                "-keypass", KEYSTORE_PASSWORD,
+                "-dname", "CN=AgentBridge, O=AgentBridge, C=US",
+                "-ext", "SAN=dns:localhost,ip:127.0.0.1"
+            };
+
+            Process process = new ProcessBuilder(cmd).start();
+            if (!process.waitFor(10, TimeUnit.SECONDS) || process.exitValue() != 0) {
+                String error = "";
+                try (java.io.InputStream is = process.getErrorStream()) {
+                    error = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                }
+                throw new IOException("Failed to generate self-signed certificate via keytool: " + error);
+            }
+        }
+
+        KeyStore ks = KeyStore.getInstance("PKCS12");
+        try (java.io.FileInputStream fis = new java.io.FileInputStream(ksFile)) {
+            ks.load(fis, KEYSTORE_PASSWORD.toCharArray());
+        }
+
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        kmf.init(ks, KEYSTORE_PASSWORD.toCharArray());
+
+        SSLContext ctx = SSLContext.getInstance("TLS");
+        ctx.init(kmf.getKeyManagers(), null, null);
+        return ctx;
     }
 
     // ── Handlers ─────────────────────────────────────────────────────────────
@@ -596,7 +715,60 @@ public final class ChatWebServer implements Disposable {
 
     // ── Web app HTML ──────────────────────────────────────────────────────────
 
+    private String getAgentIconSvg(String profileId, boolean isDark) {
+        String name;
+        if (profileId == null) {
+            name = "agentbridge";
+        } else {
+            switch (profileId) {
+                case "anthropic":
+                case "claude-cli":
+                    name = "claude";
+                    break;
+                case "copilot":
+                    name = "copilot";
+                    break;
+                case "opencode":
+                    name = "opencode";
+                    break;
+                case "junie":
+                    name = "junie";
+                    break;
+                case "kiro":
+                    name = "kiro";
+                    break;
+                case "codex":
+                    name = "codex";
+                    break;
+                default:
+                    name = "agentbridge";
+                    break;
+            }
+        }
+        String suffix = isDark ? "_dark" : "";
+        String path = "/icons/expui/" + name + suffix + ".svg";
+        try (java.io.InputStream is = ChatWebServer.class.getResourceAsStream(path)) {
+            if (is == null) return "";
+            try (java.util.Scanner scanner = new java.util.Scanner(is, java.nio.charset.StandardCharsets.UTF_8.name())) {
+                return scanner.useDelimiter("\\A").next();
+            }
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     private String buildWebAppHtml() {
+        String cssVars = ChatTheme.INSTANCE.buildCssVars();
+        boolean isDark = LafManager.getInstance().getCurrentUIThemeLookAndFeel().isDark();
+        String bodyClass = isDark ? "dark" : "light";
+
+        String activeProfile = ActiveAgentManager.getInstance(project).getActiveProfileId();
+        String iconSvg = getAgentIconSvg(activeProfile, isDark);
+        // Ensure SVG has proper styling for the button
+        if (iconSvg.contains("<svg")) {
+            iconSvg = iconSvg.replace("<svg", "<svg style=\"vertical-align:text-bottom;margin-right:4px\" fill=\"currentColor\" width=\"14\" height=\"14\"");
+        }
+
         return "<!DOCTYPE html>\n"
             + "<html lang=\"en\">\n"
             + "<head>\n"
@@ -606,10 +778,13 @@ public final class ChatWebServer implements Disposable {
             + "  <link rel=\"manifest\" href=\"/manifest.json\">\n"
             + "  <link rel=\"stylesheet\" href=\"/chat.css\">\n"
             + "  <style>\n"
+            + "    :root { " + cssVars + " }\n"
+            + "  </style>\n"
+            + "  <style>\n"
             + WEB_APP_CSS
             + "  </style>\n"
             + "</head>\n"
-            + "<body>\n"
+            + "<body class=\"" + bodyClass + "\">\n"
             + "  <div id=\"ab-offline\">Connection lost, reconnecting\u2026</div>\n"
             + "  <div id=\"ab-header\">\n"
             + "    <div id=\"ab-title\">AgentBridge \u2014 " + escHtml(projectName) + "</div>\n"
@@ -619,12 +794,11 @@ public final class ChatWebServer implements Disposable {
             + "  <div id=\"ab-chat\"><chat-container></chat-container></div>\n"
             + "  <div id=\"ab-footer\">\n"
             + "    <textarea id=\"ab-input\" rows=\"1\" placeholder=\"Message\u2026\"></textarea>\n"
-            + "    <div id=\"ab-btns\">\n"
-            + "      <button id=\"ab-send\">Send</button>\n"
-            + "    </div>\n"
+            + "    <button id=\"ab-send\">" + iconSvg + "<span>Send</span></button>\n"
             + "  </div>\n"
             + "  <script src=\"/chat.bundle.js\"></script>\n"
             + "  <script>\n"
+            + "    const ICON_SVG = " + escJs(iconSvg) + ";\n"
             + WEB_APP_JS
             + "  </script>\n"
             + "</body>\n"
@@ -633,6 +807,10 @@ public final class ChatWebServer implements Disposable {
 
     private static String escHtml(String s) {
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
+    }
+
+    private static String escJs(String s) {
+        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r") + "\"";
     }
 
     // ── Web app CSS ───────────────────────────────────────────────────────────
@@ -651,11 +829,9 @@ public final class ChatWebServer implements Disposable {
         + "@keyframes ab-pulse{0%,100%{opacity:1}50%{opacity:.35}}\n"
         + "#ab-chat{flex:1;overflow:hidden;position:relative;}\n"
         + "chat-container{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 8px;box-sizing:border-box;}\n"
-        + "#ab-footer{flex:0 0 auto;border-top:1px solid var(--fg-a16);padding:6px 8px;display:flex;gap:6px;align-items:flex-end;background:var(--bg);padding-bottom:max(6px,env(safe-area-inset-bottom));}\n"
-        + "#ab-input{flex:1;border:1px solid var(--fg-a16);border-radius:var(--r-md);background:var(--fg-a05);color:var(--fg);padding:6px 8px;font:inherit;resize:none;min-height:36px;max-height:120px;overflow-y:auto;outline:none;}\n"
-        + "#ab-input:focus{border-color:var(--user-a25);}\n"
-        + "#ab-btns{display:flex;flex-direction:column;gap:4px;}\n"
-        + "#ab-send{border:none;border-radius:var(--r-md);padding:6px 10px;cursor:pointer;font:inherit;background:var(--user-a12);color:var(--user);font-size:.88em;white-space:nowrap;}\n"
+        + "#ab-footer{flex:0 0 auto;border-top:1px solid var(--fg-a16);display:flex;align-items:flex-end;background:var(--bg);}\n"
+        + "#ab-input{flex:1;border:0;background:var(--fg-a05);color:var(--fg);padding:6px 8px;font:inherit;resize:none;min-height:36px;max-height:120px;overflow-y:auto;outline:none;}\n"
+        + "#ab-send{border:none;padding:6px 10px;cursor:pointer;font:inherit;background:var(--user-a12);color:var(--user);font-size:.88em;white-space:nowrap;height:100%;display:flex;align-items:center;}\n"
         + "#ab-send:hover{background:var(--user-a16);}\n"
         + "#ab-nudge{border:none;border-radius:var(--r-md);padding:6px 10px;cursor:pointer;font:inherit;background:var(--tool-a08);color:var(--tool);font-size:.88em;white-space:nowrap;}\n"
         + "#ab-nudge:hover{background:var(--tool-a16);}\n"
@@ -709,8 +885,12 @@ public final class ChatWebServer implements Disposable {
         + "ChatController.setCurrentModel=function(m){_origSCM(m);modelEl.textContent=m?m.substring(m.lastIndexOf('/')+1):''};\n"
         + "function updateButtons(){"
         + "  statusDot.className=agentRunning?'running':'connected';"
-        + "  sendBtn.textContent=agentRunning?'Nudge':'Send';"
+        + "  sendBtn.innerHTML=ICON_SVG + '<span>' + (agentRunning?'Nudge':'Send') + '</span>';"
         + "}\n"
+        + "ChatController.setClientType=(type,iconSvg)=>{"
+        + "  if(iconSvg)window.ICON_SVG=iconSvg.replace('<svg','<svg style=\"vertical-align:text-bottom;margin-right:4px\" fill=\"currentColor\" width=\"14\" height=\"14\"');"
+        + "  updateButtons();"
+        + "};\n"
         // Info fetch
         + "fetch('/info').then(r=>r.json()).then(info=>{"
         + "  if(info.model)modelEl.textContent=info.model.substring(info.model.lastIndexOf('/')+1);"

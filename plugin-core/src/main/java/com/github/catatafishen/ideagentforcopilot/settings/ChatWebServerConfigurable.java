@@ -24,7 +24,8 @@ public final class ChatWebServerConfigurable implements Configurable {
     private JBCheckBox enabledCheckbox;
     private JSpinner portSpinner;
     private JButton startStopButton;
-    private JLabel urlLabel;
+    private JLabel httpsUrlLabel;
+    private JLabel httpUrlLabel;
     private JPanel mainPanel;
 
     public ChatWebServerConfigurable(@NotNull Project project) {
@@ -49,27 +50,37 @@ public final class ChatWebServerConfigurable implements Configurable {
         startStopButton = new JButton(getStartStopLabel());
         startStopButton.addActionListener(e -> toggleServer());
 
-        urlLabel = new JBLabel("");
-        urlLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        updateUrlLabel();
+        httpsUrlLabel = new JBLabel("");
+        httpsUrlLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        httpUrlLabel = new JBLabel("");
+        httpUrlLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        updateUrlLabels();
 
-        JButton copyUrlButton = new JButton("Copy URL");
-        copyUrlButton.addActionListener(e -> {
-            String url = getServerUrl();
+        JButton copyHttpsUrlButton = new JButton("Copy HTTPS");
+        copyHttpsUrlButton.addActionListener(e -> {
+            String url = getHttpsServerUrl();
             if (!url.isEmpty()) {
-                Toolkit.getDefaultToolkit().getSystemClipboard()
-                    .setContents(new StringSelection(url), null);
-                String orig = copyUrlButton.getText();
-                copyUrlButton.setText("Copied!");
-                Timer t = new Timer(2000, ev -> copyUrlButton.setText(orig));
-                t.setRepeats(false);
-                t.start();
+                copyToClipboard(url, copyHttpsUrlButton);
             }
         });
 
-        JPanel urlRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-        urlRow.add(urlLabel);
-        urlRow.add(copyUrlButton);
+        JButton copyHttpUrlButton = new JButton("Copy HTTP");
+        copyHttpUrlButton.addActionListener(e -> {
+            String url = getHttpServerUrl();
+            if (!url.isEmpty()) {
+                copyToClipboard(url, copyHttpUrlButton);
+            }
+        });
+
+        JPanel httpsUrlRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        httpsUrlRow.add(new JBLabel("HTTPS (PWA):"));
+        httpsUrlRow.add(httpsUrlLabel);
+        httpsUrlRow.add(copyHttpsUrlButton);
+
+        JPanel httpUrlRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        httpUrlRow.add(new JBLabel("HTTP (Legacy):"));
+        httpUrlRow.add(httpUrlLabel);
+        httpUrlRow.add(copyHttpUrlButton);
 
         mainPanel = FormBuilder.createFormBuilder()
             .addComponent(new JBLabel("<html>Serve the chat panel as a local web app accessible from "
@@ -77,10 +88,12 @@ public final class ChatWebServerConfigurable implements Configurable {
                 + "Supports prompt sending, nudging, quick replies, and PWA push notifications.</html>"))
             .addSeparator()
             .addComponent(enabledCheckbox)
-            .addLabeledComponent("Port:", portSpinner)
+            .addLabeledComponent("Base Port:", portSpinner)
+            .addComponent(new JBLabel("<html><i style='font-size:smaller;color:gray'>HTTPS uses Base Port, HTTP uses Base Port + 1</i></html>"))
             .addSeparator()
             .addComponent(startStopButton)
-            .addComponent(urlRow)
+            .addComponent(httpsUrlRow)
+            .addComponent(httpUrlRow)
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         mainPanel.setBorder(JBUI.Borders.empty(8));
@@ -108,7 +121,7 @@ public final class ChatWebServerConfigurable implements Configurable {
         ChatWebServerSettings settings = ChatWebServerSettings.getInstance(project);
         enabledCheckbox.setSelected(settings.isEnabled());
         portSpinner.setValue(settings.getPort());
-        updateUrlLabel();
+        updateUrlLabels();
         if (startStopButton != null) startStopButton.setText(getStartStopLabel());
     }
 
@@ -118,7 +131,8 @@ public final class ChatWebServerConfigurable implements Configurable {
         enabledCheckbox = null;
         portSpinner = null;
         startStopButton = null;
-        urlLabel = null;
+        httpsUrlLabel = null;
+        httpUrlLabel = null;
     }
 
     private void toggleServer() {
@@ -151,7 +165,7 @@ public final class ChatWebServerConfigurable implements Configurable {
         if (startStopButton == null) return;
         startStopButton.setEnabled(true);
         startStopButton.setText(getStartStopLabel());
-        updateUrlLabel();
+        updateUrlLabels();
         if (mainPanel != null) {
             mainPanel.revalidate();
             mainPanel.repaint();
@@ -163,24 +177,48 @@ public final class ChatWebServerConfigurable implements Configurable {
         return ws != null && ws.isRunning() ? "Stop Web Server" : "Start Web Server";
     }
 
-    private void updateUrlLabel() {
-        if (urlLabel == null) return;
-        String url = getServerUrl();
-        if (url.isEmpty()) {
-            urlLabel.setText("<html><i style='color:gray'>Server not running</i></html>");
+    private void updateUrlLabels() {
+        if (httpsUrlLabel == null || httpUrlLabel == null) return;
+        String httpsUrl = getHttpsServerUrl();
+        String httpUrl = getHttpServerUrl();
+
+        if (httpsUrl.isEmpty()) {
+            httpsUrlLabel.setText("<html><i style='color:gray'>Not running</i></html>");
+            httpUrlLabel.setText("<html><i style='color:gray'>Not running</i></html>");
         } else {
-            urlLabel.setText("<html><a href='" + url + "'>" + url + "</a></html>");
+            httpsUrlLabel.setText("<html><a href='" + httpsUrl + "'>" + httpsUrl + "</a></html>");
+            httpUrlLabel.setText("<html><a href='" + httpUrl + "'>" + httpUrl + "</a></html>");
         }
     }
 
-    private String getServerUrl() {
+    private String getHttpsServerUrl() {
         ChatWebServer ws = ChatWebServer.getInstance(project);
         if (ws == null || !ws.isRunning()) return "";
+        return buildUrl("https", ws.getPort());
+    }
+
+    private String getHttpServerUrl() {
+        ChatWebServer ws = ChatWebServer.getInstance(project);
+        if (ws == null || !ws.isRunning()) return "";
+        return buildUrl("http", ws.getHttpPort());
+    }
+
+    private String buildUrl(String protocol, int port) {
         try {
             String host = java.net.InetAddress.getLocalHost().getHostAddress();
-            return "http://" + host + ":" + ws.getPort();
+            return protocol + "://" + host + ":" + port;
         } catch (Exception e) {
-            return "http://localhost:" + ws.getPort();
+            return protocol + "://localhost:" + port;
         }
+    }
+
+    private void copyToClipboard(String text, JButton feedbackButton) {
+        Toolkit.getDefaultToolkit().getSystemClipboard()
+            .setContents(new StringSelection(text), null);
+        String orig = feedbackButton.getText();
+        feedbackButton.setText("Copied!");
+        Timer t = new Timer(2000, ev -> feedbackButton.setText(orig));
+        t.setRepeats(false);
+        t.start();
     }
 }
