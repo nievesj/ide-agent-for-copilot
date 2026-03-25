@@ -1190,7 +1190,8 @@ var __chatUI = (() => {
       }
       this._container()?.scrollIfNeeded();
       if ("Notification" in window && Notification.permission === "granted" && document.hidden) {
-        new Notification("Agent is asking you something", { body: question, silent: true });
+        const optionsSuffix = options?.length ? "\n" + options.map((o, i) => `${i + 1}. ${o}`).join("\n") : "";
+        new Notification("Agent is asking you something", { body: question + optionsSuffix, silent: true });
       }
     },
     showQuickReplies(options) {
