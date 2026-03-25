@@ -657,7 +657,7 @@ public final class ChatWebServer implements Disposable {
         String sw = "self.addEventListener('install',()=>self.skipWaiting());\n"
             + "self.addEventListener('activate',e=>e.waitUntil(clients.claim()));\n"
             + "self.addEventListener('fetch',e=>{"
-            + "if(e.request.headers.get('accept')==='text/event-stream')return;"
+            + "if(new URL(e.request.url).pathname==='/events')return;"
             + "const offlineHtml='<!DOCTYPE html><html><body style=\"font-family:sans-serif;padding:2em;text-align:center;background:#1a1a1a;color:#e0e0e0\">"
             + "<h2>Connection failed</h2>"
             + "<p>Could not reach the server. Make sure:</p>"
