@@ -420,12 +420,18 @@ public final class McpProtocolHandler {
         JsonObject arguments = params.has("arguments")
             ? params.getAsJsonObject("arguments") : new JsonObject();
 
-        // Extract progressToken from _meta — may equal the ACP toolCallId for direct correlation
+        // Extract correlation fields from _meta.
+        // claudecode/toolUseId matches the ACP tool_use.id exactly — used for direct chip correlation.
+        // progressToken is a sequence number, kept for debug logging only.
         String progressToken = null;
+        String toolUseId = null;
         if (params.has("_meta") && params.get("_meta").isJsonObject()) {
             JsonObject meta = params.getAsJsonObject("_meta");
             if (meta.has("progressToken")) {
                 progressToken = meta.get("progressToken").getAsString();
+            }
+            if (meta.has("claudecode/toolUseId")) {
+                toolUseId = meta.get("claudecode/toolUseId").getAsString();
             }
         }
 
@@ -440,9 +446,10 @@ public final class McpProtocolHandler {
 
         // Delegate to PsiBridgeService
         final String finalProgressToken = progressToken;
+        final String finalToolUseId = toolUseId;
         try {
             PsiBridgeService bridge = PsiBridgeService.getInstance(project);
-            String resultText = bridge.callTool(toolName, arguments, finalProgressToken);
+            String resultText = bridge.callTool(toolName, arguments, finalProgressToken, finalToolUseId);
             resultText = truncateIfNeeded(resultText);
 
             JsonObject content = new JsonObject();

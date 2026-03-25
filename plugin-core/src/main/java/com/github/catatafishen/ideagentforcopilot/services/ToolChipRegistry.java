@@ -174,6 +174,25 @@ public final class ToolChipRegistry {
      * Finds the newest unmatched client-side chip with this args hash and transitions it to RUNNING.
      * If no client-side chip exists yet (MCP arrived first), stores a pending entry.
      */
+    public synchronized void registerMcp(@NotNull String toolName, @NotNull JsonObject args, @Nullable String kind, @Nullable String toolUseId) {
+        // If the client provided a tool use ID (e.g. Claude's _meta.claudecode/toolUseId),
+        // try direct lookup first — it's an exact match with no ambiguity.
+        if (toolUseId != null) {
+            String chipId = clientToChip.get(toolUseId);
+            if (chipId != null) {
+                ChipEntry entry = chips.get(chipId);
+                if (entry != null && !entry.mcpHandled()) {
+                    chips.put(chipId, entry.withMcp());
+                    LOG.info("ToolChipRegistry [MCP→Server]: ✓ DIRECT toolUseId=" + toolUseId + " → chip=" + chipId + " tool=" + toolName);
+                    fireState(chipId, ChipState.RUNNING, kind);
+                    return;
+                }
+            }
+        }
+        // Fall back to hash-based matching (other clients, or MCP-first case)
+        registerMcp(toolName, args, kind);
+    }
+
     public synchronized void registerMcp(@NotNull String toolName, @NotNull JsonObject args, @Nullable String kind) {
         String baseHash = computeBaseHash(args);
         LOG.info("ToolChipRegistry [MCP→Server]: tool=" + toolName + " hash=" + baseHash + " args=" + args);
