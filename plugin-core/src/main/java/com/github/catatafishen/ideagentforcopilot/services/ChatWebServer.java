@@ -1292,7 +1292,7 @@ public final class ChatWebServer implements Disposable {
     // ── Web app CSS ───────────────────────────────────────────────────────────
 
     private static final String WEB_APP_CSS = ""
-        + "html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--fg);}\n"
+        + "html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--fg);overflow:hidden;}\n"
         + "body{display:flex;flex-direction:column;height:100dvh;font-family:var(--font-family);font-size:var(--font-size);}\n"
         + "#ab-offline{display:none;position:fixed;top:0;left:0;right:0;background:var(--error);color:#fff;text-align:center;padding:4px 8px;font-size:.85em;z-index:200;}\n"
         + "#ab-offline.visible{display:block;}\n"
@@ -1366,8 +1366,6 @@ public final class ChatWebServer implements Disposable {
         + "cancelNudge:id=>webPost('/cancel-nudge',{id})"
         + "};\n"
         + "function webPost(path,body){return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});}\n"
-        + "// Scroll to top on page load\n"
-        + "window.scrollTo(0,0);\n"
         // DOM refs
         + "const statusDot=document.getElementById('ab-status');\n"
         + "const modelEl=document.getElementById('ab-model');\n"
