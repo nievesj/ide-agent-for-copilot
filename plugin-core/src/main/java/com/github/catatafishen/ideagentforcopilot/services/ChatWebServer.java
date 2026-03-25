@@ -140,6 +140,26 @@ public final class ChatWebServer implements Disposable {
     }
 
     /**
+     * Populates profilesJson with all available agent profiles from the IDE.
+     */
+    public void refreshAvailableProfiles() {
+        try {
+            java.util.List<AgentProfile> profiles = AgentProfileManager.getInstance().getAllProfiles();
+            java.util.List<java.util.Map<String, String>> profileList = new java.util.ArrayList<>();
+            for (AgentProfile p : profiles) {
+                var m = new java.util.LinkedHashMap<String, String>();
+                m.put("id", p.getId());
+                m.put("name", p.getName());
+                profileList.add(m);
+            }
+            this.profilesJson = GSON.toJson(profileList);
+        } catch (Exception e) {
+            LOG.warn("[ChatWebServer] Failed to refresh profiles: " + e.getMessage());
+            this.profilesJson = "[]";
+        }
+    }
+
+    /**
      * Sends a transient JS-eval event to all connected SSE clients (not stored in event log).
      */
     public void broadcastTransient(String js) {
@@ -261,6 +281,8 @@ public final class ChatWebServer implements Disposable {
                 + ") for project: " + project.getBasePath());
         }
 
+        // Populate available profiles for the connect page
+        refreshAvailableProfiles();
         running = true;
     }
 
@@ -1256,15 +1278,30 @@ public final class ChatWebServer implements Disposable {
             + "    <button id=\"ab-menu-reload\">\ud83d\udd04 Hard reload</button>\n"
             + "  </div>\n"
             + "  <div id=\"ab-connect-page\" hidden>\n"
-            + "    <div id=\"ab-connect-inner\">\n"
-            + "      <div id=\"ab-connect-header\">\n"
-            + "        <div id=\"ab-connect-title\">Connect to ACP</div>\n"
-            + "        <div id=\"ab-connect-status-dot\"></div>\n"
-            + "        <button id=\"ab-connect-stop-btn\" hidden>⏹</button>\n"
+            + "    <div id=\"ab-connect-wrapper\">\n"
+            + "      <div id=\"ab-mcp-card\">\n"
+            + "        <div class=\"ab-card-header\">MCP Server</div>\n"
+            + "        <div class=\"ab-card-content\">\n"
+            + "          <div class=\"ab-status-row\">\n"
+            + "            <span class=\"ab-status-label\">Status:</span>\n"
+            + "            <span class=\"ab-status-indicator\">\n"
+            + "              <span id=\"ab-mcp-dot\" class=\"ab-status-dot\"></span>\n"
+            + "              <span id=\"ab-mcp-text\">Initializing</span>\n"
+            + "            </span>\n"
+            + "          </div>\n"
+            + "        </div>\n"
             + "      </div>\n"
-            + "      <select id=\"ab-connect-profile\"></select>\n"
-            + "      <button id=\"ab-connect-btn\">Connect</button>\n"
-            + "      <div id=\"ab-connect-status\"></div>\n"
+            + "      <div id=\"ab-acp-card\">\n"
+            + "        <div class=\"ab-card-header\">\n"
+            + "          <span>Connect to ACP</span>\n"
+            + "          <button id=\"ab-connect-stop-btn\" hidden class=\"ab-card-stop-btn\">⏹</button>\n"
+            + "        </div>\n"
+            + "        <div class=\"ab-card-content\">\n"
+            + "          <select id=\"ab-connect-profile\"></select>\n"
+            + "          <button id=\"ab-connect-btn\">Connect</button>\n"
+            + "          <div id=\"ab-connect-status\"></div>\n"
+            + "        </div>\n"
+            + "      </div>\n"
             + "    </div>\n"
             + "  </div>\n"
             + "  <div id=\"ab-chat\"><chat-container></chat-container></div>\n"
@@ -1330,19 +1367,24 @@ public final class ChatWebServer implements Disposable {
         + "#ab-menu-disconnect:hover{background:var(--fg-a08);}\n"
         + ".ab-menu-sep{height:1px;background:var(--fg-a08);margin:4px 0;}\n"
         + "/* Connect page */\n"
-        + "#ab-connect-page{flex:1;display:none;align-items:center;justify-content:center;background:var(--bg);overflow:auto;}\n"
+        + "#ab-connect-page{flex:1;display:none;align-items:center;justify-content:center;background:var(--bg);overflow:auto;padding:24px;}\n"
         + "#ab-connect-page:not([hidden]){display:flex;}\n"
-        + "#ab-connect-inner{display:flex;flex-direction:column;gap:12px;width:min(340px,90vw);padding:24px;background:var(--bg);border:1px solid var(--fg-a16);border-radius:10px;}\n"
-        + "#ab-connect-header{display:flex;align-items:center;justify-content:space-between;gap:8px;}\n"
-        + "#ab-connect-title{font-weight:600;font-size:1.1em;flex:1;}\n"
-        + "#ab-connect-status-dot{width:8px;height:8px;border-radius:50%;background:var(--fg-a16);flex:0 0 8px;transition:background .3s;}\n"
-        + "#ab-connect-status-dot.connected{background:var(--kind-execute);}\n"
-        + "#ab-connect-status-dot.running{background:var(--agent);animation:ab-pulse 1.5s infinite;}\n"
-        + "#ab-connect-stop-btn{border:none;background:transparent;color:var(--error,#e06c75);cursor:pointer;font-size:.95em;padding:4px 8px;border-radius:4px;}\n"
-        + "#ab-connect-stop-btn:hover{background:var(--fg-a08);}\n"
-        + "#ab-connect-profile{background:var(--fg-a05);color:var(--fg);border:1px solid var(--fg-a16);border-radius:6px;padding:7px 10px;font:inherit;cursor:pointer;}\n"
+        + "#ab-connect-wrapper{display:flex;flex-direction:column;gap:16px;width:min(360px,90vw);max-height:600px;}\n"
+        + "#ab-mcp-card,#ab-acp-card{display:flex;flex-direction:column;gap:8px;background:var(--bg);border:1px solid var(--fg-a16);border-radius:10px;padding:16px;}\n"
+        + ".ab-card-header{font-weight:600;font-size:1em;display:flex;align-items:center;justify-content:space-between;}\n"
+        + ".ab-card-content{display:flex;flex-direction:column;gap:8px;}\n"
+        + ".ab-status-row{display:flex;align-items:center;justify-content:space-between;gap:12px;}\n"
+        + ".ab-status-label{font-size:.85em;color:var(--fg-muted);min-width:60px;}\n"
+        + ".ab-status-indicator{display:flex;align-items:center;gap:6px;flex:1;}\n"
+        + ".ab-status-dot{width:10px;height:10px;border-radius:50%;background:var(--fg-a16);flex:0 0 10px;transition:background .3s;}\n"
+        + ".ab-status-dot.connected{background:var(--kind-execute);}\n"
+        + ".ab-status-dot.running{background:var(--agent);animation:ab-pulse 1.5s infinite;}\n"
+        + "#ab-mcp-text{font-size:.9em;color:var(--fg);}\n"
+        + ".ab-card-stop-btn{border:none;background:transparent;color:var(--error,#e06c75);cursor:pointer;font-size:.95em;padding:4px 8px;border-radius:4px;flex:0 0 auto;}\n"
+        + ".ab-card-stop-btn:hover{background:var(--fg-a08);}\n"
+        + "#ab-connect-profile{background:var(--fg-a05);color:var(--fg);border:1px solid var(--fg-a16);border-radius:6px;padding:7px 10px;font:inherit;cursor:pointer;width:100%;box-sizing:border-box;}\n"
         + "#ab-connect-profile:focus{outline:1px solid var(--user);}\n"
-        + "#ab-connect-btn{border:none;border-radius:6px;padding:9px 16px;background:var(--user-a12);color:var(--user);cursor:pointer;font:inherit;font-weight:600;font-size:.95em;}\n"
+        + "#ab-connect-btn{border:none;border-radius:6px;padding:9px 16px;background:var(--user-a12);color:var(--user);cursor:pointer;font:inherit;font-weight:600;font-size:.95em;width:100%;}\n"
         + "#ab-connect-btn:hover{background:var(--user-a16);}\n"
         + "#ab-connect-btn:disabled{opacity:.4;cursor:default;}\n"
         + "#ab-connect-status{font-size:.85em;color:var(--fg-muted);min-height:1.2em;}\n";
@@ -1383,8 +1425,9 @@ public final class ChatWebServer implements Disposable {
         + "const connectProfileSel=document.getElementById('ab-connect-profile');\n"
         + "const connectBtn=document.getElementById('ab-connect-btn');\n"
         + "const connectStatusEl=document.getElementById('ab-connect-status');\n"
-        + "const connectStatusDot=document.getElementById('ab-connect-status-dot');\n"
         + "const connectStopBtn=document.getElementById('ab-connect-stop-btn');\n"
+        + "const mcpDot=document.getElementById('ab-mcp-dot');\n"
+        + "const mcpText=document.getElementById('ab-mcp-text');\n"
         + "const chatAreaEl=document.getElementById('ab-chat');\n"
         + "const footerEl=document.getElementById('ab-footer');\n"
         // Auto-scroll: track whether user is near the bottom
@@ -1406,7 +1449,8 @@ public final class ChatWebServer implements Disposable {
         + "ChatController.setCurrentModel=function(m){_origSCM(m);modelEl.textContent=m?m.substring(m.lastIndexOf('/')+1):'';syncModelSelect(m);};\n"
         + "function updateButtons(){"
         + "  statusDot.className=agentRunning?'running':'connected';"
-        + "  connectStatusDot.className=agentRunning?'running':'connected';"
+        + "  mcpDot.className=agentRunning?'running':'connected';"
+        + "  mcpText.textContent=agentRunning?'Running':'Ready';"
         + "  connectStopBtn.hidden=!agentRunning;"
         + "  sendBtn.innerHTML=ICON_SVG + '<span>' + (agentRunning?'Nudge':'Send') + '</span>';"
         + "}\n"
@@ -1432,6 +1476,8 @@ public final class ChatWebServer implements Disposable {
         + "  connectBtn.disabled=false;"
         + "  connectBtn.textContent='Connect';"
         + "  connectStopBtn.hidden=!agentRunning;"
+        + "  mcpDot.className=agentRunning?'running':'connected';"
+        + "  mcpText.textContent=agentRunning?'Running':'Ready';"
         + "  if(profiles&&profiles.length){"
         + "    const prev=connectProfileSel.value;"
         + "    connectProfileSel.innerHTML=profiles.map(p=>`<option value=\"${p.id}\">${p.name}</option>`).join('');"
