@@ -149,7 +149,9 @@ public final class ChatWebServer implements Disposable {
 
     // ── Web Push helpers ──────────────────────────────────────────────────────
 
-    /** Returns (creating if needed) the {@link WebPushSender}, or {@code null} if key gen fails. */
+    /**
+     * Returns (creating if needed) the {@link WebPushSender}, or {@code null} if key gen fails.
+     */
     private @Nullable WebPushSender getOrCreateWebPush() {
         if (webPush != null) return webPush;
         synchronized (this) {
@@ -174,7 +176,9 @@ public final class ChatWebServer implements Disposable {
         return webPush;
     }
 
-    /** Parses a Web Push subscription JSON into a {@link WebPushSender.PushSubscription}. */
+    /**
+     * Parses a Web Push subscription JSON into a {@link WebPushSender.PushSubscription}.
+     */
     private static @Nullable WebPushSender.PushSubscription parseSubscription(@NotNull String json) {
         String endpoint = jsonString(json, "endpoint");
         int keysIdx = json.indexOf("\"keys\"");
@@ -1253,7 +1257,11 @@ public final class ChatWebServer implements Disposable {
             + "  </div>\n"
             + "  <div id=\"ab-connect-page\" hidden>\n"
             + "    <div id=\"ab-connect-inner\">\n"
-            + "      <div id=\"ab-connect-title\">Connect to ACP</div>\n"
+            + "      <div id=\"ab-connect-header\">\n"
+            + "        <div id=\"ab-connect-title\">Connect to ACP</div>\n"
+            + "        <div id=\"ab-connect-status-dot\"></div>\n"
+            + "        <button id=\"ab-connect-stop-btn\" hidden>⏹</button>\n"
+            + "      </div>\n"
             + "      <select id=\"ab-connect-profile\"></select>\n"
             + "      <button id=\"ab-connect-btn\">Connect</button>\n"
             + "      <div id=\"ab-connect-status\"></div>\n"
@@ -1325,7 +1333,13 @@ public final class ChatWebServer implements Disposable {
         + "#ab-connect-page{flex:1;display:none;align-items:center;justify-content:center;background:var(--bg);overflow:auto;}\n"
         + "#ab-connect-page:not([hidden]){display:flex;}\n"
         + "#ab-connect-inner{display:flex;flex-direction:column;gap:12px;width:min(340px,90vw);padding:24px;background:var(--bg);border:1px solid var(--fg-a16);border-radius:10px;}\n"
-        + "#ab-connect-title{font-weight:600;font-size:1.1em;}\n"
+        + "#ab-connect-header{display:flex;align-items:center;justify-content:space-between;gap:8px;}\n"
+        + "#ab-connect-title{font-weight:600;font-size:1.1em;flex:1;}\n"
+        + "#ab-connect-status-dot{width:8px;height:8px;border-radius:50%;background:var(--fg-a16);flex:0 0 8px;transition:background .3s;}\n"
+        + "#ab-connect-status-dot.connected{background:var(--kind-execute);}\n"
+        + "#ab-connect-status-dot.running{background:var(--agent);animation:ab-pulse 1.5s infinite;}\n"
+        + "#ab-connect-stop-btn{border:none;background:transparent;color:var(--error,#e06c75);cursor:pointer;font-size:.95em;padding:4px 8px;border-radius:4px;}\n"
+        + "#ab-connect-stop-btn:hover{background:var(--fg-a08);}\n"
         + "#ab-connect-profile{background:var(--fg-a05);color:var(--fg);border:1px solid var(--fg-a16);border-radius:6px;padding:7px 10px;font:inherit;cursor:pointer;}\n"
         + "#ab-connect-profile:focus{outline:1px solid var(--user);}\n"
         + "#ab-connect-btn{border:none;border-radius:6px;padding:9px 16px;background:var(--user-a12);color:var(--user);cursor:pointer;font:inherit;font-weight:600;font-size:.95em;}\n"
@@ -1352,6 +1366,8 @@ public final class ChatWebServer implements Disposable {
         + "cancelNudge:id=>webPost('/cancel-nudge',{id})"
         + "};\n"
         + "function webPost(path,body){return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});}\n"
+        + "// Scroll to top on page load\n"
+        + "window.scrollTo(0,0);\n"
         // DOM refs
         + "const statusDot=document.getElementById('ab-status');\n"
         + "const modelEl=document.getElementById('ab-model');\n"
@@ -1369,6 +1385,8 @@ public final class ChatWebServer implements Disposable {
         + "const connectProfileSel=document.getElementById('ab-connect-profile');\n"
         + "const connectBtn=document.getElementById('ab-connect-btn');\n"
         + "const connectStatusEl=document.getElementById('ab-connect-status');\n"
+        + "const connectStatusDot=document.getElementById('ab-connect-status-dot');\n"
+        + "const connectStopBtn=document.getElementById('ab-connect-stop-btn');\n"
         + "const chatAreaEl=document.getElementById('ab-chat');\n"
         + "const footerEl=document.getElementById('ab-footer');\n"
         // Auto-scroll: track whether user is near the bottom
@@ -1390,6 +1408,8 @@ public final class ChatWebServer implements Disposable {
         + "ChatController.setCurrentModel=function(m){_origSCM(m);modelEl.textContent=m?m.substring(m.lastIndexOf('/')+1):'';syncModelSelect(m);};\n"
         + "function updateButtons(){"
         + "  statusDot.className=agentRunning?'running':'connected';"
+        + "  connectStatusDot.className=agentRunning?'running':'connected';"
+        + "  connectStopBtn.hidden=!agentRunning;"
         + "  sendBtn.innerHTML=ICON_SVG + '<span>' + (agentRunning?'Nudge':'Send') + '</span>';"
         + "}\n"
         + "ChatController.setClientType=(type,iconSvg)=>{"
@@ -1402,15 +1422,18 @@ public final class ChatWebServer implements Disposable {
         + "  chatAreaEl.style.display='';"
         + "  footerEl.style.display='';"
         + "  menuDisconnectBtn.style.display='';"
+        + "  document.getElementById('ab-menu-model-section').style.display='';"
         + "}\n"
         + "function showConnectView(profiles){"
         + "  chatAreaEl.style.display='none';"
         + "  footerEl.style.display='none';"
         + "  connectPageEl.hidden=false;"
         + "  menuDisconnectBtn.style.display='none';"
+        + "  document.getElementById('ab-menu-model-section').style.display='none';"
         + "  connectStatusEl.textContent='';"
         + "  connectBtn.disabled=false;"
         + "  connectBtn.textContent='Connect';"
+        + "  connectStopBtn.hidden=!agentRunning;"
         + "  if(profiles&&profiles.length){"
         + "    const prev=connectProfileSel.value;"
         + "    connectProfileSel.innerHTML=profiles.map(p=>`<option value=\"${p.id}\">${p.name}</option>`).join('');"
@@ -1471,6 +1494,10 @@ public final class ChatWebServer implements Disposable {
         + "    connectBtn.disabled=false;connectBtn.textContent='Connect';"
         + "    connectStatusEl.textContent='Connection error \u2014 check the IDE plugin.';"
         + "  });"
+        + "});\n"
+        + "// Connect page stop button\n"
+        + "connectStopBtn.addEventListener('click',()=>{"
+        + "  webPost('/stop',{});"
         + "});\n"
         // handleConnected / handleDisconnected — called via SSE broadcastTransient
         + "function handleConnected(modelsJsonStr,profilesJsonStr){"
