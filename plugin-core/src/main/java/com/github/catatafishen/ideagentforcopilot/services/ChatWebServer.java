@@ -157,7 +157,7 @@ public final class ChatWebServer implements Disposable {
 
         httpServer.setExecutor(executor);
         if (https) {
-            registerContexts(httpsServer, false);
+            registerContexts(httpsServer);
             SSLContext finalSslContext = sslContext;
             httpsServer.setHttpsConfigurator(new HttpsConfigurator(finalSslContext) {
                 @Override
@@ -175,7 +175,7 @@ public final class ChatWebServer implements Disposable {
                 + " + cert-HTTP:" + httpServer.getAddress().getPort()
                 + ") for project: " + project.getBasePath());
         } else {
-            registerContexts(httpServer, true);
+            registerContexts(httpServer);
             httpServer.start();
             LOG.info("[ChatWebServer] started (HTTP:" + httpServer.getAddress().getPort()
                 + ") for project: " + project.getBasePath());
@@ -184,8 +184,7 @@ public final class ChatWebServer implements Disposable {
         running = true;
     }
 
-    private void registerContexts(HttpServer server, boolean serveAll) {
-        if (!serveAll) return;
+    private void registerContexts(HttpServer server) {
         server.createContext("/", this::handleRoot);
         server.createContext("/chat.css", ex -> serveClasspath(ex, "/chat/chat.css", "text/css; charset=utf-8"));
         server.createContext("/chat.bundle.js", ex -> serveClasspath(ex, "/chat/chat-components.js", "application/javascript; charset=utf-8"));
