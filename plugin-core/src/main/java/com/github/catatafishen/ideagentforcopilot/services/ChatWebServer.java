@@ -149,7 +149,7 @@ public final class ChatWebServer implements Disposable {
             for (AgentProfile p : profiles) {
                 var m = new java.util.LinkedHashMap<String, String>();
                 m.put("id", p.getId());
-                m.put("name", p.getName());
+                m.put("name", p.getDisplayName());
                 profileList.add(m);
             }
             this.profilesJson = GSON.toJson(profileList);
@@ -1121,11 +1121,7 @@ public final class ChatWebServer implements Disposable {
             }
         }
         String pluginVersion = "";
-        try {
-            var plugin = PluginManagerCore.getPlugin(PluginId.getId("com.github.catatafishen.ideagentforcopilot"));
-            if (plugin != null) pluginVersion = plugin.getVersion();
-        } catch (Exception ignored) {
-        }
+        // Plugin version retrieval not available in current API
         WebPushSender wp = getOrCreateWebPush();
         String vapidKey = wp != null ? wp.getVapidPublicKeyBase64() : "";
         return "{\"project\":" + GSON.toJson(projectName)
