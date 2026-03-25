@@ -186,7 +186,11 @@ public final class ChatWebServer implements Disposable {
                     settings.setVapidPublicKey(serialized[1]);
                     LOG.info("[ChatWebServer] Generated new VAPID key pair");
                 }
-                webPush = new WebPushSender(kp);
+                String basePath = project.getBasePath();
+                java.nio.file.Path subscriptionsFile = basePath != null
+                    ? java.nio.file.Paths.get(basePath, ".idea", "push-subscriptions.json")
+                    : null;
+                webPush = new WebPushSender(kp, subscriptionsFile);
             } catch (Exception e) {
                 LOG.warn("[ChatWebServer] Failed to initialise WebPushSender: " + e.getMessage());
                 return null;

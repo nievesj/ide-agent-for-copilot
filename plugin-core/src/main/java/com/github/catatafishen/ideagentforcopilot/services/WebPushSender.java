@@ -1,5 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.services;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -16,6 +18,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.security.AlgorithmParameters;
 import java.security.KeyFactory;
 import java.security.KeyPair;
@@ -66,21 +71,72 @@ public final class WebPushSender {
 
     private final HttpClient http;
 
-    public WebPushSender(@NotNull KeyPair vapidKeyPair) {
+    /**
+     * File path for persisting subscriptions across restarts.
+     */
+    private final Path subscriptionsFile;
+    private final Gson gson = new Gson();
+
+    public WebPushSender(@NotNull KeyPair vapidKeyPair, @Nullable Path subscriptionsFile) {
         this.vapidKeyPair = vapidKeyPair;
         this.vapidPublicKeyBytes = encodePublicKeyUncompressed((ECPublicKey) vapidKeyPair.getPublic());
         this.http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
+        this.subscriptionsFile = subscriptionsFile;
+        loadSubscriptions();
     }
 
     // ── Subscription management ───────────────────────────────────────────────
+
+    /**
+     * Loads subscriptions from disk.
+     */
+    private void loadSubscriptions() {
+        if (subscriptionsFile == null || !Files.exists(subscriptionsFile)) return;
+        try {
+            String json = Files.readString(subscriptionsFile);
+            JsonArray array = com.google.gson.JsonParser.parseString(json).getAsJsonArray();
+            for (var elem : array) {
+                var obj = elem.getAsJsonObject();
+                String endpoint = obj.get("endpoint").getAsString();
+                String p256dh = obj.get("p256dh").getAsString();
+                String auth = obj.get("auth").getAsString();
+                subscriptions.put(endpoint, new PushSubscription(endpoint, p256dh, auth));
+            }
+            LOG.info("[WebPush] Loaded " + subscriptions.size() + " subscription(s) from disk");
+        } catch (Exception e) {
+            LOG.warn("[WebPush] Failed to load subscriptions: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Saves subscriptions to disk.
+     */
+    private void saveSubscriptions() {
+        if (subscriptionsFile == null) return;
+        try {
+            Files.createDirectories(subscriptionsFile.getParent());
+            JsonArray array = new JsonArray();
+            for (var sub : subscriptions.values()) {
+                var obj = new com.google.gson.JsonObject();
+                obj.addProperty("endpoint", sub.endpoint());
+                obj.addProperty("p256dh", sub.p256dh());
+                obj.addProperty("auth", sub.auth());
+                array.add(obj);
+            }
+            Files.writeString(subscriptionsFile, gson.toJson(array), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (Exception e) {
+            LOG.warn("[WebPush] Failed to save subscriptions: " + e.getMessage());
+        }
+    }
 
     /**
      * Registers or updates a push subscription.
      */
     public void addSubscription(@NotNull PushSubscription sub) {
         subscriptions.put(sub.endpoint(), sub);
+        saveSubscriptions();
         LOG.info("[WebPush] Subscription registered: " + sub.endpoint());
     }
 
@@ -89,6 +145,7 @@ public final class WebPushSender {
      */
     public void removeSubscription(@NotNull String endpoint) {
         subscriptions.remove(endpoint);
+        saveSubscriptions();
     }
 
     public boolean hasSubscriptions() {
