@@ -798,6 +798,17 @@ var __chatUI = (() => {
   };
 
   // src/ChatController.ts
+  function _showNotification(title, body, actions) {
+    if (!("Notification" in window) || Notification.permission !== "granted" || !document.hidden) return;
+    const sw = navigator.serviceWorker?.controller;
+    if (sw) {
+      const msg = { type: "SHOW_NOTIFICATION", title, body };
+      if (actions?.length) msg.actions = actions;
+      sw.postMessage(msg);
+    } else {
+      new Notification(title, { body, silent: true });
+    }
+  }
   var ChatController = {
     _msgs() {
       return document.querySelector("#messages");
@@ -1149,9 +1160,7 @@ var __chatUI = (() => {
       document.querySelectorAll('tool-chip[status="running"]').forEach((c) => c.setAttribute("status", "complete"));
       this._container()?.scrollIfNeeded();
       this._trimMessages();
-      if ("Notification" in window && Notification.permission === "granted" && document.hidden) {
-        new Notification("Agent turn complete", { body: "The agent has finished responding.", silent: true });
-      }
+      _showNotification("Agent turn complete", "The agent has finished responding.");
     },
     showPermissionRequest(turnId, agentId, reqId, toolDisplayName, contextJson) {
       this.disableQuickReplies();
@@ -1189,10 +1198,8 @@ var __chatUI = (() => {
         ctx.msg.appendChild(replies);
       }
       this._container()?.scrollIfNeeded();
-      if ("Notification" in window && Notification.permission === "granted" && document.hidden) {
-        const optionsSuffix = options?.length ? "\n" + options.map((o, i) => `${i + 1}. ${o}`).join("\n") : "";
-        new Notification("Agent is asking you something", { body: question + optionsSuffix, silent: true });
-      }
+      const actions = options?.length ? options.slice(0, Notification.maxActions || 2).map((o) => ({ action: o, title: o })) : void 0;
+      _showNotification("Agent is asking you something", question, actions?.length ? actions : void 0);
     },
     showQuickReplies(options) {
       this.disableQuickReplies();

@@ -675,8 +675,18 @@ public final class ChatWebServer implements Disposable {
             + "});\n"
             + "self.addEventListener('message',e=>{\n"
             + "  if(e.data&&e.data.type==='SHOW_NOTIFICATION'){\n"
-            + "    e.waitUntil(self.registration.showNotification(e.data.title||'AgentBridge',{body:e.data.body||'',icon:'/icon-192.png',tag:'agentbridge'}));\n"
+            + "    const opts={body:e.data.body||'',icon:'/icon-192.png',tag:'agentbridge',requireInteraction:false};\n"
+            + "    if(e.data.actions&&e.data.actions.length)opts.actions=e.data.actions;\n"
+            + "    e.waitUntil(self.registration.showNotification(e.data.title||'AgentBridge',opts));\n"
             + "  }\n"
+            + "});\n"
+            + "self.addEventListener('notificationclick',e=>{\n"
+            + "  e.notification.close();\n"
+            + "  e.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{\n"
+            + "    const c=list.find(w=>w.url.startsWith(self.location.origin));\n"
+            + "    if(c)return c.focus();\n"
+            + "    return clients.openWindow('/');\n"
+            + "  }));\n"
             + "});\n";
         byte[] bytes = sw.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/javascript; charset=utf-8");
