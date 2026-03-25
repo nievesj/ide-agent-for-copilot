@@ -4,10 +4,12 @@ import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.settings.ChatWebServerSettings;
 import com.github.catatafishen.ideagentforcopilot.ui.ChatTheme;
 import com.google.gson.Gson;
+import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.ide.ui.LafManager;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.project.Project;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -976,9 +978,16 @@ public final class ChatWebServer implements Disposable {
                 LOG.warn("[ChatWebServer] Could not read cert SANs for /info", e);
             }
         }
+        String pluginVersion = "";
+        try {
+            var plugin = PluginManagerCore.getPlugin(PluginId.getId("com.github.catatafishen.ideagentforcopilot"));
+            if (plugin != null) pluginVersion = plugin.getVersion();
+        } catch (Exception ignored) {
+        }
         return "{\"project\":" + GSON.toJson(projectName)
             + ",\"model\":" + GSON.toJson(currentModel)
             + ",\"running\":" + agentRunning
+            + ",\"version\":" + GSON.toJson(pluginVersion)
             + ",\"certIps\":" + GSON.toJson(certIps) + "}";
     }
 
@@ -1108,6 +1117,11 @@ public final class ChatWebServer implements Disposable {
             + "    <div id=\"ab-title\">AgentBridge \u2014 " + escHtml(projectName) + "</div>\n"
             + "    <div id=\"ab-model\"></div>\n"
             + "    <div id=\"ab-status\" title=\"Connecting\u2026\"></div>\n"
+            + "    <button id=\"ab-menu-btn\" aria-label=\"Menu\" title=\"Menu\">\u2630</button>\n"
+            + "  </div>\n"
+            + "  <div id=\"ab-menu\" hidden>\n"
+            + "    <div id=\"ab-menu-version\"></div>\n"
+            + "    <button id=\"ab-menu-reload\">Hard reload</button>\n"
             + "  </div>\n"
             + "  <div id=\"ab-chat\"><chat-container></chat-container></div>\n"
             + "  <div id=\"ab-footer\">\n"
@@ -1156,7 +1170,14 @@ public final class ChatWebServer implements Disposable {
         + "#ab-send:disabled,#ab-nudge:disabled{opacity:.38;cursor:default;}\n"
         + "/* Disable tool chip clicks in web context */\n"
         + "tool-chip{pointer-events:none;}\n"
-        + "tool-chip .chip-expand{display:none;}\n";
+        + "tool-chip .chip-expand{display:none;}\n"
+        + "/* Hamburger menu */\n"
+        + "#ab-menu-btn{border:none;background:transparent;color:var(--fg);cursor:pointer;font-size:1.1em;padding:2px 6px;border-radius:4px;line-height:1;flex:0 0 auto;}\n"
+        + "#ab-menu-btn:hover{background:var(--fg-a08);}\n"
+        + "#ab-menu{position:fixed;top:44px;right:8px;z-index:150;background:var(--bg);border:1px solid var(--fg-a16);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.25);min-width:200px;padding:8px 0;}\n"
+        + "#ab-menu-version{padding:6px 14px 8px;font-size:.82em;color:var(--fg-muted);border-bottom:1px solid var(--fg-a08);margin-bottom:4px;}\n"
+        + "#ab-menu-reload{display:block;width:100%;text-align:left;border:none;background:transparent;color:var(--fg);cursor:pointer;padding:7px 14px;font:inherit;font-size:.9em;}\n"
+        + "#ab-menu-reload:hover{background:var(--fg-a08);}\n";
 
     // ── Web app JS ────────────────────────────────────────────────────────────
 
@@ -1184,6 +1205,10 @@ public final class ChatWebServer implements Disposable {
         + "const inputEl=document.getElementById('ab-input');\n"
         + "const sendBtn=document.getElementById('ab-send');\n"
         + "const chatEl=document.querySelector('chat-container');\n"
+        + "const menuBtn=document.getElementById('ab-menu-btn');\n"
+        + "const menuEl=document.getElementById('ab-menu');\n"
+        + "const menuVersionEl=document.getElementById('ab-menu-version');\n"
+        + "const menuReloadBtn=document.getElementById('ab-menu-reload');\n"
         // Auto-scroll: track whether user is near the bottom
         + "let atBottom=true;\n"
         + "chatEl.addEventListener('scroll',()=>{"
@@ -1210,10 +1235,30 @@ public final class ChatWebServer implements Disposable {
         + "  updateButtons();"
         + "};\n"
         // Info fetch
+        + "let _pluginVersion='';\n"
         + "fetch('/info').then(r=>r.json()).then(info=>{"
         + "  if(info.model)modelEl.textContent=info.model.substring(info.model.lastIndexOf('/')+1);"
         + "  agentRunning=info.running||false;updateButtons();"
+        + "  _pluginVersion=info.version||'';"
         + "}).catch(()=>{});\n"
+        // Hamburger menu
+        + "menuBtn.addEventListener('click',e=>{"
+        + "  e.stopPropagation();"
+        + "  const open=!menuEl.hidden;"
+        + "  menuEl.hidden=open;"
+        + "  if(!open)menuVersionEl.textContent='Plugin v'+(_pluginVersion||'?');"
+        + "});\n"
+        + "document.addEventListener('click',e=>{"
+        + "  if(!menuEl.hidden&&!menuEl.contains(e.target))menuEl.hidden=true;"
+        + "});\n"
+        + "menuReloadBtn.addEventListener('click',()=>{"
+        + "  menuEl.hidden=true;"
+        + "  if('serviceWorker'in navigator){"
+        + "    navigator.serviceWorker.getRegistrations().then(regs=>Promise.all(regs.map(r=>r.unregister())));"
+        + "    if('caches'in window)caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k))));"
+        + "  }"
+        + "  setTimeout(()=>location.reload(true),150);"
+        + "});\n"
         // State load + SSE connect
         + "let lastSeq=0;\n"
         + "let sseRetry=null;\n"
