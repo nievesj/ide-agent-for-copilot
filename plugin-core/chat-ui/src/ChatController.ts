@@ -1,6 +1,18 @@
 import {b64, escHtml} from './helpers';
 import type {TurnContext} from './types';
 
+function _showNotification(title: string, body: string, actions?: { action: string; title: string }[]): void {
+    if (!('Notification' in window) || Notification.permission !== 'granted' || !document.hidden) return;
+    const sw = navigator.serviceWorker?.controller;
+    if (sw) {
+        const msg: Record<string, unknown> = {type: 'SHOW_NOTIFICATION', title, body};
+        if (actions?.length) msg.actions = actions;
+        sw.postMessage(msg);
+    } else {
+        new Notification(title, {body, silent: true});
+    }
+}
+
 const ChatController = {
     _msgs(): HTMLElement {
         return document.querySelector('#messages')!;
@@ -404,6 +416,7 @@ const ChatController = {
         document.querySelectorAll('tool-chip[status="running"]').forEach(c => c.setAttribute('status', 'complete'));
         this._container()?.scrollIfNeeded();
         this._trimMessages();
+        _showNotification('Agent turn complete', 'The agent has finished responding.');
     },
 
     showPermissionRequest(turnId: string, agentId: string, reqId: string, toolDisplayName: string, contextJson: string): void {
@@ -453,6 +466,10 @@ const ChatController = {
         }
 
         this._container()?.scrollIfNeeded();
+        const actions = options?.length
+            ? options.slice(0, Notification.maxActions || 2).map(o => ({action: o, title: o}))
+            : undefined;
+        _showNotification('Agent is asking you something', question, actions?.length ? actions : undefined);
     },
 
     showQuickReplies(options: string[]): void {
