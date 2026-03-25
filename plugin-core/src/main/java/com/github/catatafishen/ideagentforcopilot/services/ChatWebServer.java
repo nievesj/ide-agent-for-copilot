@@ -350,7 +350,7 @@ public final class ChatWebServer implements Disposable {
                 java.nio.file.Files.createDirectories(dir);
             }
 
-            StringBuilder sanBuilder = new StringBuilder("dns:localhost,ip:127.0.0.1");
+            StringBuilder sanBuilder = new StringBuilder("dns:localhost,dns:agentbridge.local,ip:127.0.0.1");
             for (String ip : localIps) {
                 sanBuilder.append(",ip:").append(ip);
             }
@@ -474,7 +474,16 @@ public final class ChatWebServer implements Disposable {
             java.security.cert.Certificate cert = ks.getCertificate("agentbridge");
             if (!(cert instanceof X509Certificate x509)) return false;
             String subject = x509.getSubjectX500Principal().getName();
-            return subject.contains(EXPECTED_SUBJECT_CN) && subject.contains(EXPECTED_SUBJECT_O);
+            if (!subject.contains(EXPECTED_SUBJECT_CN) || !subject.contains(EXPECTED_SUBJECT_O)) return false;
+            Collection<List<?>> sans = x509.getSubjectAlternativeNames();
+            if (sans == null) return false;
+            for (List<?> san : sans) {
+                if (san.get(0) instanceof Integer type && type == 2
+                    && "agentbridge.local".equals(san.get(1))) {
+                    return true;
+                }
+            }
+            return false;
         } catch (Exception e) {
             LOG.warn("[ChatWebServer] Could not read existing certificate subject", e);
             return false;
