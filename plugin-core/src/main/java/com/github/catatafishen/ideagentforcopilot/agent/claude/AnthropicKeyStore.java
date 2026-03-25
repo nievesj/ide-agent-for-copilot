@@ -4,6 +4,7 @@ import com.intellij.credentialStore.CredentialAttributes;
 import com.intellij.credentialStore.CredentialAttributesKt;
 import com.intellij.credentialStore.Credentials;
 import com.intellij.ide.passwordSafe.PasswordSafe;
+import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -16,6 +17,7 @@ import org.jetbrains.annotations.Nullable;
  */
 public final class AnthropicKeyStore {
 
+    private static final Logger LOG = Logger.getInstance(AnthropicKeyStore.class);
     private static final String SERVICE_NAME = "ide-agent-for-copilot.anthropic";
 
     private AnthropicKeyStore() {
@@ -30,7 +32,13 @@ public final class AnthropicKeyStore {
     @Nullable
     public static String getApiKey(@NotNull String profileId) {
         CredentialAttributes attrs = buildAttributes(profileId);
-        Credentials credentials = PasswordSafe.getInstance().get(attrs);
+        Credentials credentials;
+        try {
+            credentials = PasswordSafe.getInstance().get(attrs);
+        } catch (Exception e) {
+            LOG.warn("Cannot access credential store (headless or no D-Bus): " + e.getMessage());
+            return null;
+        }
         if (credentials == null) return null;
         String password = credentials.getPasswordAsString();
         if (password == null || password.isEmpty()) return null;
