@@ -1,15 +1,14 @@
 package com.github.catatafishen.ideagentforcopilot.services;
 
+import com.github.catatafishen.ideagentforcopilot.BuildInfo;
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.settings.ChatWebServerSettings;
 import com.github.catatafishen.ideagentforcopilot.ui.ChatTheme;
 import com.google.gson.Gson;
-import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.ide.ui.LafManager;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.project.Project;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -91,10 +90,16 @@ public final class ChatWebServer implements Disposable {
     // ── SSE clients ───────────────────────────────────────────────────────────
     private final List<SseClient> sseClients = new CopyOnWriteArrayList<>();
 
+    // ── Web Push ──────────────────────────────────────────────────────────────
+    private volatile WebPushSender webPush;
+
     // ── Current state (for /info) ─────────────────────────────────────────────
     private volatile String currentModel = "";
     private volatile String projectName = "";
     private volatile boolean agentRunning = false;
+    private volatile boolean connected = false;
+    private volatile String modelsJson = "[]";
+    private volatile String profilesJson = "[]";
 
     // ── Action callbacks (wired by ChatToolWindowContent) ─────────────────────
     public volatile Consumer<String> onSendPrompt;
@@ -106,6 +111,9 @@ public final class ChatWebServer implements Disposable {
      * Permission response: "reqId:deny" / "reqId:once" / "reqId:session"
      */
     public volatile Consumer<String> onPermissionResponse;
+    public volatile Runnable onDisconnect;
+    public volatile Consumer<String> onConnect;
+    public volatile Consumer<String> onSelectModel;
 
     public ChatWebServer(@NotNull Project project) {
         this.project = project;
@@ -114,6 +122,95 @@ public final class ChatWebServer implements Disposable {
 
     public static ChatWebServer getInstance(@NotNull Project project) {
         return PlatformApiCompat.getService(project, ChatWebServer.class);
+    }
+
+    // ── State setters (called by ChatToolWindowContent) ───────────────────────
+
+    public void setConnected(boolean value) {
+        this.connected = value;
+    }
+
+    public void setModelsJson(String json) {
+        this.modelsJson = json != null ? json : "[]";
+    }
+
+    public void setProfilesJson(String json) {
+        this.profilesJson = json != null ? json : "[]";
+    }
+
+    /**
+     * Populates profilesJson with all available agent profiles from the IDE.
+     */
+    public void refreshAvailableProfiles() {
+        try {
+            java.util.List<AgentProfile> profiles = AgentProfileManager.getInstance().getAllProfiles();
+            java.util.List<java.util.Map<String, String>> profileList = new java.util.ArrayList<>();
+            for (AgentProfile p : profiles) {
+                var m = new java.util.LinkedHashMap<String, String>();
+                m.put("id", p.getId());
+                m.put("name", p.getDisplayName());
+                profileList.add(m);
+            }
+            this.profilesJson = GSON.toJson(profileList);
+        } catch (Exception e) {
+            LOG.warn("[ChatWebServer] Failed to refresh profiles: " + e.getMessage());
+            this.profilesJson = "[]";
+        }
+    }
+
+    /**
+     * Sends a transient JS-eval event to all connected SSE clients (not stored in event log).
+     */
+    public void broadcastTransient(String js) {
+        String event = "{\"js\":" + GSON.toJson(js) + "}";
+        for (SseClient c : sseClients) c.offer(event);
+    }
+
+    // ── Web Push helpers ──────────────────────────────────────────────────────
+
+    /**
+     * Returns (creating if needed) the {@link WebPushSender}, or {@code null} if key gen fails.
+     */
+    private @Nullable WebPushSender getOrCreateWebPush() {
+        if (webPush != null) return webPush;
+        synchronized (this) {
+            if (webPush != null) return webPush;
+            try {
+                ChatWebServerSettings settings = ChatWebServerSettings.getInstance(project);
+                java.security.KeyPair kp = WebPushSender.deserializeKeyPair(
+                    settings.getVapidPrivateKey(), settings.getVapidPublicKey());
+                if (kp == null) {
+                    kp = WebPushSender.generateVapidKeyPair();
+                    String[] serialized = WebPushSender.serializeKeyPair(kp);
+                    settings.setVapidPrivateKey(serialized[0]);
+                    settings.setVapidPublicKey(serialized[1]);
+                    LOG.info("[ChatWebServer] Generated new VAPID key pair");
+                }
+                String basePath = project.getBasePath();
+                java.nio.file.Path subscriptionsFile = basePath != null
+                    ? java.nio.file.Paths.get(basePath, ".idea", "push-subscriptions.json")
+                    : null;
+                webPush = new WebPushSender(kp, subscriptionsFile);
+            } catch (Exception e) {
+                LOG.warn("[ChatWebServer] Failed to initialise WebPushSender: " + e.getMessage());
+                return null;
+            }
+        }
+        return webPush;
+    }
+
+    /**
+     * Parses a Web Push subscription JSON into a {@link WebPushSender.PushSubscription}.
+     */
+    private static @Nullable WebPushSender.PushSubscription parseSubscription(@NotNull String json) {
+        String endpoint = jsonString(json, "endpoint");
+        int keysIdx = json.indexOf("\"keys\"");
+        if (endpoint == null || keysIdx < 0) return null;
+        String keysBlock = json.substring(keysIdx);
+        String p256dh = jsonString(keysBlock, "p256dh");
+        String auth = jsonString(keysBlock, "auth");
+        if (p256dh == null || auth == null) return null;
+        return new WebPushSender.PushSubscription(endpoint, p256dh, auth);
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -187,6 +284,8 @@ public final class ChatWebServer implements Disposable {
                 + ") for project: " + project.getBasePath());
         }
 
+        // Populate available profiles for the connect page
+        refreshAvailableProfiles();
         running = true;
     }
 
@@ -228,6 +327,28 @@ public final class ChatWebServer implements Disposable {
             if (reqId != null && response != null && onPermissionResponse != null) {
                 onPermissionResponse.accept(reqId + ":" + response);
             }
+        }));
+        server.createContext("/push-subscribe", ex -> handleAction(ex, body -> {
+            WebPushSender wp = getOrCreateWebPush();
+            if (wp == null) return;
+            WebPushSender.PushSubscription sub = parseSubscription(body);
+            if (sub != null) wp.addSubscription(sub);
+        }));
+        server.createContext("/push-unsubscribe", ex -> handleAction(ex, body -> {
+            String endpoint = jsonString(body, "endpoint");
+            WebPushSender wp = webPush;
+            if (endpoint != null && wp != null) wp.removeSubscription(endpoint);
+        }));
+        server.createContext("/disconnect", ex -> handleAction(ex, body -> {
+            if (onDisconnect != null) onDisconnect.run();
+        }));
+        server.createContext("/connect", ex -> handleAction(ex, body -> {
+            String profileId = jsonString(body, "profileId");
+            if (profileId != null && !profileId.isEmpty() && onConnect != null) onConnect.accept(profileId);
+        }));
+        server.createContext("/set-model", ex -> handleAction(ex, body -> {
+            String modelId = jsonString(body, "modelId");
+            if (modelId != null && !modelId.isEmpty() && onSelectModel != null) onSelectModel.accept(modelId);
         }));
     }
 
@@ -321,7 +442,8 @@ public final class ChatWebServer implements Disposable {
     }
 
     /**
-     * Pushes a transient notification event (not stored in log, only delivered to live clients).
+     * Pushes a notification to live SSE clients and, if any Web Push subscriptions are registered,
+     * sends a Web Push to devices that may have the browser closed.
      */
     public void pushNotification(@NotNull String title, @NotNull String body) {
         if (!running) return;
@@ -332,6 +454,18 @@ public final class ChatWebServer implements Disposable {
         String json = "{\"seq\":" + seq + ",\"notification\":true,\"title\":"
             + GSON.toJson(title) + ",\"body\":" + GSON.toJson(body) + "}";
         broadcast(json);
+        // Also send via Web Push for devices with the browser closed
+        WebPushSender wp = webPush; // read volatile once; null if not yet initialised
+        if (wp != null) {
+            if (wp.hasSubscriptions()) {
+                String payload = "{\"seq\":" + seq + ",\"title\":" + GSON.toJson(title) + "}";
+                wp.sendToAll(payload);
+            } else {
+                LOG.debug("[Chat] Web Push configured but no subscriptions registered for: " + title);
+            }
+        } else {
+            LOG.debug("[Chat] Web Push not initialized yet for: " + title);
+        }
     }
 
     public void setAgentRunning(boolean running) {
@@ -425,7 +559,7 @@ public final class ChatWebServer implements Disposable {
         java.io.File serverCerFile = pluginDir.resolve("server.cer").toFile();
 
         try {
-            StringBuilder san = new StringBuilder("dns:localhost,dns:agentbridge.local,ip:127.0.0.1");
+            StringBuilder san = new StringBuilder("dns:localhost,dns:agentbridge.local,ip:127.0.0.1,ip:127.0.1.1");
             for (String ip : localIps) san.append(",ip:").append(ip);
 
             // 1. Generate CA key pair + long-lived self-signed CA cert
@@ -674,6 +808,23 @@ public final class ChatWebServer implements Disposable {
             + "<p><a href=\"/\" style=\"color:#7ab8ff\">Retry</a></p>"
             + "</body></html>';"
             + "e.respondWith(fetch(e.request).catch(()=>new Response(offlineHtml,{status:503,headers:{'Content-Type':'text/html'}})));"
+            + "});\n"
+            // Web Push: fetch event data from local server and show notification
+            + "self.addEventListener('push',e=>{\n"
+            + "  e.waitUntil((async()=>{\n"
+            + "    let title='AgentBridge',body='';\n"
+            + "    try{\n"
+            + "      const data=e.data?JSON.parse(e.data.text()):{};\n"
+            + "      title=data.title||'AgentBridge';\n"
+            + "      if(data.seq){\n"
+            + "        const r=await fetch('/state');\n"
+            + "        const st=await r.json();\n"
+            + "        const ev=(st.events||[]).slice().reverse().find(ev=>ev.notification&&ev.seq>=data.seq);\n"
+            + "        if(ev&&ev.body)body=ev.body;\n"
+            + "      }\n"
+            + "    }catch(err){}\n"
+            + "    await self.registration.showNotification(title,{body,icon:'/icon-192.png',tag:'agentbridge',requireInteraction:false});\n"
+            + "  })());\n"
             + "});\n"
             + "self.addEventListener('message',e=>{\n"
             + "  if(e.data&&e.data.type==='SHOW_NOTIFICATION'){\n"
@@ -942,7 +1093,7 @@ public final class ChatWebServer implements Disposable {
             }
             byte[] bytes = is.readAllBytes();
             exchange.getResponseHeaders().set("Content-Type", contentType);
-            exchange.getResponseHeaders().set("Cache-Control", "public, max-age=3600");
+            exchange.getResponseHeaders().set("Cache-Control", "no-cache");
             exchange.sendResponseHeaders(200, bytes.length);
             exchange.getResponseBody().write(bytes);
         }
@@ -978,17 +1129,18 @@ public final class ChatWebServer implements Disposable {
                 LOG.warn("[ChatWebServer] Could not read cert SANs for /info", e);
             }
         }
-        String pluginVersion = "";
-        try {
-            var plugin = PluginManagerCore.getPlugin(PluginId.getId("com.github.catatafishen.ideagentforcopilot"));
-            if (plugin != null) pluginVersion = plugin.getVersion();
-        } catch (Exception ignored) {
-        }
+        String pluginVersion = BuildInfo.getVersion();
+        WebPushSender wp = getOrCreateWebPush();
+        String vapidKey = wp != null ? wp.getVapidPublicKeyBase64() : "";
         return "{\"project\":" + GSON.toJson(projectName)
             + ",\"model\":" + GSON.toJson(currentModel)
             + ",\"running\":" + agentRunning
+            + ",\"connected\":" + connected
             + ",\"version\":" + GSON.toJson(pluginVersion)
-            + ",\"certIps\":" + GSON.toJson(certIps) + "}";
+            + ",\"certIps\":" + GSON.toJson(certIps)
+            + ",\"models\":" + modelsJson
+            + ",\"profiles\":" + profilesJson
+            + ",\"vapidKey\":" + GSON.toJson(vapidKey) + "}";
     }
 
     private static int parseFromQuery(@Nullable String query) {
@@ -1121,16 +1273,49 @@ public final class ChatWebServer implements Disposable {
             + "  </div>\n"
             + "  <div id=\"ab-menu\" hidden>\n"
             + "    <div id=\"ab-menu-version\"></div>\n"
-            + "    <button id=\"ab-menu-reload\">Hard reload</button>\n"
+            + "    <div id=\"ab-menu-model-section\">\n"
+            + "      <label id=\"ab-menu-model-label\">Model</label>\n"
+            + "      <select id=\"ab-menu-model\"></select>\n"
+            + "    </div>\n"
+            + "    <button id=\"ab-menu-disconnect\">\u2715\ufe0f Disconnect ACP</button>\n"
+            + "    <div class=\"ab-menu-sep\"></div>\n"
+            + "    <button id=\"ab-menu-reload\">\ud83d\udd04 Hard reload</button>\n"
+            + "  </div>\n"
+            + "  <div id=\"ab-connect-page\" hidden>\n"
+            + "    <div id=\"ab-connect-wrapper\">\n"
+            + "      <div id=\"ab-mcp-card\">\n"
+            + "        <div class=\"ab-card-header\">MCP Server</div>\n"
+            + "        <div class=\"ab-card-content\">\n"
+            + "          <div class=\"ab-status-row\">\n"
+            + "            <span class=\"ab-status-label\">Status:</span>\n"
+            + "            <span class=\"ab-status-indicator\">\n"
+            + "              <span id=\"ab-mcp-dot\" class=\"ab-status-dot\"></span>\n"
+            + "              <span id=\"ab-mcp-text\">Initializing</span>\n"
+            + "            </span>\n"
+            + "          </div>\n"
+            + "        </div>\n"
+            + "      </div>\n"
+            + "      <div id=\"ab-acp-card\">\n"
+            + "        <div class=\"ab-card-header\">\n"
+            + "          <span>Connect to ACP</span>\n"
+            + "          <button id=\"ab-connect-stop-btn\" hidden class=\"ab-card-stop-btn\">⏹</button>\n"
+            + "        </div>\n"
+            + "        <div class=\"ab-card-content\">\n"
+            + "          <select id=\"ab-connect-profile\"></select>\n"
+            + "          <button id=\"ab-connect-btn\">Connect</button>\n"
+            + "          <div id=\"ab-connect-status\"></div>\n"
+            + "        </div>\n"
+            + "      </div>\n"
+            + "    </div>\n"
             + "  </div>\n"
             + "  <div id=\"ab-chat\"><chat-container></chat-container></div>\n"
             + "  <div id=\"ab-footer\">\n"
-            + "    <textarea id=\"ab-input\" rows=\"1\" placeholder=\"Message\u2026\"></textarea>\n"
+            + "    <textarea id=\"ab-input\" rows=\"1\" placeholder=\"Message\u2026\" enterkeyhint=\"send\"></textarea>\n"
             + "    <button id=\"ab-send\">" + iconSvg + "<span>Send</span></button>\n"
             + "  </div>\n"
             + "  <script src=\"/chat.bundle.js\"></script>\n"
             + "  <script>\n"
-            + "    const ICON_SVG = " + escJs(iconSvg) + ";\n"
+            + "    window.ICON_SVG = " + escJs(iconSvg) + ";\n"
             + WEB_APP_JS
             + "  </script>\n"
             + "</body>\n"
@@ -1148,9 +1333,9 @@ public final class ChatWebServer implements Disposable {
     // ── Web app CSS ───────────────────────────────────────────────────────────
 
     private static final String WEB_APP_CSS = ""
-        + "html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--fg);}\n"
+        + "html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--fg);overflow:hidden;}\n"
         + "body{display:flex;flex-direction:column;height:100dvh;font-family:var(--font-family);font-size:var(--font-size);}\n"
-        + "#ab-offline{display:none;position:fixed;top:0;left:0;right:0;background:var(--error);color:#fff;text-align:center;padding:4px 8px;font-size:.85em;z-index:200;}\n"
+        + "#ab-offline{display:none;position:fixed;top:48px;left:0;right:0;background:var(--error);color:#fff;text-align:center;padding:4px 8px;font-size:.85em;z-index:200;}\n"
         + "#ab-offline.visible{display:block;}\n"
         + "#ab-header{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--fg-a16);background:var(--bg);min-height:36px;}\n"
         + "#ab-title{font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}\n"
@@ -1177,7 +1362,36 @@ public final class ChatWebServer implements Disposable {
         + "#ab-menu{position:fixed;top:44px;right:8px;z-index:150;background:var(--bg);border:1px solid var(--fg-a16);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.25);min-width:200px;padding:8px 0;}\n"
         + "#ab-menu-version{padding:6px 14px 8px;font-size:.82em;color:var(--fg-muted);border-bottom:1px solid var(--fg-a08);margin-bottom:4px;}\n"
         + "#ab-menu-reload{display:block;width:100%;text-align:left;border:none;background:transparent;color:var(--fg);cursor:pointer;padding:7px 14px;font:inherit;font-size:.9em;}\n"
-        + "#ab-menu-reload:hover{background:var(--fg-a08);}\n";
+        + "#ab-menu-reload:hover{background:var(--fg-a08);}\n"
+        + "#ab-menu-model-section{padding:6px 14px 8px;border-bottom:1px solid var(--fg-a08);}\n"
+        + "#ab-menu-model-label{display:block;font-size:.78em;color:var(--fg-muted);margin-bottom:4px;}\n"
+        + "#ab-menu-model{width:100%;background:var(--fg-a05);color:var(--fg);border:1px solid var(--fg-a16);border-radius:4px;padding:4px 6px;font:inherit;font-size:.88em;cursor:pointer;}\n"
+        + "#ab-menu-model:focus{outline:1px solid var(--user);}\n"
+        + "#ab-menu-disconnect{display:block;width:100%;text-align:left;border:none;background:transparent;color:var(--error,#e06c75);cursor:pointer;padding:7px 14px;font:inherit;font-size:.9em;}\n"
+        + "#ab-menu-disconnect:hover{background:var(--fg-a08);}\n"
+        + ".ab-menu-sep{height:1px;background:var(--fg-a08);margin:4px 0;}\n"
+        + "/* Connect page */\n"
+        + "#ab-connect-page{flex:1;display:none;align-items:center;justify-content:center;background:var(--bg);overflow:auto;padding:24px;}\n"
+        + "#ab-connect-page:not([hidden]){display:flex;}\n"
+        + "#ab-connect-wrapper{display:flex;flex-direction:column;gap:16px;width:min(360px,90vw);max-height:600px;}\n"
+        + "#ab-mcp-card,#ab-acp-card{display:flex;flex-direction:column;gap:8px;background:var(--bg);border:1px solid var(--fg-a16);border-radius:10px;padding:16px;}\n"
+        + ".ab-card-header{font-weight:600;font-size:1em;display:flex;align-items:center;justify-content:space-between;}\n"
+        + ".ab-card-content{display:flex;flex-direction:column;gap:8px;}\n"
+        + ".ab-status-row{display:flex;align-items:center;justify-content:space-between;gap:12px;}\n"
+        + ".ab-status-label{font-size:.85em;color:var(--fg-muted);min-width:60px;}\n"
+        + ".ab-status-indicator{display:flex;align-items:center;gap:6px;flex:1;}\n"
+        + ".ab-status-dot{width:10px;height:10px;border-radius:50%;background:var(--fg-a16);flex:0 0 10px;transition:background .3s;}\n"
+        + ".ab-status-dot.connected{background:var(--kind-execute);}\n"
+        + ".ab-status-dot.running{background:var(--agent);animation:ab-pulse 1.5s infinite;}\n"
+        + "#ab-mcp-text{font-size:.9em;color:var(--fg);}\n"
+        + ".ab-card-stop-btn{border:none;background:transparent;color:var(--error,#e06c75);cursor:pointer;font-size:.95em;padding:4px 8px;border-radius:4px;flex:0 0 auto;}\n"
+        + ".ab-card-stop-btn:hover{background:var(--fg-a08);}\n"
+        + "#ab-connect-profile{background:var(--fg-a05);color:var(--fg);border:1px solid var(--fg-a16);border-radius:6px;padding:7px 10px;font:inherit;cursor:pointer;width:100%;box-sizing:border-box;}\n"
+        + "#ab-connect-profile:focus{outline:1px solid var(--user);}\n"
+        + "#ab-connect-btn{border:none;border-radius:6px;padding:9px 16px;background:var(--user-a12);color:var(--user);cursor:pointer;font:inherit;font-weight:600;font-size:.95em;width:100%;}\n"
+        + "#ab-connect-btn:hover{background:var(--user-a16);}\n"
+        + "#ab-connect-btn:disabled{opacity:.4;cursor:default;}\n"
+        + "#ab-connect-status{font-size:.85em;color:var(--fg-muted);min-height:1.2em;}\n";
 
     // ── Web app JS ────────────────────────────────────────────────────────────
 
@@ -1209,6 +1423,17 @@ public final class ChatWebServer implements Disposable {
         + "const menuEl=document.getElementById('ab-menu');\n"
         + "const menuVersionEl=document.getElementById('ab-menu-version');\n"
         + "const menuReloadBtn=document.getElementById('ab-menu-reload');\n"
+        + "const menuModelSel=document.getElementById('ab-menu-model');\n"
+        + "const menuDisconnectBtn=document.getElementById('ab-menu-disconnect');\n"
+        + "const connectPageEl=document.getElementById('ab-connect-page');\n"
+        + "const connectProfileSel=document.getElementById('ab-connect-profile');\n"
+        + "const connectBtn=document.getElementById('ab-connect-btn');\n"
+        + "const connectStatusEl=document.getElementById('ab-connect-status');\n"
+        + "const connectStopBtn=document.getElementById('ab-connect-stop-btn');\n"
+        + "const mcpDot=document.getElementById('ab-mcp-dot');\n"
+        + "const mcpText=document.getElementById('ab-mcp-text');\n"
+        + "const chatAreaEl=document.getElementById('ab-chat');\n"
+        + "const footerEl=document.getElementById('ab-footer');\n"
         // Auto-scroll: track whether user is near the bottom
         + "let atBottom=true;\n"
         + "chatEl.addEventListener('scroll',()=>{"
@@ -1225,21 +1450,60 @@ public final class ChatWebServer implements Disposable {
         + "ChatController.cancelAllRunning=function(){_origCA();agentRunning=false;updateButtons();};\n"
         // Track model display
         + "const _origSCM=ChatController.setCurrentModel.bind(ChatController);\n"
-        + "ChatController.setCurrentModel=function(m){_origSCM(m);modelEl.textContent=m?m.substring(m.lastIndexOf('/')+1):''};\n"
+        + "ChatController.setCurrentModel=function(m){_origSCM(m);modelEl.textContent=m?m.substring(m.lastIndexOf('/')+1):'';syncModelSelect(m);};\n"
         + "function updateButtons(){"
         + "  statusDot.className=agentRunning?'running':'connected';"
-        + "  sendBtn.innerHTML=ICON_SVG + '<span>' + (agentRunning?'Nudge':'Send') + '</span>';"
+        + "  mcpDot.className=agentRunning?'running':'connected';"
+        + "  mcpText.textContent=agentRunning?'Running':'Ready';"
+        + "  connectStopBtn.hidden=!agentRunning;"
+        + "  sendBtn.innerHTML=window.ICON_SVG + '<span>' + (agentRunning?'Nudge':'Send') + '</span>';"
         + "}\n"
         + "ChatController.setClientType=(type,iconSvg)=>{"
         + "  if(iconSvg)window.ICON_SVG=iconSvg.replace('<svg','<svg style=\"vertical-align:text-bottom;margin-right:4px\" fill=\"currentColor\" width=\"14\" height=\"14\"');"
         + "  updateButtons();"
         + "};\n"
+        // Connection state helpers
+        + "function showChatView(){"
+        + "  connectPageEl.hidden=true;"
+        + "  chatAreaEl.style.display='';"
+        + "  footerEl.style.display='';"
+        + "  menuDisconnectBtn.style.display='';"
+        + "  document.getElementById('ab-menu-model-section').style.display='';"
+        + "}\n"
+        + "function showConnectView(profiles){"
+        + "  chatAreaEl.style.display='none';"
+        + "  footerEl.style.display='none';"
+        + "  connectPageEl.hidden=false;"
+        + "  menuDisconnectBtn.style.display='none';"
+        + "  document.getElementById('ab-menu-model-section').style.display='none';"
+        + "  connectStatusEl.textContent='';"
+        + "  connectBtn.disabled=false;"
+        + "  connectBtn.textContent='Connect';"
+        + "  connectStopBtn.hidden=!agentRunning;"
+        + "  mcpDot.className=agentRunning?'running':'connected';"
+        + "  mcpText.textContent=agentRunning?'Running':'Ready';"
+        + "  if(profiles&&profiles.length){"
+        + "    const prev=connectProfileSel.value;"
+        + "    connectProfileSel.innerHTML=profiles.map(p=>`<option value=\"${p.id}\">${p.name}</option>`).join('');"
+        + "    if(prev)connectProfileSel.value=prev;"
+        + "  }"
+        + "}\n"
+        // Populate model select from info
+        + "function populateModels(models,currentModelId){"
+        + "  menuModelSel.innerHTML=(models||[]).map(m=>`<option value=\"${m.id}\">${m.name}</option>`).join('');"
+        + "  if(currentModelId)syncModelSelect(currentModelId);"
+        + "}\n"
+        + "function syncModelSelect(modelId){"
+        + "  if(modelId)menuModelSel.value=modelId;"
+        + "}\n"
         // Info fetch
         + "let _pluginVersion='';\n"
         + "fetch('/info').then(r=>r.json()).then(info=>{"
-        + "  if(info.model)modelEl.textContent=info.model.substring(info.model.lastIndexOf('/')+1);"
+        + "  if(info.model){modelEl.textContent=info.model.substring(info.model.lastIndexOf('/')+1);}\n"
         + "  agentRunning=info.running||false;updateButtons();"
         + "  _pluginVersion=info.version||'';"
+        + "  populateModels(info.models,info.model);"
+        + "  if(info.connected)showChatView();else showConnectView(info.profiles);"
         + "}).catch(()=>{});\n"
         // Hamburger menu
         + "menuBtn.addEventListener('click',e=>{"
@@ -1251,14 +1515,57 @@ public final class ChatWebServer implements Disposable {
         + "document.addEventListener('click',e=>{"
         + "  if(!menuEl.hidden&&!menuEl.contains(e.target))menuEl.hidden=true;"
         + "});\n"
+        // Hard reload — navigate to /?v=timestamp to bypass HTTP cache
         + "menuReloadBtn.addEventListener('click',()=>{"
         + "  menuEl.hidden=true;"
         + "  if('serviceWorker'in navigator){"
         + "    navigator.serviceWorker.getRegistrations().then(regs=>Promise.all(regs.map(r=>r.unregister())));"
         + "    if('caches'in window)caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k))));"
         + "  }"
-        + "  setTimeout(()=>location.reload(true),150);"
+        + "  setTimeout(()=>{location.href='/?v='+Date.now();},150);"
         + "});\n"
+        // Model select change
+        + "menuModelSel.addEventListener('change',()=>{"
+        + "  const id=menuModelSel.value;if(id)webPost('/set-model',{modelId:id});"
+        + "});\n"
+        // Disconnect
+        + "menuDisconnectBtn.addEventListener('click',()=>{"
+        + "  menuEl.hidden=true;"
+        + "  webPost('/disconnect',{});"
+        + "});\n"
+        // Connect page submit
+        + "connectBtn.addEventListener('click',()=>{"
+        + "  const profileId=connectProfileSel.value;if(!profileId)return;"
+        + "  connectBtn.disabled=true;connectBtn.textContent='Connecting\u2026';"
+        + "  connectStatusEl.textContent='';"
+        + "  webPost('/connect',{profileId}).catch(()=>{"
+        + "    connectBtn.disabled=false;connectBtn.textContent='Connect';"
+        + "    connectStatusEl.textContent='Connection error \u2014 check the IDE plugin.';"
+        + "  });"
+        + "});\n"
+        + "// Connect page stop button\n"
+        + "connectStopBtn.addEventListener('click',()=>{"
+        + "  webPost('/stop',{});"
+        + "});\n"
+        // handleConnected / handleDisconnected — called via SSE broadcastTransient
+        + "function handleConnected(modelsJsonStr,profilesJsonStr){"
+        + "  try{"
+        + "    const models=JSON.parse(modelsJsonStr||'[]');"
+        + "    const profiles=JSON.parse(profilesJsonStr||'[]');"
+        + "    populateModels(models,'');"
+        + "    fetch('/info').then(r=>r.json()).then(info=>{"
+        + "      if(info.model)modelEl.textContent=info.model.substring(info.model.lastIndexOf('/')+1);"
+        + "      populateModels(info.models,info.model);"
+        + "    }).catch(()=>{});"
+        + "    showChatView();"
+        + "  }catch(e){showChatView();}"
+        + "}\n"
+        + "function handleDisconnected(profilesJsonStr){"
+        + "  try{"
+        + "    const profiles=JSON.parse(profilesJsonStr||'[]');"
+        + "    showConnectView(profiles);"
+        + "  }catch(e){showConnectView([]);}"
+        + "}\n"
         // State load + SSE connect
         + "let lastSeq=0;\n"
         + "let sseRetry=null;\n"
@@ -1288,14 +1595,38 @@ public final class ChatWebServer implements Disposable {
         + "  };"
         + "}\n"
         // Notifications
-        + "function showNotification(title,body){"
+        + "function showNotification(title,body,actions){"
         + "  if(navigator.serviceWorker&&navigator.serviceWorker.controller){"
-        + "    navigator.serviceWorker.controller.postMessage({type:'SHOW_NOTIFICATION',title,body});"
+        + "    navigator.serviceWorker.controller.postMessage({type:'SHOW_NOTIFICATION',title,body,actions});"
         + "  }else if('Notification'in window&&Notification.permission==='granted'){"
         + "    try{new Notification(title,{body,icon:'/icon.svg',tag:'ab'});}catch(e){}"
         + "  }"
         + "}\n"
-        + "function reqNotifPerm(){if('Notification'in window&&Notification.permission==='default')Notification.requestPermission();}\n"
+        + "function subscribePush(vapidKey){"
+        + "  if(!('serviceWorker'in navigator&&'PushManager'in window)){console.warn('[AB] Push not supported');return;}"
+        + "  navigator.serviceWorker.ready.then(reg=>{"
+        + "    reg.pushManager.getSubscription().then(existing=>{"
+        + "      if(existing){console.log('[AB] Push subscription exists');webPost('/push-subscribe',existing.toJSON()).catch(e=>console.error('[AB] Failed to post existing sub:',e));return;}"
+        + "      try{"
+        + "        const appKey=Uint8Array.from(atob(vapidKey.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));"
+        + "        reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:appKey})"
+        + "          .then(sub=>{console.log('[AB] Subscribed to push');webPost('/push-subscribe',sub.toJSON()).catch(e=>console.error('[AB] Failed to post new sub:',e));})"
+        + "          .catch(e=>console.error('[AB] Subscribe failed:',e));"
+        + "      }catch(e){console.error('[AB] Push key decode error:',e);}"
+        + "    }).catch(e=>console.error('[AB] getSubscription error:',e));"
+        + "  }).catch(e=>console.error('[AB] serviceWorker.ready error:',e));"
+        + "}\n"
+        + "function reqNotifPerm(){"
+        + "  if('Notification'in window){"
+        + "    console.log('[AB] Notification permission:', Notification.permission);"
+        + "    if(Notification.permission==='default'){"
+        + "      Notification.requestPermission().then(p=>{"
+        + "        console.log('[AB] Permission result:', p);"
+        + "        if(p==='granted')fetch('/info').then(r=>r.json()).then(info=>{console.log('[AB] VAPID key present:', !!info.vapidKey);if(info.vapidKey)subscribePush(info.vapidKey);}).catch(e=>console.error('[AB] Failed to fetch info:',e));"
+        + "      }).catch(e=>console.error('[AB] requestPermission error:',e));"
+        + "    }"
+        + "  }else{console.warn('[AB] Notification API not supported');}"
+        + "}\n"
         + "document.addEventListener('click',reqNotifPerm,{once:true});\n"
         // Quick-reply bridge (ask_user responses)
         + "document.addEventListener('quick-reply',e=>window._bridge.quickReply(e.detail.text));\n"
@@ -1314,8 +1645,20 @@ public final class ChatWebServer implements Disposable {
         + "  inputEl.value='';inputEl.style.height='auto';"
         + "  webPost(agentRunning?'/nudge':'/prompt',{text:t});"
         + "}\n"
-        // PWA service worker
-        + "if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});\n";
+        // Register service worker; once ready, subscribe to push if permission already granted
+        + "if('serviceWorker'in navigator){\n"
+        + "  navigator.serviceWorker.register('/sw.js').then(()=>{\n"
+        + "    console.log('[AB] Service worker registered');\n"
+        + "    if(Notification.permission==='granted'){\n"
+        + "      console.log('[AB] Notification permission granted, subscribing to push...');\n"
+        + "      fetch('/info').then(r=>r.json()).then(info=>{if(info.vapidKey)subscribePush(info.vapidKey);}).catch(e=>console.error('[AB] Push subscribe error:',e));\n"
+        + "    }else{\n"
+        + "      console.log('[AB] Notification permission: '+Notification.permission);\n"
+        + "    }\n"
+        + "  }).catch(e=>console.error('[AB] SW register failed:',e));\n"
+        + "}else{\n"
+        + "  console.warn('[AB] Service Worker not supported');\n"
+        + "}\n";
 
     // ── SSE client ────────────────────────────────────────────────────────────
 
