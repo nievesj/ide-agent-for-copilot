@@ -3,9 +3,10 @@ package com.github.catatafishen.ideagentforcopilot.ui
 import com.github.catatafishen.ideagentforcopilot.acp.model.Model
 import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate
 import com.github.catatafishen.ideagentforcopilot.agent.AgentException
-import com.github.catatafishen.ideagentforcopilot.bridge.ConversationStore
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.services.ChatWebServer
+import com.github.catatafishen.ideagentforcopilot.session.migration.V1ToV2Migrator
+import com.github.catatafishen.ideagentforcopilot.session.v2.SessionStoreV2
 import com.github.catatafishen.ideagentforcopilot.settings.BillingSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.*
@@ -56,6 +57,7 @@ class ChatToolWindowContent(
     // Prompt tab fields
     @Volatile
     private var selectedModelIndex = -1
+
     @Volatile
     private var modelsStatusText: String? = MSG_LOADING
     private lateinit var controlsToolbar: ActionToolbar
@@ -84,7 +86,7 @@ class ChatToolWindowContent(
     private var statusBanner: StatusBanner? = null
     private var inlineAuthProcess: Process? = null
 
-    private val conversationStore = ConversationStore()
+    private val conversationStore = SessionStoreV2()
     private val conversationReplayer = ConversationReplayer()
 
     // Throttled incremental save during streaming (avoid data loss on crash)
@@ -1776,6 +1778,7 @@ class ChatToolWindowContent(
 
     private fun restoreConversation(onComplete: () -> Unit = {}) {
         ApplicationManager.getApplication().executeOnPooledThread {
+            V1ToV2Migrator.migrateIfNeeded(project.basePath)
             val json = conversationStore.loadJson(project.basePath)
             ApplicationManager.getApplication().invokeLater {
                 if (json != null) {
