@@ -69,6 +69,17 @@ private enum class KindGroup(
     );
 
     val color: Color get() = JBColor(lightColor, darkColor)
+
+    /** Returns a subtle tinted background by blending 12% of the kind color into the panel background. */
+    fun tintedBackground(): Color {
+        val c = color
+        val base = UIUtil.getPanelBackground()
+        return Color(
+            ((c.red * 0.12 + base.red * 0.88).toInt()).coerceIn(0, 255),
+            ((c.green * 0.12 + base.green * 0.88).toInt()).coerceIn(0, 255),
+            ((c.blue * 0.12 + base.blue * 0.88).toInt()).coerceIn(0, 255)
+        )
+    }
 }
 
 /** Maps a [ToolDefinition] to its batch [KindGroup], or null for unclassified tools. */
@@ -124,9 +135,12 @@ private class NavTreeCellRenderer : TreeCellRenderer {
 
 /**
  * Split-panel showing tool permissions:
+ * top   = Quick Permissions batch controls (always visible, above the tree/detail split),
  * left  = navigation tree (sections + categories),
- * right = scrollable grid for the selected set of tools, with Quick Permissions
- *         group controls at the top.
+ * right = scrollable grid for the selected set of tools.
+ *
+ * Placing Quick Permissions above the splitter makes clear that the batch controls
+ * affect all tools regardless of which category is currently selected in the tree.
  *
  * This panel is purely about permission levels (allow/ask/deny).
  * Tool enable/disable is managed in Tool Registration settings.
@@ -149,12 +163,19 @@ internal class PermissionsPanel(private val settings: AgentUiSettings, private v
     private var groupControlsPanel: JBPanel<*> = JBPanel<JBPanel<*>>()
 
     private val rightContent = JBPanel<JBPanel<*>>(BorderLayout())
-    val component: JComponent
+
+    /**
+     * Outer panel returned as [component]. Uses BorderLayout:
+     * NORTH = [groupControlsPanel] (always visible),
+     * CENTER = OnePixelSplitter (tree + per-tool detail).
+     */
+    private val outerPanel = JBPanel<JBPanel<*>>(BorderLayout())
+    val component: JComponent = outerPanel
 
     init {
         buildAllRows()
         groupControlsPanel = buildGroupControlsPanel()
-        component = buildMainComponent()
+        buildMainComponent()
     }
 
     // ── Row construction ──────────────────────────────────────────────────────
@@ -163,15 +184,30 @@ internal class PermissionsPanel(private val settings: AgentUiSettings, private v
         for (tool in registry.allTools) {
             if (tool.isBuiltIn) continue
 
+            val group = tool.kindGroup()
             val permCombo = ComboBox(PLUGIN_PERM_OPTIONS).apply {
                 setMinimumAndPreferredWidth(JBUI.scale(108))
                 selectedIndex = settings.getToolPermission(tool.id()).toPluginIndex()
                 toolTipText = "Permission when agent requests this tool"
+                group?.let { applyKindTint(this, it) }
             }
 
             val (inProjectCombo, outProjectCombo) = buildSubPermCombos(tool, permCombo)
+            group?.let {
+                inProjectCombo?.let { c -> applyKindTint(c, it) }
+                outProjectCombo?.let { c -> applyKindTint(c, it) }
+            }
             rows.add(ToolRow(tool, permCombo, inProjectCombo, outProjectCombo))
         }
+    }
+
+    /**
+     * Applies a subtle kind-group background tint to [combo] so that each permission
+     * control is visually color-coded to match the Quick Permissions group above.
+     */
+    private fun applyKindTint(combo: ComboBox<String>, group: KindGroup) {
+        combo.background = group.tintedBackground()
+        combo.isOpaque = true
     }
 
     private fun buildSubPermCombos(
@@ -215,7 +251,7 @@ internal class PermissionsPanel(private val settings: AgentUiSettings, private v
     // ── Group controls panel ──────────────────────────────────────────────────
 
     /**
-     * Builds the "Quick Permissions" panel shown at the top of the right panel.
+     * Builds the "Quick Permissions" panel shown above the tree/detail splitter.
      * Each [KindGroup] gets a colored label and a batch Allow/Ask combo that
      * propagates to all matching tool rows when changed.
      */
@@ -259,6 +295,7 @@ internal class PermissionsPanel(private val settings: AgentUiSettings, private v
                 setMinimumAndPreferredWidth(JBUI.scale(108))
                 selectedIndex = computeGroupInitialIndex(group)
                 toolTipText = "<html>Set <b>${group.label}</b> permission for all tools in this group</html>"
+                applyKindTint(this, group)
             }
             groupCombos[group] = combo
             combo.addActionListener { applyGroupPermission(group) }
@@ -290,7 +327,7 @@ internal class PermissionsPanel(private val settings: AgentUiSettings, private v
 
     // ── Main split layout ─────────────────────────────────────────────────────
 
-    private fun buildMainComponent(): JComponent {
+    private fun buildMainComponent() {
         val root = DefaultMutableTreeNode("root")
 
         // IntelliJ plugin tools section
@@ -334,10 +371,14 @@ internal class PermissionsPanel(private val settings: AgentUiSettings, private v
         treeScroll.minimumSize = JBUI.size(150, 0)
         treeScroll.viewport.background = UIUtil.SIDE_PANEL_BACKGROUND
 
-        return OnePixelSplitter(false, "CopilotPermissionsPanel.splitter", 0.28f).also { splitter ->
-            splitter.firstComponent = treeScroll
-            splitter.secondComponent = rightContent
+        val splitter = OnePixelSplitter(false, "CopilotPermissionsPanel.splitter", 0.28f).also { s ->
+            s.firstComponent = treeScroll
+            s.secondComponent = rightContent
         }
+
+        outerPanel.removeAll()
+        outerPanel.add(groupControlsPanel, BorderLayout.NORTH)
+        outerPanel.add(splitter, BorderLayout.CENTER)
     }
 
     // ── Right-panel rendering ─────────────────────────────────────────────────
@@ -345,7 +386,6 @@ internal class PermissionsPanel(private val settings: AgentUiSettings, private v
     private fun showTools(filter: (ToolRow) -> Boolean) {
         val filtered = rows.filter(filter)
         rightContent.removeAll()
-        rightContent.add(groupControlsPanel, BorderLayout.NORTH)
         if (filtered.isEmpty()) {
             val empty = JBLabel("No tools in this category.", SwingConstants.CENTER)
             empty.foreground = JBUI.CurrentTheme.Label.disabledForeground()
@@ -477,9 +517,13 @@ internal class PermissionsPanel(private val settings: AgentUiSettings, private v
         rows.clear()
         buildAllRows()
         groupControlsPanel = buildGroupControlsPanel()
+        outerPanel.remove(outerPanel.getComponent(0))
+        outerPanel.add(groupControlsPanel, BorderLayout.NORTH, 0)
         rightContent.removeAll()
         rightContent.revalidate()
         rightContent.repaint()
+        outerPanel.revalidate()
+        outerPanel.repaint()
     }
 
     fun save() {
