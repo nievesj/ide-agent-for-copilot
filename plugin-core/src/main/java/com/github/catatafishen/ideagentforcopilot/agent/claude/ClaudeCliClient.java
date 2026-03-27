@@ -16,6 +16,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -181,6 +182,20 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     public @NotNull String createSession(@Nullable String cwd) {
         String sessionId = UUID.randomUUID().toString();
         sessionCancelled.put(sessionId, new AtomicBoolean(false));
+
+        // Seed cliSessionIds from any pending session-switch export so that buildCommand
+        // can add --resume on the very first prompt of this session.
+        if (project != null) {
+            String propKey = PROFILE_ID + ".cliResumeSessionId";
+            PropertiesComponent props = PropertiesComponent.getInstance(project);
+            String resumeId = props.getValue(propKey);
+            if (resumeId != null && !resumeId.isEmpty()) {
+                cliSessionIds.put(sessionId, resumeId);
+                props.unsetValue(propKey);
+                LOG.info("Will resume Claude CLI session: " + resumeId);
+            }
+        }
+
         LOG.info("Created ClaudeCLI session: " + sessionId);
         return sessionId;
     }

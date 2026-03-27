@@ -239,7 +239,7 @@ public final class SessionSwitchService implements Disposable {
                             List<SessionMessage> imported = AnthropicClientImporter.importFile(mostRecent);
                             if (imported.size() > currentCount) {
                                 String sessionId = sessionStore.getCurrentSessionId(basePath);
-                                writeV2Session(basePath, sessionId, imported);
+                                writeV2Session(basePath, sessionId, imported, "Claude Code CLI");
                                 LOG.info(LOG_PRE_IMPORTED + imported.size()
                                     + " messages from Claude CLI: " + mostRecent.getFileName());
                             }
@@ -319,7 +319,7 @@ public final class SessionSwitchService implements Disposable {
             List<SessionMessage> imported = AnthropicClientImporter.importFile(messagesPath);
             if (imported.size() > currentCount) {
                 String sessionId = sessionStore.getCurrentSessionId(basePath);
-                writeV2Session(basePath, sessionId, imported);
+                writeV2Session(basePath, sessionId, imported, clientName);
                 LOG.info(LOG_PRE_IMPORTED + imported.size()
                     + " messages from " + clientName + " session: " + sessionDir.getFileName());
             }
@@ -355,7 +355,7 @@ public final class SessionSwitchService implements Disposable {
 
         List<SessionMessage> current = loadCurrentV2Session(basePath);
         if (imported.size() > (current != null ? current.size() : 0)) {
-            writeV2Session(basePath, sessionId, imported);
+            writeV2Session(basePath, sessionId, imported, "Codex");
             LOG.info(LOG_PRE_IMPORTED + imported.size() + " messages from Codex");
         }
     }
@@ -377,7 +377,7 @@ public final class SessionSwitchService implements Disposable {
 
         List<SessionMessage> current = loadCurrentV2Session(basePath);
         if (imported.size() > (current != null ? current.size() : 0)) {
-            writeV2Session(basePath, sessionId, imported);
+            writeV2Session(basePath, sessionId, imported, "OpenCode");
             LOG.info(LOG_PRE_IMPORTED + imported.size() + " messages from OpenCode");
         }
     }
@@ -404,7 +404,7 @@ public final class SessionSwitchService implements Disposable {
                             List<SessionMessage> imported = CopilotClientImporter.importFile(eventsFile);
                             if (imported.size() > currentCount) {
                                 String sessionId = sessionStore.getCurrentSessionId(basePath);
-                                writeV2Session(basePath, sessionId, imported);
+                                writeV2Session(basePath, sessionId, imported, "GitHub Copilot");
                                 LOG.info(LOG_PRE_IMPORTED + imported.size()
                                     + " messages from Copilot CLI: " + eventsFile);
                             }
@@ -583,18 +583,11 @@ public final class SessionSwitchService implements Disposable {
 
     // ── v2 session write helper ───────────────────────────────────────────────
 
-    /**
-     * Writes a list of {@link SessionMessage}s to the v2 JSONL file for the given session ID,
-     * overwriting any existing content.
-     *
-     * @param basePath  project base path (may be null)
-     * @param sessionId session UUID
-     * @param messages  messages to write
-     */
     private void writeV2Session(
         @Nullable String basePath,
         @NotNull String sessionId,
-        @NotNull List<SessionMessage> messages) {
+        @NotNull List<SessionMessage> messages,
+        @NotNull String agentName) {
         try {
             File dir = sessionsDir(basePath);
             //noinspection ResultOfMethodCallIgnored — best-effort
@@ -606,6 +599,8 @@ public final class SessionSwitchService implements Disposable {
             }
             Files.writeString(jsonlFile.toPath(), sb.toString(), StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+
+            sessionStore.updateSessionAgent(basePath, sessionId, agentName);
         } catch (IOException e) {
             LOG.warn("Failed to write v2 session for sessionId=" + sessionId, e);
         }

@@ -9,6 +9,7 @@ import com.github.catatafishen.ideagentforcopilot.bridge.AgentSettings;
 import com.github.catatafishen.ideagentforcopilot.bridge.GenericAgentSettings;
 import com.github.catatafishen.ideagentforcopilot.bridge.ProfileBasedAgentConfig;
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
+import com.github.catatafishen.ideagentforcopilot.session.SessionSwitchService;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
@@ -246,6 +247,11 @@ public final class ActiveAgentManager implements Disposable {
             LOG.debug("Agent client already running for " + getActiveProfile().getDisplayName());
             return;
         }
+
+        // Wait for any pending session export to finish before the ACP client starts.
+        // CopilotClient.buildCommand() reads resumeSessionId to build the --resume CLI
+        // flag, so the export must complete before the process is launched.
+        SessionSwitchService.getInstance(project).awaitPendingExport(10_000);
 
         try {
             String agentId = getActiveProfileId();

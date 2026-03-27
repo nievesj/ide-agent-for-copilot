@@ -257,6 +257,52 @@ public final class SessionStoreV2 {
             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
     }
 
+    /**
+     * Updates the sessions index for a given session ID with the specified agent name
+     * and current timestamp. Creates a new index entry if one doesn't exist.
+     * Called by {@link com.github.catatafishen.ideagentforcopilot.session.SessionSwitchService}
+     * when importing sessions from other agents to keep the index agent label accurate.
+     *
+     * @param basePath  project base path (may be null)
+     * @param sessionId the session UUID to update
+     * @param agentName display name of the agent (e.g. "Claude Code CLI")
+     */
+    public void updateSessionAgent(@Nullable String basePath, @NotNull String sessionId, @NotNull String agentName) {
+        try {
+            File sessionsDir = sessionsDir(basePath);
+            File indexFile = new File(sessionsDir, SESSIONS_INDEX);
+            List<JsonObject> records = readIndexRecords(indexFile);
+            long now = System.currentTimeMillis();
+
+            boolean found = false;
+            for (JsonObject rec : records) {
+                if (rec.has(KEY_ID) && sessionId.equals(rec.get(KEY_ID).getAsString())) {
+                    rec.addProperty(KEY_UPDATED_AT, now);
+                    rec.addProperty(KEY_AGENT, agentName);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                JsonObject newRec = new JsonObject();
+                newRec.addProperty(KEY_ID, sessionId);
+                newRec.addProperty(KEY_AGENT, agentName);
+                newRec.addProperty("directory", basePath != null ? basePath : "");
+                newRec.addProperty(KEY_CREATED_AT, now);
+                newRec.addProperty(KEY_UPDATED_AT, now);
+                newRec.addProperty(KEY_JSONL_PATH, sessionId + ".jsonl");
+                records.add(newRec);
+            }
+
+            JsonArray arr = new JsonArray();
+            records.forEach(arr::add);
+            Files.writeString(indexFile.toPath(), GSON.toJson(arr), StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException e) {
+            LOG.warn("Failed to update session index for sessionId=" + sessionId, e);
+        }
+    }
+
     // ── v2 read ───────────────────────────────────────────────────────────────
 
     @Nullable
