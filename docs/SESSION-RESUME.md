@@ -62,19 +62,15 @@ When the user switches from agent A to agent B:
     - Fires switch listeners
     - Calls `SessionSwitchService.onAgentSwitch(prevId, toId)` on a pooled thread
 
-2. **`SessionSwitchService.doExport(fromId, toId)`** executes 3 steps:
+2. **`SessionSwitchService.doExport(fromId, toId)`** executes 2 steps:
 
-   **Step 1 — Import from previous client** (`importFromPreviousClient`):
-   Best-effort import of the outgoing agent's native session files into v2 storage.
-   This handles the case where the user ran the client directly outside the plugin
-   (e.g., ran `claude` from the terminal). The import compares `imported.size()` vs
-   current v2 message count and only overwrites if the import has more messages.
-
-   **Step 2 — Load current v2 session** (`loadCurrentV2Session`):
+   **Step 1 — Load current v2 session** (`loadCurrentV2Session`):
    Reads the active session from `.agent-work/sessions/<uuid>.jsonl`.
-   If empty or missing, the export is aborted.
+   The v2 session is kept up-to-date by the plugin on every conversation save,
+   so it is always the authoritative source of truth. If empty or missing, the
+   export is aborted.
 
-   **Step 3 — Export to new client** (dispatch by profile ID):
+   **Step 2 — Export to new client** (dispatch by profile ID):
    Converts v2 messages to the target agent's native format AND persists the resume
    identifier so the agent client knows to resume on next `session/new`.
 

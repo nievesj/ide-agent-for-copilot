@@ -38,6 +38,7 @@ public final class AnthropicClientExporter {
 
         List<SessionMessage> budgeted = applyTokenBudget(messages, maxTokenEstimate);
         List<AnthropicMessage> anthropicMessages = toAnthropicMessages(budgeted);
+        anthropicMessages = ensureUserFirst(anthropicMessages);
 
         StringBuilder sb = new StringBuilder();
         for (AnthropicMessage msg : anthropicMessages) {
@@ -98,6 +99,26 @@ public final class AnthropicClientExporter {
             }
         }
         return Math.max(total, 1);
+    }
+
+    /**
+     * Ensures the conversation starts with a user message, as required by the Anthropic API.
+     * If the first message is an assistant message (e.g. after token budget trimming cut the
+     * initial user prompt), prepends a synthetic user message with context.
+     */
+    @NotNull
+    private static List<AnthropicMessage> ensureUserFirst(@NotNull List<AnthropicMessage> messages) {
+        if (messages.isEmpty()) return messages;
+        if ("user".equals(messages.getFirst().role)) return messages;
+
+        JsonObject block = new JsonObject();
+        block.addProperty("type", "text");
+        block.addProperty("text", "(Previous conversation context restored — earlier messages were trimmed)");
+
+        List<AnthropicMessage> fixed = new ArrayList<>(messages.size() + 1);
+        fixed.add(new AnthropicMessage("user", List.of(block)));
+        fixed.addAll(messages);
+        return fixed;
     }
 
     @NotNull

@@ -153,18 +153,16 @@ public final class SessionSwitchService implements Disposable {
     private void doExport(@NotNull String fromProfileId, @NotNull String toProfileId) {
         String basePath = project.getBasePath();
 
-        // Step 1: Import from the previous client in case the user ran it directly outside
-        // the plugin (best-effort; failures are warned and ignored).
-        importFromPreviousClient(fromProfileId, basePath);
-
-        // Step 2: Load v2 session (may have been updated by step 1).
+        // Load v2 session — this is our source of truth, kept up-to-date by the plugin
+        // on every conversation save. No need to re-import from the previous client's
+        // native format; that would introduce round-trip conversion bugs.
         List<SessionMessage> messages = loadCurrentV2Session(basePath);
         if (messages == null || messages.isEmpty()) {
             LOG.info("No v2 session found to migrate from " + fromProfileId + " to " + toProfileId);
             return;
         }
 
-        // Step 3: Export to the new client's native format.
+        // Export to the new client's native format.
         switch (toProfileId) {
             case ClaudeCliClient.PROFILE_ID -> exportToClaudeCli(messages, basePath);
             case CodexAppServerClient.PROFILE_ID -> exportToCodex(messages, basePath);
