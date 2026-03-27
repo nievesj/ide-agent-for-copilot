@@ -124,7 +124,7 @@ public final class AnthropicClientExporter {
 
             } else if ("assistant".equals(msg.role)) {
                 List<JsonObject> assistantBlocks = new ArrayList<>();
-                List<AnthropicMessage> toolResultMessages = new ArrayList<>();
+                List<JsonObject> toolResultBlocks = new ArrayList<>();
 
                 for (JsonObject part : msg.parts) {
                     String type = part.has("type") ? part.get("type").getAsString() : "";
@@ -135,7 +135,8 @@ public final class AnthropicClientExporter {
                         block.addProperty("text", part.has("text") ? part.get("text").getAsString() : "");
                         assistantBlocks.add(block);
 
-                    } else if ("reasoning".equals(type)) {
+                    } else if ("reasoning".equals(type) || "subagent".equals(type)
+                        || "status".equals(type) || "file".equals(type)) {
                         continue;
 
                     } else if ("tool-invocation".equals(type) && part.has("toolInvocation")) {
@@ -169,16 +170,15 @@ public final class AnthropicClientExporter {
                         toolResultBlock.addProperty("type", "tool_result");
                         toolResultBlock.addProperty("tool_use_id", toolCallId);
                         toolResultBlock.addProperty("content", resultStr);
-                        toolResultMessages.add(new AnthropicMessage("user", List.of(toolResultBlock)));
-
-                    } else if ("subagent".equals(type) || "status".equals(type) || "file".equals(type)) {
-                        continue;
+                        toolResultBlocks.add(toolResultBlock);
                     }
                 }
 
                 if (!assistantBlocks.isEmpty()) {
                     result.add(new AnthropicMessage("assistant", assistantBlocks));
-                    result.addAll(toolResultMessages);
+                    if (!toolResultBlocks.isEmpty()) {
+                        result.add(new AnthropicMessage("user", toolResultBlocks));
+                    }
                 }
             }
         }

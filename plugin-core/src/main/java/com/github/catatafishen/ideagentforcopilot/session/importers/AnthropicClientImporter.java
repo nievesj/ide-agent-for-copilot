@@ -70,8 +70,7 @@ public final class AnthropicClientImporter {
                 }
 
             } else if ("assistant".equals(role)) {
-                @Nullable JsonObject nextUserRaw = findNextUserMessage(rawMessages, i + 1);
-                ToolResultMap toolResults = collectToolResults(nextUserRaw);
+                ToolResultMap toolResults = collectToolResultsFromFollowing(rawMessages, i + 1);
 
                 List<JsonObject> parts = new ArrayList<>();
                 for (JsonElement block : content) {
@@ -136,30 +135,23 @@ public final class AnthropicClientImporter {
         return true;
     }
 
-    @Nullable
-    private static JsonObject findNextUserMessage(@NotNull List<JsonObject> messages, int fromIndex) {
+    /**
+     * Collects tool results from ALL consecutive tool-result-only user messages
+     * following the assistant message at the given index. Native Claude CLI sessions
+     * emit one user message per tool_result, so we must scan all of them.
+     */
+    @NotNull
+    private static ToolResultMap collectToolResultsFromFollowing(
+        @NotNull List<JsonObject> messages, int fromIndex) {
+        ToolResultMap map = new ToolResultMap();
         for (int j = fromIndex; j < messages.size(); j++) {
             JsonObject m = messages.get(j);
-            if ("user".equals(JsonlUtil.getStr(m, "role"))) {
-                return m;
-            }
-            if ("assistant".equals(JsonlUtil.getStr(m, "role"))) {
-                break;
-            }
-        }
-        return null;
-    }
-
-    @NotNull
-    private static ToolResultMap collectToolResults(@Nullable JsonObject userMessage) {
-        ToolResultMap map = new ToolResultMap();
-        if (userMessage == null) return map;
-        JsonArray content = JsonlUtil.getArray(userMessage, "content");
-        if (content == null) content = new JsonArray();
-        for (JsonElement el : content) {
-            if (!el.isJsonObject()) continue;
-            JsonObject block = el.getAsJsonObject();
-            if ("tool_result".equals(JsonlUtil.getStr(block, "type"))) {
+            if (!"user".equals(JsonlUtil.getStr(m, "role"))) break;
+            JsonArray content = JsonlUtil.getArray(m, "content");
+            if (content == null || !isOnlyToolResults(content)) break;
+            for (JsonElement el : content) {
+                if (!el.isJsonObject()) continue;
+                JsonObject block = el.getAsJsonObject();
                 String toolUseId = JsonlUtil.getStr(block, "tool_use_id");
                 String resultContent = extractToolResultContent(block);
                 if (toolUseId != null && !toolUseId.isEmpty()) {

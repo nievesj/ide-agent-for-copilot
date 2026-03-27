@@ -459,6 +459,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                                      @Nullable Consumer<SessionUpdate> onUpdate,
                                      @NotNull AtomicBoolean cancelled) throws IOException {
         String stopReason = STOP_REASON_END_TURN;
+        int eventCount = 0;
         try (BufferedReader reader = new BufferedReader(
             new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
@@ -467,6 +468,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 if (line.isEmpty()) continue;
                 try {
                     JsonObject event = JsonParser.parseString(line).getAsJsonObject();
+                    String eventType = event.has(FIELD_TYPE) ? event.get(FIELD_TYPE).getAsString() : "unknown";
+                    eventCount++;
+                    LOG.debug("stream-json [" + eventCount + "] type=" + eventType);
+                    if (LOG.isTraceEnabled()) {
+                        LOG.trace("stream-json [" + eventCount + "] raw=" + line);
+                    }
                     stopReason = handleStreamEvent(sessionId, event, stopReason, stdin, onChunk, onUpdate);
                 } catch (RuntimeException e) {
                     LOG.debug("Could not parse stream-json line: " + line, e);
@@ -476,6 +483,11 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             closeQuietly(stdin);
         }
         if (cancelled.get()) stopReason = "cancelled";
+        if (eventCount == 0) {
+            LOG.warn("Claude CLI produced no stream-json events (session=" + sessionId + ")");
+        } else {
+            LOG.info("Claude CLI session complete: " + eventCount + " events, stopReason=" + stopReason);
+        }
         return stopReason;
     }
 
