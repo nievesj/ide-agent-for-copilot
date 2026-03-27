@@ -58,7 +58,7 @@ import java.util.UUID;
  *   <li>Claude CLI / Claude Code — {@code ~/.claude/projects/<sha1>/*.jsonl}</li>
  *   <li>Kiro — {@code ~/.kiro/sessions/<uuid>/messages.jsonl}</li>
  *   <li>Junie — {@code ~/.junie/sessions/<uuid>/messages.jsonl}</li>
- *   <li>Copilot CLI — {@code <project>/.agent-work/copilot/session-state/events.jsonl}</li>
+ *   <li>Copilot CLI — {@code <project>/.agent-work/copilot/session-state/<uuid>/events.jsonl}</li>
  *   <li>Codex — {@code ~/.codex/codex.db} + rollout JSONL</li>
  *   <li>OpenCode — {@code ~/.local/share/opencode/opencode.db}</li>
  * </ul>
@@ -69,7 +69,7 @@ import java.util.UUID;
  *   <li>Kiro — writes to {@code ~/.kiro/sessions/<uuid>/} + sets resumeSessionId</li>
  *   <li>Junie — writes to {@code ~/.junie/sessions/<uuid>/} + sets resumeSessionId</li>
  *   <li>Codex — writes rollout JSONL + updates codex.db + sets codexThreadId</li>
- *   <li>Copilot CLI — writes to {@code <project>/.agent-work/copilot/session-state/events.jsonl}</li>
+ *   <li>Copilot CLI — writes to {@code <project>/.agent-work/copilot/session-state/<uuid>/events.jsonl} + sets resumeSessionId</li>
  *   <li>OpenCode — writes to {@code opencode.db} (session/message/part tables)</li>
  * </ul>
  */
@@ -152,7 +152,7 @@ public final class SessionSwitchService implements Disposable {
                 } else if (toProfileId.equals(AgentProfileManager.OPENCODE_PROFILE_ID)) {
                     exportToOpenCode(messages, basePath);
                 } else if (toProfileId.startsWith(COPILOT_ID_PREFIX)) {
-                    exportToCopilot(messages, basePath);
+                    exportToCopilot(messages, basePath, toProfileId);
                 } else {
                     LOG.info("ACP client '" + toProfileId
                         + "' — no native export format; will resume via resumeSessionId");
@@ -512,13 +512,29 @@ public final class SessionSwitchService implements Disposable {
     // ── Copilot CLI export ────────────────────────────────────────────────────
 
     /**
-     * Exports v2 session messages to Copilot CLI's native {@code events.jsonl} format.
+     * Exports v2 session messages to a new Copilot CLI session directory
+     * and sets {@code resumeSessionId} so AcpClient sends it on next {@code session/new}.
+     *
+     * <p>Copilot CLI stores sessions under {@code .agent-work/copilot/session-state/<uuid>/events.jsonl}.
+     * We create a new UUID session folder, write the events there, and persist the UUID
+     * as the resume target — mirroring what {@link #exportToAcpLocalSession} does for Kiro/Junie.</p>
      */
-    private void exportToCopilot(@NotNull List<SessionMessage> messages, @Nullable String basePath) {
+    private void exportToCopilot(
+        @NotNull List<SessionMessage> messages,
+        @Nullable String basePath,
+        @NotNull String toProfileId) {
         try {
-            Path targetPath = CopilotClientExporter.defaultEventsPath(basePath != null ? basePath : "");
-            CopilotClientExporter.exportToFile(messages, targetPath);
-            LOG.info("Exported v2 session to Copilot CLI events.jsonl: " + targetPath);
+            String base = basePath != null ? basePath : "";
+            String newSessionId = UUID.randomUUID().toString();
+            Path sessionDir = Path.of(base, ".agent-work", "copilot", "session-state", newSessionId);
+            Files.createDirectories(sessionDir);
+
+            Path eventsFile = sessionDir.resolve("events.jsonl");
+            CopilotClientExporter.exportToFile(messages, eventsFile);
+
+            new GenericSettings(toProfileId, project).setResumeSessionId(newSessionId);
+
+            LOG.info("Exported v2 session to Copilot CLI: " + newSessionId);
         } catch (IOException e) {
             LOG.warn("Failed to export v2 session to Copilot CLI", e);
         }

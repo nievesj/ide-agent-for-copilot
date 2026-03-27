@@ -13,7 +13,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link CopilotClientImporter} and {@link CopilotClientExporter}.
@@ -175,9 +176,9 @@ class CopilotClientRoundTripTest {
     }
 
     @Test
-    void defaultEventsPathIsCorrect() {
-        Path result = CopilotClientExporter.defaultEventsPath("/home/user/project");
-        assertTrue(result.toString().endsWith(".agent-work/copilot/session-state/events.jsonl"));
+    void defaultSessionStateDirIsCorrect() {
+        Path result = CopilotClientExporter.defaultSessionStateDir("/home/user/project");
+        assertTrue(result.toString().endsWith(".agent-work/copilot/session-state"));
         assertTrue(result.toString().startsWith("/home/user/project"));
     }
 

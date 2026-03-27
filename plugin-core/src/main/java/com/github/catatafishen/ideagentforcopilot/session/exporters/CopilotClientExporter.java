@@ -39,9 +39,13 @@ public final class CopilotClientExporter {
     private CopilotClientExporter() {
     }
 
+    /**
+     * Returns the base session-state directory for Copilot CLI under the given project.
+     * Individual sessions are stored in UUID subfolders: {@code <basePath>/.agent-work/copilot/session-state/<uuid>/events.jsonl}.
+     */
     @NotNull
-    public static Path defaultEventsPath(@NotNull String basePath) {
-        return Path.of(basePath, ".agent-work", "copilot", "session-state", "events.jsonl");
+    public static Path defaultSessionStateDir(@NotNull String basePath) {
+        return Path.of(basePath, ".agent-work", "copilot", "session-state");
     }
 
     public static void exportToFile(
