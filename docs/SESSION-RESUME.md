@@ -477,7 +477,7 @@ After all ten bugs above were fixed (commits `db56f7c` through `f181688`), the
 |-------------------|--------|--------------------------------------------------------------|
 | Copilot → Claude  | ✅      | Confirmed working as of 2026-03-27                           |
 | Claude → Copilot  | ✅      | Confirmed working as of 2026-03-27                           |
-| Copilot → Copilot | ❓      | Bug 23 fix: restart() now exports v2 session — needs testing |
+| Copilot → Copilot | ❌      | Bug 24: `--resume` path mismatch — CLI never loads context    |
 
 ### ✅ Claude → Copilot Resume: Confirmed Working (2026-03-27)
 
@@ -726,4 +726,43 @@ of truth, kept up-to-date on every conversation save) to the agent's native form
 creating a new session directory with a valid `events.jsonl`. The `resumeSessionId` is
 set to the new directory, so the CLI can resume on restart. `start()` already calls
 `awaitPendingExport()` to wait for the async export to complete before launching.
+
+### Bug 24: `--resume` path mismatch — CLI looks in `$HOME/.copilot/` not `--config-dir/`
+
+**Symptom**: `--resume=<id>` and `resumeSessionId` in `session/new` are both correctly sent
+to the Copilot CLI, and the target session directory exists with a valid `events.jsonl` —
+yet the CLI silently creates a fresh session every time. Analysis of **all 28 CLI process
+logs** from a full day of usage showed that every session starts at exactly 16.2% token
+utilization (~27K tokens = system prompt only), confirming that **no session has ever loaded
+prior context through `--resume` in this plugin**.
+
+**Root cause (theory)**: Path mismatch between where sessions are created and where `--resume`
+looks for them.
+
+- The native Copilot CLI (without the plugin) uses `$HOME/.copilot/` as its config directory
+  and stores sessions at `$HOME/.copilot/session-state/<id>/`.
+- The plugin overrides `HOME=.agent-work/copilot` and passes `--config-dir=.agent-work/copilot`.
+- `session/new` creates sessions at `<config-dir>/session-state/` = `.agent-work/copilot/session-state/` ✅
+- `--resume` likely resolves sessions at `$HOME/.copilot/session-state/` = `.agent-work/copilot/.copilot/session-state/` ❌
+- The `.copilot/` subdirectory **does not exist** under the overridden `HOME`, so `--resume`
+  can never find any session.
+
+**Evidence**:
+- CLI launch log confirmed: `--resume=bf09e80e` on command line + `resumeSessionId` in ACP params
+- CLI responded with brand new session ID `3cb5b4c6` (no resume acknowledgment)
+- CLI process log: "Workspace initialized: 3cb5b4c6 (checkpoints: 0)" — no resume trace
+- Token utilization: 16.2% (27,265/168,000 tokens) — system prompt only, no prior context
+- Real `~/.copilot/session-state/` has 238 sessions (from terminal-mode Copilot)
+- Plugin `.agent-work/copilot/session-state/` has 34 sessions — completely separate, no overlap
+
+**Fix (implemented)**:
+1. `CopilotClient.beforeLaunch()` now creates a `.copilot/session-state → ../session-state`
+   symlink so sessions are accessible from both paths — the `--config-dir` path and the
+   `$HOME/.copilot` path.
+2. `ActiveAgentManager.dispose()` now exports the v2 session before shutdown, so the next
+   IDE startup has a valid export to resume from (previously only `restart()` did this).
+3. Added diagnostic logging to `buildCommand()` showing the `--resume` value and whether
+   the session directory exists at both paths.
+
+**Status**: Pending restart to verify.
 

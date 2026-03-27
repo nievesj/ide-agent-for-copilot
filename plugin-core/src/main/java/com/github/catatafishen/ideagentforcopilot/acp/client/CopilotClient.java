@@ -13,6 +13,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -34,6 +35,9 @@ import java.util.concurrent.TimeoutException;
  * fixed upstream. Built-in tools are suppressed via ACP permission-denial in the meantime.
  */
 public final class CopilotClient extends AcpClient {
+
+    private static final com.intellij.openapi.diagnostic.Logger LOG =
+        com.intellij.openapi.diagnostic.Logger.getInstance(CopilotClient.class);
 
     private static final String AGENT_ID = "copilot";
     private static final String DEFAULT_AGENT_SLUG = "intellij-default";
@@ -137,6 +141,31 @@ public final class CopilotClient extends AcpClient {
         String configDir = cwd + File.separator + AGENT_WORK_DIR + File.separator + AGENT_ID;
         writeAgentDefinitions(configDir);
         writeMcpConfig(configDir, mcpPort);
+        ensureDotCopilotSymlink(configDir);
+    }
+
+    /**
+     * Creates a {@code .copilot/session-state} symlink inside the config directory.
+     *
+     * <p><b>Why:</b> The Copilot CLI may resolve {@code --resume=<id>} relative to
+     * {@code $HOME/.copilot/session-state/} rather than {@code --config-dir/session-state/}.
+     * Since both {@code HOME} and {@code --config-dir} are set to the same value
+     * ({@code .agent-work/copilot}), sessions are created at
+     * {@code .agent-work/copilot/session-state/<id>/} but {@code --resume} may look at
+     * {@code .agent-work/copilot/.copilot/session-state/<id>/}. This symlink bridges the gap.</p>
+     */
+    private static void ensureDotCopilotSymlink(String configDir) {
+        Path dotCopilotSessionState = Path.of(configDir, ".copilot", "session-state");
+        if (Files.exists(dotCopilotSessionState, LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
+        try {
+            Files.createDirectories(dotCopilotSessionState.getParent());
+            Files.createSymbolicLink(dotCopilotSessionState, Path.of("..", "session-state"));
+            LOG.info("Created .copilot/session-state symlink in " + configDir);
+        } catch (IOException e) {
+            LOG.warn("Failed to create .copilot/session-state symlink: " + e.getMessage());
+        }
     }
 
     // ─── Identity ────────────────────────────────────
@@ -195,6 +224,13 @@ public final class CopilotClient extends AcpClient {
         String resumeId = ActiveAgentManager.getInstance(project).getSettings().getResumeSessionId();
         if (resumeId != null) {
             cmd.add("--resume=" + resumeId);
+            Path sessionDir = Path.of(configDir, "session-state", resumeId);
+            Path symlinkDir = Path.of(configDir, ".copilot", "session-state", resumeId);
+            LOG.info("Copilot --resume=" + resumeId
+                + " configDir=" + sessionDir + " (exists=" + Files.isDirectory(sessionDir) + ")"
+                + " symlinkDir=" + symlinkDir + " (exists=" + Files.isDirectory(symlinkDir) + ")");
+        } else {
+            LOG.info("Copilot: no resumeSessionId set, starting fresh session");
         }
 
         return cmd;

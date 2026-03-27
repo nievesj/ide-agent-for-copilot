@@ -337,6 +337,17 @@ public final class ActiveAgentManager implements Disposable {
     @Override
     public void dispose() {
         LOG.info("ActiveAgentManager disposed");
+
+        // Export the v2 session before shutting down, so that the next IDE startup
+        // can resume via --resume. This must be synchronous (best-effort with timeout)
+        // because async tasks may not complete during IDE shutdown.
+        try {
+            SessionSwitchService.getInstance(project).exportForRestart(getActiveProfileId());
+            SessionSwitchService.getInstance(project).awaitPendingExport(3000);
+        } catch (Exception e) {
+            LOG.warn("Failed to export session during dispose: " + e.getMessage());
+        }
+
         stop();
     }
 
