@@ -188,7 +188,7 @@ public final class CopilotClient extends AcpClient {
 
         // The Copilot CLI ignores both resumeSessionId (ACP param) and --resume (CLI flag) in
         // ACP mode as of v1.0.12. The flag is sent anyway in case a future version honours it.
-        // Resume failure detection and context injection are handled by AcpClient.detectResumeFailed().
+        // Resume failure is handled by AcpClient.loadSession() → enableInjectionFallback().
         String resumeId = ActiveAgentManager.getInstance(project).getSettings().getResumeSessionId();
         if (resumeId != null) {
             cmd.add("--resume=" + resumeId);
@@ -200,6 +200,15 @@ public final class CopilotClient extends AcpClient {
         }
 
         return cmd;
+    }
+
+    @Override
+    protected String loadSession(String cwd, String sessionId) throws Exception {
+        // Copilot CLI does not support session/load (ACP spec) nor session/resume.
+        // The --resume CLI flag is the only mechanism, and it is broken in ACP mode as of v1.0.12.
+        throw new com.github.catatafishen.ideagentforcopilot.agent.AgentSessionException(
+            "Copilot CLI does not support session loading in ACP mode (as of v1.0.12). "
+                + "The --resume CLI flag is passed at launch but is currently ignored.");
     }
 
     /**

@@ -112,8 +112,11 @@ public final class OpenCodeClient extends AcpClient {
     }
 
     @Override
-    protected boolean supportsSessionResume() {
-        return true;
+    protected String loadSession(String cwd, String sessionId) throws Exception {
+        // OpenCode uses session/resume (not session/load per ACP spec) and does not
+        // advertise the loadSession capability. Skip the capability check and use
+        // the OpenCode-specific RPC method name.
+        return sendLoadSessionRequest("session/resume", cwd, sessionId);
     }
 
     @Override

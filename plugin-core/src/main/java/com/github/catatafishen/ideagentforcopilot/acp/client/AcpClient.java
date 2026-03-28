@@ -94,8 +94,8 @@ public abstract class AcpClient extends AbstractAgentClient {
     private @Nullable String launchCwd;
     /**
      * Tracks the resume session ID requested in the current launch cycle.
-     * Set at the start of {@link #createSession}, used by {@link #resumeSession} and
-     * {@link #detectResumeFailed}.
+     * Set at the start of {@link #createSession}, used by {@link #loadSession} and
+     * {@link #enableInjectionFallback}.
      */
     private @Nullable String requestedResumeId;
     private final List<Model> availableModels = new ArrayList<>();
@@ -281,17 +281,20 @@ public abstract class AcpClient extends AbstractAgentClient {
             beforeCreateSession(cwd);
             requestedResumeId = loadResumeSessionId();
 
-            // Agents that implement session/resume as a separate RPC method (e.g. OpenCode)
-            // are tried first. On failure, fall back to the standard session/new path.
-            if (requestedResumeId != null && supportsSessionResume()) {
+            // Per ACP spec, session/load resumes an existing session.
+            // Subclasses may override loadSession() for agent-specific behavior
+            // (e.g. CopilotClient throws because Copilot doesn't support it).
+            if (requestedResumeId != null) {
                 try {
-                    return resumeSession(cwd, requestedResumeId);
+                    return loadSession(cwd, requestedResumeId);
                 } catch (Exception e) {
-                    LOG.warn(displayName() + ": session/resume failed for " + requestedResumeId
+                    LOG.warn(displayName() + ": session/load failed for " + requestedResumeId
                         + ", falling back to session/new: " + e.getMessage());
+                    enableInjectionFallback(requestedResumeId);
                 }
             }
 
+            // Standard session/new path — creates a fresh session.
             JsonObject params = buildNewSessionParams(cwd);
 
             CompletableFuture<JsonElement> future = transport.sendRequest("session/new", params);
@@ -306,7 +309,6 @@ public abstract class AcpClient extends AbstractAgentClient {
             processSessionResponse(response);
 
             onSessionCreated(currentSessionId);
-            detectResumeFailed(currentSessionId);
             persistResumeSessionId(currentSessionId);
             return currentSessionId;
         } catch (InterruptedException e) {
@@ -322,14 +324,6 @@ public abstract class AcpClient extends AbstractAgentClient {
         JsonObject params = new JsonObject();
         params.addProperty("cwd", cwd);
         customizeNewSession(cwd, mcpPort, params);
-
-        // Only add resumeSessionId to session/new for agents that don't support the
-        // separate session/resume RPC method. Agents that do support it have already
-        // been tried via resumeSession() before reaching this point.
-        if (!supportsSessionResume() && requestedResumeId != null) {
-            params.addProperty("resumeSessionId", requestedResumeId);
-            LOG.info(displayName() + ": requesting resume of session " + requestedResumeId);
-        }
         return params;
     }
 
@@ -392,46 +386,95 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     /**
-     * Whether this agent supports the {@code session/resume} RPC method as a separate call
-     * from {@code session/new}.
+     * Loads an existing session by ID, per the ACP {@code session/load} spec.
      * <p>
-     * When {@code true}, {@link #createSession(String)} will attempt {@code session/resume}
-     * before falling back to {@code session/new}. When {@code false} (default), the
-     * {@code resumeSessionId} parameter is passed inside {@code session/new} instead.
+     * The default implementation checks the {@code loadSession} agent capability advertised
+     * during initialization. If supported, sends a {@code session/load} JSON-RPC request.
+     * Per the ACP spec, the agent replays conversation history via {@code session/update}
+     * notifications and responds with {@code null}.
+     * <p>
+     * Subclasses may override this to:
+     * <ul>
+     *   <li>Use an agent-specific variant (e.g. OpenCode's {@code session/resume})</li>
+     *   <li>Throw immediately if the agent is known not to support session loading
+     *       (e.g. Copilot CLI)</li>
+     * </ul>
+     *
+     * @return the loaded session ID (same as {@code sessionId} param)
+     * @throws AgentSessionException if the agent does not support session loading
+     * @throws Exception             if the RPC call fails
+     * @see <a href="https://agentclientprotocol.com/protocol/session-setup">ACP Session Setup</a>
      */
-    protected boolean supportsSessionResume() {
-        return false;
+    protected String loadSession(String cwd, String sessionId) throws Exception {
+        if (capabilities == null
+            || capabilities.agentCapabilities() == null
+            || !Boolean.TRUE.equals(capabilities.agentCapabilities().loadSession())) {
+            throw new AgentSessionException(
+                displayName() + " does not advertise loadSession capability");
+        }
+        return sendLoadSessionRequest("session/load", cwd, sessionId);
     }
 
     /**
-     * Resumes an existing session via the {@code session/resume} RPC method.
+     * Sends a session load/resume RPC request and processes the response.
+     * Handles all internal state management (currentSessionId, models, modes, etc.).
      * <p>
-     * Only called for agents that override {@link #supportsSessionResume()} to return {@code true}.
-     * The response has no {@code sessionId} — the provided ID is reused.
+     * Subclasses that override {@link #loadSession} should call this method with the
+     * appropriate RPC method name (e.g. {@code "session/resume"} for OpenCode).
      *
-     * @return the resumed session ID (same as {@code sessionId} param)
-     * @throws Exception if the RPC call fails (caller falls back to {@code session/new})
+     * @param method    the JSON-RPC method name (e.g. {@code "session/load"} or {@code "session/resume"})
+     * @param cwd       working directory
+     * @param sessionId session to load
+     * @return the loaded session ID
      */
-    private String resumeSession(String cwd, String sessionId) throws Exception {
+    protected final String sendLoadSessionRequest(String method, String cwd, String sessionId) throws Exception {
         JsonObject params = new JsonObject();
         params.addProperty(KEY_SESSION_ID, sessionId);
         params.addProperty("cwd", cwd);
         int mcpPort = resolveMcpPort();
         customizeNewSession(cwd, mcpPort, params);
 
-        LOG.info(displayName() + ": attempting session/resume for " + sessionId);
-        CompletableFuture<JsonElement> future = transport.sendRequest("session/resume", params);
+        LOG.info(displayName() + ": attempting " + method + " for " + sessionId);
+        CompletableFuture<JsonElement> future = transport.sendRequest(method, params);
         JsonElement result = future.get(SESSION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        LOG.debug(displayName() + ": session/resume raw response: " + result);
+        LOG.debug(displayName() + ": " + method + " response: " + result);
 
-        NewSessionResponse response = gson.fromJson(result, NewSessionResponse.class);
+        // Per ACP spec, session/load response is null (history replayed via session/update).
+        // Some agents (e.g. OpenCode's session/resume) return models/modes/configOptions.
+        if (result != null && !result.isJsonNull()) {
+            NewSessionResponse response = gson.fromJson(result, NewSessionResponse.class);
+            processSessionResponse(response);
+        }
+
         currentSessionId = sessionId;
-        processSessionResponse(response);
-
-        LOG.info(displayName() + ": successfully resumed session " + sessionId);
+        LOG.info(displayName() + ": successfully loaded session " + sessionId + " via " + method);
         onSessionCreated(sessionId);
         persistResumeSessionId(sessionId);
         return sessionId;
+    }
+
+    /**
+     * Enables conversation history injection as a fallback when session loading fails.
+     * Shows a notification to the user explaining the limitation.
+     */
+    private void enableInjectionFallback(String requestedId) {
+        if (!ActiveAgentManager.getInjectConversationHistory(project)) {
+            ActiveAgentManager.setInjectConversationHistory(project, true);
+        }
+
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
+            NotificationGroupManager.getInstance()
+                .getNotificationGroup("AgentBridge Notifications")
+                .createNotification(
+                    displayName() + " session resume not available",
+                    "Session load was requested but " + displayName() + " could not resume session "
+                        + requestedId + ". "
+                        + "Conversation history injection has been enabled as a fallback — "
+                        + "a compressed summary of the previous session will be prepended to "
+                        + "your first prompt. You can configure this in "
+                        + "Settings → IDE Agent → Chat History.",
+                    NotificationType.INFORMATION)
+                .notify(project));
     }
 
     @Override
@@ -464,36 +507,6 @@ public abstract class AcpClient extends AbstractAgentClient {
         } catch (Exception e) {
             LOG.warn("Failed to persist resume session ID", e);
         }
-    }
-
-    /**
-     * Detects that the agent ignored the {@code resumeSessionId} parameter and created a
-     * fresh session instead. When this happens, enables conversation history injection as a
-     * fallback so the agent still receives prior context.
-     */
-    private void detectResumeFailed(@Nullable String sessionId) {
-        if (requestedResumeId == null || requestedResumeId.equals(sessionId)) {
-            return;
-        }
-        LOG.info(displayName() + ": resume of " + requestedResumeId
-            + " failed → created fresh session " + sessionId + "; enabling conversation history injection fallback");
-
-        if (!ActiveAgentManager.getInjectConversationHistory(project)) {
-            ActiveAgentManager.setInjectConversationHistory(project, true);
-        }
-
-        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
-            NotificationGroupManager.getInstance()
-                .getNotificationGroup("AgentBridge Notifications")
-                .createNotification(
-                    displayName() + " session resume not available",
-                    "Session resume was requested but " + displayName() + " created a fresh session. "
-                        + "Conversation history injection has been enabled as a fallback — "
-                        + "a compressed summary of the previous session will be prepended to "
-                        + "your first prompt. You can configure this in "
-                        + "Settings → IDE Agent → Chat History.",
-                    NotificationType.INFORMATION)
-                .notify(project));
     }
 
     private int getTurnTimeoutSeconds() {
