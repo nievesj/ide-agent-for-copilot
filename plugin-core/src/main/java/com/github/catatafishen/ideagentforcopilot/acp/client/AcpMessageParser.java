@@ -220,7 +220,8 @@ class AcpMessageParser {
         double cost = 0.0;
         if (params.has("cost") && params.get("cost").isJsonObject()) {
             JsonObject costObj = params.getAsJsonObject("cost");
-            cost = costObj.has("amount") ? costObj.get("amount").getAsDouble() : 0.0;
+            JsonElement amountEl = costObj.get("amount");
+            cost = amountEl != null && amountEl.isJsonPrimitive() ? amountEl.getAsDouble() : 0.0;
         }
         return new SessionUpdate.TurnUsage(used, 0, cost);
     }
