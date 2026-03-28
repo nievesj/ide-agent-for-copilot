@@ -81,7 +81,9 @@ public final class GetSymbolInfoTool extends RefactoringTool {
         VirtualFile vf = resolveVirtualFile(filePath);
         if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + filePath;
 
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+        // Cast required: disambiguates Computable<T> vs ThrowableComputable<T,E> overloads.
+        // The IDE falsely reports this as redundant; Gradle fails without it.
+        Computable<String> action = () -> {
             try {
                 PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
                 if (psiFile == null) return "Error: cannot parse " + filePath;
@@ -95,15 +97,7 @@ public final class GetSymbolInfoTool extends RefactoringTool {
 
                 int lineStart = doc.getLineStartOffset(line - 1);
                 int lineEnd = doc.getLineEndOffset(line - 1);
-                int col;
-                if (args.has(PARAM_COLUMN)) {
-                    col = Math.max(0, args.get(PARAM_COLUMN).getAsInt() - 1);
-                } else {
-                    // default to first non-whitespace character
-                    String lineText = doc.getText().substring(lineStart, lineEnd);
-                    col = 0;
-                    while (col < lineText.length() && Character.isWhitespace(lineText.charAt(col))) col++;
-                }
+                int col = resolveColumn(doc, lineStart, lineEnd, args);
                 int offset = Math.min(lineStart + col, doc.getTextLength() - 1);
 
                 PsiElement element = psiFile.findElementAt(offset);
@@ -118,7 +112,18 @@ public final class GetSymbolInfoTool extends RefactoringTool {
                 LOG.warn("get_symbol_info error", e);
                 return "Error: " + e.getMessage();
             }
-        });
+        };
+        return ApplicationManager.getApplication().runReadAction(action);
+    }
+
+    private static int resolveColumn(Document doc, int lineStart, int lineEnd, JsonObject args) {
+        if (args.has(PARAM_COLUMN)) {
+            return Math.max(0, args.get(PARAM_COLUMN).getAsInt() - 1);
+        }
+        String lineText = doc.getText().substring(lineStart, lineEnd);
+        int col = 0;
+        while (col < lineText.length() && Character.isWhitespace(lineText.charAt(col))) col++;
+        return col;
     }
 
     @Nullable
@@ -135,6 +140,19 @@ public final class GetSymbolInfoTool extends RefactoringTool {
         StringBuilder sb = new StringBuilder();
         sb.append("Symbol: ").append(element.getName()).append('\n');
         sb.append("Type: ").append(element.getClass().getSimpleName()).append('\n');
+
+        // Location (file + line)
+        var containingFile = element.getContainingFile();
+        if (containingFile != null && containingFile.getVirtualFile() != null) {
+            var vf = containingFile.getVirtualFile();
+            String projectBase = project.getBasePath();
+            String location = projectBase != null ? relativize(projectBase, vf.getPath()) : vf.getPath();
+            Document locationDoc = FileDocumentManager.getInstance().getDocument(vf);
+            if (locationDoc != null) {
+                int line = locationDoc.getLineNumber(element.getTextOffset()) + 1;
+                sb.append("Location: ").append(location).append(':').append(line).append('\n');
+            }
+        }
 
         // Try to get documentation
         try {
