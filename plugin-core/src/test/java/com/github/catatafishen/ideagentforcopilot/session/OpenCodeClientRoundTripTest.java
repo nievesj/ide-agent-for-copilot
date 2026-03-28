@@ -259,6 +259,62 @@ class OpenCodeClientRoundTripTest {
     // ── Round-trip tests ────────────────────────────────────────────
 
     @Test
+    void exportedToolPartHasStateTime() throws SQLException {
+        // Regression test: toModelMessages in OpenCode accesses part.state.time.compacted
+        // for every tool part. If state.time is absent the property access throws a TypeError
+        // which causes the session to return end_turn with zero tokens and no response.
+        JsonObject toolPart = toolInvocationPart("tc1", "read_file", "{\"path\":\"/a\"}", "file data");
+        SessionMessage assistant = new SessionMessage(
+            "a1", "assistant", List.of(toolPart), System.currentTimeMillis(), null, null);
+
+        String sessionId = OpenCodeClientExporter.exportSession(
+            List.of(userMessage("Q"), assistant), dbPath, PROJECT_DIR);
+        assertNotNull(sessionId);
+
+        try (Connection conn = connect(dbPath);
+             var ps = conn.prepareStatement("""
+                 SELECT p.data FROM part p
+                 JOIN message m ON p.message_id = m.id
+                 WHERE m.session_id = ? AND p.data LIKE '%"type":"tool"%'""")) {
+            ps.setString(1, sessionId);
+            try (var rs = ps.executeQuery()) {
+                assertTrue(rs.next(), "Should have a tool part");
+                JsonObject partData = GSON.fromJson(rs.getString("data"), JsonObject.class);
+                JsonObject state = partData.getAsJsonObject("state");
+                assertNotNull(state, "Tool part must have state");
+                assertTrue(state.has("time"), "state must have time (required by toModelMessages)");
+                JsonObject time = state.getAsJsonObject("time");
+                assertTrue(time.has("start"), "state.time must have start");
+                assertTrue(time.has("end"), "state.time must have end");
+            }
+        }
+    }
+
+    @Test
+    void exportedTextPartHasTime() throws SQLException {
+        // Text parts in real OpenCode sessions also carry a top-level time field.
+        String sessionId = OpenCodeClientExporter.exportSession(
+            List.of(userMessage("Hello")), dbPath, PROJECT_DIR);
+        assertNotNull(sessionId);
+
+        try (Connection conn = connect(dbPath);
+             var ps = conn.prepareStatement("""
+                 SELECT p.data FROM part p
+                 JOIN message m ON p.message_id = m.id
+                 WHERE m.session_id = ? AND p.data LIKE '%"type":"text"%'""")) {
+            ps.setString(1, sessionId);
+            try (var rs = ps.executeQuery()) {
+                assertTrue(rs.next(), "Should have a text part");
+                JsonObject partData = GSON.fromJson(rs.getString("data"), JsonObject.class);
+                assertTrue(partData.has("time"), "text part must have top-level time");
+                JsonObject time = partData.getAsJsonObject("time");
+                assertTrue(time.has("start"), "time must have start");
+                assertTrue(time.has("end"), "time must have end");
+            }
+        }
+    }
+
+    @Test
     void roundTripPreservesTextContent() throws SQLException {
         List<SessionMessage> original = List.of(
             userMessage("What is Rust?"),

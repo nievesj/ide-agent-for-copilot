@@ -366,7 +366,7 @@ public final class OpenCodeClientExporter {
         long timeCreated) throws SQLException {
 
         String partId = generateId("prt");
-        JsonObject partData = convertV2PartToOpenCodePart(v2Part);
+        JsonObject partData = convertV2PartToOpenCodePart(v2Part, timeCreated);
 
         try (PreparedStatement ps = conn.prepareStatement(
             "INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) "
@@ -386,10 +386,15 @@ public final class OpenCodeClientExporter {
      *
      * <p>V2 tool invocations ({@code tool-invocation}) are converted to OpenCode's
      * {@code tool} type with the structure: {@code {"type":"tool","callID":"...","tool":"...",
-     * "state":{"status":"completed","input":{...},"output":"..."}}}.</p>
+     * "state":{"status":"completed","input":{...},"output":"...","time":{"start":T,"end":T}}}}.</p>
+     *
+     * <p>OpenCode always writes {@code time} on parts it owns. Tool parts need
+     * {@code state.time} (with {@code start}/{@code end}) because {@code toModelMessages}
+     * accesses {@code part.state.time.compacted} to detect compacted entries — if
+     * {@code state.time} is absent the property read throws a TypeError.</p>
      */
     @NotNull
-    private static JsonObject convertV2PartToOpenCodePart(@NotNull JsonObject v2Part) {
+    private static JsonObject convertV2PartToOpenCodePart(@NotNull JsonObject v2Part, long timeMs) {
         String type = JsonlUtil.getStr(v2Part, "type");
         if (type == null) return v2Part.deepCopy();
 
@@ -399,6 +404,10 @@ public final class OpenCodeClientExporter {
                 result.addProperty("type", type);
                 String text = JsonlUtil.getStr(v2Part, "text");
                 result.addProperty("text", text != null ? text : "");
+                JsonObject time = new JsonObject();
+                time.addProperty("start", timeMs);
+                time.addProperty("end", timeMs);
+                result.add("time", time);
             }
             case "tool-invocation" -> {
                 JsonObject invocation = v2Part.getAsJsonObject("toolInvocation");
@@ -430,6 +439,13 @@ public final class OpenCodeClientExporter {
                 if (resultStr != null) {
                     stateObj.addProperty("output", resultStr);
                 }
+
+                // OpenCode always writes state.time; toModelMessages accesses
+                // part.state.time.compacted which throws if state.time is absent.
+                JsonObject time = new JsonObject();
+                time.addProperty("start", timeMs);
+                time.addProperty("end", timeMs);
+                stateObj.add("time", time);
 
                 result.add("state", stateObj);
             }
