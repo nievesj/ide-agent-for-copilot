@@ -126,6 +126,11 @@ public abstract class AcpClient extends AbstractAgentClient {
     private final java.util.concurrent.ConcurrentHashMap<String, JsonElement> pendingPermissionRequests =
         new java.util.concurrent.ConcurrentHashMap<>();
     /**
+     * Tracks built-in tool IDs that have been auto-denied at least once in the current session.
+     * On the first denial the plugin responds immediately; on a retry the user is prompted.
+     */
+    private final Set<String> deniedBuiltInTools = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /**
      * Nanotime of the last {@code session/update} notification received; used for inactivity detection.
      */
     private volatile long lastActivityNanos = System.nanoTime();
@@ -288,6 +293,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             currentAgentSlug = null;
             availableConfigOptions.clear();
             pendingPermissionRequests.clear();
+            deniedBuiltInTools.clear();
             terminalHandler.releaseAll();
             loadedSessionHistory = null;
             updateConsumer = null;
@@ -1397,83 +1403,141 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     private void handlePermissionRequest(JsonElement id, @Nullable JsonObject params) {
-        // Track this request so cancelSession can respond with "cancelled" per ACP spec.
         String requestKey = id != null ? id.toString() : "";
         if (!requestKey.isEmpty()) {
             pendingPermissionRequests.put(requestKey, id);
         }
 
-        try {
-            // Notify subclass before responding, so it can capture args for chip correlation.
-            String toolCallId = "";
-            String toolId = "";
-            if (params != null && params.has(KEY_TOOL_CALL)) {
-                JsonObject toolCallObj = params.getAsJsonObject(KEY_TOOL_CALL);
-                String protocolTitle = getStringOrEmpty(toolCallObj, "title");
-                toolCallId = getStringOrEmpty(toolCallObj, KEY_TOOL_CALL_ID);
-                toolId = resolveToolId(protocolTitle);
-                if (!toolCallId.isEmpty()) {
-                    onPermissionRequest(toolCallId, toolCallObj);
-                }
+        String toolCallId = "";
+        String toolId = "";
+        if (params != null && params.has(KEY_TOOL_CALL)) {
+            JsonObject toolCallObj = params.getAsJsonObject(KEY_TOOL_CALL);
+            String protocolTitle = getStringOrEmpty(toolCallObj, "title");
+            toolCallId = getStringOrEmpty(toolCallObj, KEY_TOOL_CALL_ID);
+            toolId = resolveToolId(protocolTitle);
+            if (!toolCallId.isEmpty()) {
+                onPermissionRequest(toolCallId, toolCallObj);
             }
+        }
 
-            JsonObject chosenOption;
-            String protocolTitle = params != null && params.has(KEY_TOOL_CALL)
-                ? getStringOrEmpty(params.getAsJsonObject(KEY_TOOL_CALL), "title")
-                : "";
-            if (!toolId.isEmpty() && isToolBlocked(protocolTitle, toolId)) {
-                String reason = "Tool '" + toolId + "' is blocked by the current agent profile (excludeAgentBuiltInTools=true).";
-                LOG.warn(displayName() + ": " + reason);
-                chosenOption = findDenyOption(params);
+        String protocolTitle = params != null && params.has(KEY_TOOL_CALL)
+            ? getStringOrEmpty(params.getAsJsonObject(KEY_TOOL_CALL), "title")
+            : "";
 
-                // Notify UI that this tool was auto-denied
-                Consumer<SessionUpdate> consumer = updateConsumer;
-                if (consumer != null) {
-                    consumer.accept(new SessionUpdate.ToolCallUpdate(
-                        toolCallId,
-                        SessionUpdate.ToolCallStatus.FAILED,
-                        null,
-                        "Auto-denied: " + reason,
-                        null,
-                        true,
-                        reason
-                    ));
-                }
-            } else if (isBuiltInTool(protocolTitle)) {
-                LOG.info(displayName() + ": permission request for built-in tool '" + toolId + "' requires user approval");
+        JsonObject chosenOption;
 
-                if (isAllowedBuiltInTool(toolId)) {
-                    LOG.info(displayName() + ": auto-approving built-in web tool '" + toolId + "' - no MCP alternative exists");
-                    chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
-                    if (chosenOption == null) {
-                        chosenOption = findFirstOption(params);
-                    }
-                } else {
-                    LOG.warn(displayName() + ": denying built-in tool '" + toolId
-                        + "' — use agentbridge MCP tools (run_command, run_in_terminal) instead");
-                    chosenOption = findDenyOption(params);
-                }
-            } else {
-                // MCP tools: auto-approve at ACP level, MCP server will handle permission checks
-                LOG.info(displayName() + ": auto-approving MCP tool '" + toolId + "' at ACP level (MCP server will check permissions)");
+        if (!toolId.isEmpty() && isToolBlocked(protocolTitle, toolId)) {
+            chosenOption = handleBlockedTool(toolId, toolCallId, params);
+        } else if (isBuiltInTool(protocolTitle)) {
+            if (isAllowedBuiltInTool(toolId)) {
+                LOG.info(displayName() + ": auto-approving built-in web tool '" + toolId + "' — no MCP alternative exists");
                 chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
-
                 if (chosenOption == null) {
                     chosenOption = findFirstOption(params);
                 }
+            } else if (deniedBuiltInTools.add(toolId)) {
+                chosenOption = handleFirstBuiltInDenial(toolId, toolCallId, params);
+            } else {
+                LOG.info(displayName() + ": agent retried built-in tool '" + toolId + "' — prompting user");
+                promptUserForPermission(id, requestKey, toolId, params);
+                return;
             }
-
-            // Resolve the option ID. For deny paths, fall back to deny_once rather than
-            // allow_once to prevent accidental approval of blocked/built-in tools.
-            String optionId = chosenOption != null && chosenOption.has(KEY_OPTION_ID)
-                ? chosenOption.get(KEY_OPTION_ID).getAsString()
-                : VALUE_DENY_ONCE;
-            JsonObject result = new JsonObject();
-            result.add(KEY_OUTCOME, buildPermissionOutcome(optionId, chosenOption));
-            transport.sendResponse(id, result);
-        } finally {
-            pendingPermissionRequests.remove(requestKey);
+        } else {
+            LOG.info(displayName() + ": auto-approving MCP tool '" + toolId + "' at ACP level (MCP server will check permissions)");
+            chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
+            if (chosenOption == null) {
+                chosenOption = findFirstOption(params);
+            }
         }
+
+        sendPermissionResponse(id, requestKey, chosenOption);
+    }
+
+    private @Nullable JsonObject handleBlockedTool(String toolId, String toolCallId, @Nullable JsonObject params) {
+        String reason = "Tool '" + toolId + "' is blocked by the current agent profile (excludeAgentBuiltInTools=true).";
+        LOG.warn(displayName() + ": " + reason);
+
+        Consumer<SessionUpdate> consumer = updateConsumer;
+        if (consumer != null && !toolCallId.isEmpty()) {
+            consumer.accept(new SessionUpdate.ToolCallUpdate(
+                toolCallId,
+                SessionUpdate.ToolCallStatus.FAILED,
+                null,
+                "Auto-denied: " + reason,
+                null,
+                true,
+                reason
+            ));
+        }
+        return findDenyOption(params);
+    }
+
+    private @Nullable JsonObject handleFirstBuiltInDenial(String toolId, String toolCallId, @Nullable JsonObject params) {
+        LOG.warn(displayName() + ": denying built-in tool '" + toolId
+            + "' — use agentbridge MCP tools (run_command, run_in_terminal) instead");
+
+        Consumer<SessionUpdate> consumer = updateConsumer;
+        if (consumer != null && !toolCallId.isEmpty()) {
+            String reason = "Built-in tool '" + toolId + "' denied — use run_command or run_in_terminal instead.";
+            consumer.accept(new SessionUpdate.ToolCallUpdate(
+                toolCallId,
+                SessionUpdate.ToolCallStatus.FAILED,
+                null,
+                reason,
+                null,
+                true,
+                reason
+            ));
+        }
+        return findDenyOption(params);
+    }
+
+    /**
+     * Prompts the user via IDE notification when an agent retries a previously denied built-in tool.
+     * The permission response is deferred until the user clicks Allow or Deny (or the notification expires).
+     */
+    private void promptUserForPermission(JsonElement id, String requestKey, String toolId, @Nullable JsonObject params) {
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+            com.intellij.notification.Notification notification = NotificationGroupManager.getInstance()
+                .getNotificationGroup("AgentBridge Notifications")
+                .createNotification(
+                    "Built-in tool permission",
+                    displayName() + " wants to use built-in tool '" + toolId
+                        + "' and insists it has no MCP alternative. Allow?",
+                    NotificationType.WARNING);
+
+            notification.addAction(com.intellij.notification.NotificationAction.createSimpleExpiring(
+                "Allow once", () -> {
+                    LOG.info(displayName() + ": user approved built-in tool '" + toolId + "'");
+                    JsonObject option = findOptionByKind(params, VALUE_ALLOW_ONCE);
+                    sendPermissionResponse(id, requestKey, option);
+                }));
+
+            notification.addAction(com.intellij.notification.NotificationAction.createSimpleExpiring(
+                "Deny", () -> {
+                    LOG.info(displayName() + ": user denied built-in tool '" + toolId + "'");
+                    sendPermissionResponse(id, requestKey, findDenyOption(params));
+                }));
+
+            notification.whenExpired(() -> {
+                if (pendingPermissionRequests.containsKey(requestKey)) {
+                    LOG.info(displayName() + ": permission notification for '" + toolId + "' expired — denying");
+                    sendPermissionResponse(id, requestKey, findDenyOption(params));
+                }
+            });
+
+            notification.notify(project);
+        });
+    }
+
+    private void sendPermissionResponse(JsonElement id, String requestKey, @Nullable JsonObject chosenOption) {
+        String optionId = chosenOption != null && chosenOption.has(KEY_OPTION_ID)
+            ? chosenOption.get(KEY_OPTION_ID).getAsString()
+            : VALUE_DENY_ONCE;
+        JsonObject result = new JsonObject();
+        result.add(KEY_OUTCOME, buildPermissionOutcome(optionId, chosenOption));
+        transport.sendResponse(id, result);
+        pendingPermissionRequests.remove(requestKey);
     }
 
     /**
