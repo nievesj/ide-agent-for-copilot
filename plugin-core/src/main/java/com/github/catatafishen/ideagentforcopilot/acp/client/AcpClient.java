@@ -88,6 +88,8 @@ public abstract class AcpClient extends AbstractAgentClient {
         .create();
     protected final JsonRpcTransport transport = new JsonRpcTransport();
     protected final Project project;
+    private final AcpFileSystemHandler fsHandler;
+    private final AcpTerminalHandler terminalHandler;
 
     private @Nullable Process agentProcess;
     private @Nullable InitializeResponse capabilities;
@@ -141,6 +143,8 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     protected AcpClient(Project project) {
         this.project = project;
+        this.fsHandler = new AcpFileSystemHandler(project);
+        this.terminalHandler = new AcpTerminalHandler(project);
     }
 
     // ═══════════════════════════════════════════════════
@@ -271,6 +275,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         currentAgentSlug = null;
         availableConfigOptions.clear();
         pendingPermissionRequests.clear();
+        terminalHandler.releaseAll();
         updateConsumer = null;
     }
 
@@ -781,10 +786,12 @@ public abstract class AcpClient extends AbstractAgentClient {
     /**
      * Build the ClientCapabilities to send in the initialize request.
      * <p>
-     * Default: empty (no declared capabilities). Override to advertise fs/terminal support.
+     * Default: advertises {@code fs.readTextFile}, {@code fs.writeTextFile}, and {@code terminal}
+     * capabilities as these are now implemented by the ACP base class.
+     * Override to suppress capabilities for agents that reject unknown fields.
      */
     protected InitializeRequest.ClientCapabilities buildClientCapabilities() {
-        return InitializeRequest.ClientCapabilities.empty();
+        return InitializeRequest.ClientCapabilities.standard();
     }
 
     /**
@@ -1262,13 +1269,51 @@ public abstract class AcpClient extends AbstractAgentClient {
     protected void handleAgentRequest(JsonElement id, JsonRpcTransport.IncomingRequest request) {
         switch (request.method()) {
             case "session/request_permission" -> handlePermissionRequest(id, request.params());
-            case "fs/read_text_file", "fs/write_text_file",
-                 "terminal/create", "terminal/output" ->
-                transport.sendError(id, JsonRpcErrorCodes.INTERNAL_ERROR, request.method() + " not yet implemented");
+            case "fs/read_text_file" -> handleFsRequest(id, () -> fsHandler.readTextFile(request.params()));
+            case "fs/write_text_file" -> handleFsRequest(id, () -> fsHandler.writeTextFile(request.params()));
+            case "terminal/create" -> handleTerminalRequest(id, () -> terminalHandler.create(request.params()));
+            case "terminal/output" -> handleTerminalRequest(id, () -> terminalHandler.output(request.params()));
+            case "terminal/wait_for_exit" ->
+                handleTerminalRequest(id, () -> terminalHandler.waitForExit(request.params()));
+            case "terminal/kill" -> handleTerminalRequest(id, () -> terminalHandler.kill(request.params()));
+            case "terminal/release" -> handleTerminalRequest(id, () -> terminalHandler.release(request.params()));
             default -> {
                 LOG.warn("Unknown agent request: " + request.method());
                 transport.sendError(id, JsonRpcErrorCodes.METHOD_NOT_FOUND, "Method not found: " + request.method());
             }
+        }
+    }
+
+    /**
+     * Dispatches an ACP file system request, catching exceptions and sending
+     * the appropriate JSON-RPC response (success or error).
+     */
+    private void handleFsRequest(JsonElement id, java.util.concurrent.Callable<JsonObject> handler) {
+        try {
+            JsonObject result = handler.call();
+            // ACP spec: fs/write_text_file returns null on success
+            transport.sendResponse(id, result != null ? gson.toJsonTree(result) : null);
+        } catch (IllegalArgumentException e) {
+            transport.sendError(id, JsonRpcErrorCodes.INVALID_PARAMS, e.getMessage());
+        } catch (Exception e) {
+            LOG.warn("FS request failed: " + e.getMessage(), e);
+            transport.sendError(id, JsonRpcErrorCodes.INTERNAL_ERROR, e.getMessage());
+        }
+    }
+
+    /**
+     * Dispatches an ACP terminal request, catching exceptions and sending
+     * the appropriate JSON-RPC response (success or error).
+     */
+    private void handleTerminalRequest(JsonElement id, java.util.concurrent.Callable<JsonObject> handler) {
+        try {
+            JsonObject result = handler.call();
+            transport.sendResponse(id, gson.toJsonTree(result));
+        } catch (IllegalArgumentException e) {
+            transport.sendError(id, JsonRpcErrorCodes.INVALID_PARAMS, e.getMessage());
+        } catch (Exception e) {
+            LOG.warn("Terminal request failed: " + e.getMessage(), e);
+            transport.sendError(id, JsonRpcErrorCodes.INTERNAL_ERROR, e.getMessage());
         }
     }
 
