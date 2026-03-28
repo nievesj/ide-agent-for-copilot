@@ -270,22 +270,27 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     @Override
     public final void stop() {
-        transport.stop();
-        destroyProcess();
-        agentProcess = null;
-        capabilities = null;
-        currentSessionId = null;
-        launchCwd = null;
-        availableModels.clear();
-        availableModes.clear();
-        currentModeSlug = null;
-        currentModelId = null;
-        currentAgentSlug = null;
-        availableConfigOptions.clear();
-        pendingPermissionRequests.clear();
-        terminalHandler.releaseAll();
-        loadedSessionHistory = null;
-        updateConsumer = null;
+        try {
+            transport.stop();
+        } catch (Exception e) {
+            LOG.warn("Transport stop encountered an error; proceeding to kill process", e);
+        } finally {
+            destroyProcess();
+            agentProcess = null;
+            capabilities = null;
+            currentSessionId = null;
+            launchCwd = null;
+            availableModels.clear();
+            availableModes.clear();
+            currentModeSlug = null;
+            currentModelId = null;
+            currentAgentSlug = null;
+            availableConfigOptions.clear();
+            pendingPermissionRequests.clear();
+            terminalHandler.releaseAll();
+            loadedSessionHistory = null;
+            updateConsumer = null;
+        }
     }
 
     @Override
@@ -997,7 +1002,9 @@ public abstract class AcpClient extends AbstractAgentClient {
 
         LOG.info("Launching " + displayName() + ": " + String.join(" ", resolvedCommand));
         LOG.info("Environment size: " + pb.environment().size() + " variables");
-        return pb.start();
+        Process process = pb.start();
+        AgentProcessRegistry.register(process);
+        return process;
     }
 
     // ─── Per-agent binary path settings (application-level) ────────────────
@@ -1573,6 +1580,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     protected void destroyProcess() {
+        AgentProcessRegistry.unregister(agentProcess);
         destroyProcessTree(agentProcess);
     }
 

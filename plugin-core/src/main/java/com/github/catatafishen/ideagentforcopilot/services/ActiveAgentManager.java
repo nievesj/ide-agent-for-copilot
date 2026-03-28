@@ -297,20 +297,17 @@ public final class ActiveAgentManager implements Disposable {
         }
     }
 
-    /**
-     * Stop the ACP client.
-     */
     public synchronized void stop() {
         if (!started) return;
-        try {
-            LOG.info("Stopping ACP client...");
-            if (acpClient != null) {
-                acpClient.close();
+        started = false;
+        AbstractAgentClient clientToStop = acpClient;
+        acpClient = null;
+        if (clientToStop != null) {
+            try {
+                clientToStop.close();
+            } catch (Exception e) {
+                LOG.error("Failed to stop ACP client", e);
             }
-            started = false;
-            acpClient = null;
-        } catch (Exception e) {
-            LOG.error("Failed to stop ACP client", e);
         }
     }
 
