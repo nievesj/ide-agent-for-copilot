@@ -45,12 +45,12 @@ public final class EntryDataConverter {
                 }
                 // Emit separator as its own message (no parts)
                 result.add(new SessionMessage(
-                        UUID.randomUUID().toString(),
-                        "separator",
-                        List.of(),
-                        System.currentTimeMillis(),
-                        sep.getAgent().isEmpty() ? null : sep.getAgent(),
-                        null));
+                    UUID.randomUUID().toString(),
+                    "separator",
+                    List.of(),
+                    System.currentTimeMillis(),
+                    sep.getAgent().isEmpty() ? null : sep.getAgent(),
+                    null));
 
             } else if (entry instanceof EntryData.Prompt prompt) {
                 // Flush pending
@@ -91,8 +91,8 @@ public final class EntryDataConverter {
                         newParts.add(filePart);
                     }
                     result.set(result.size() - 1,
-                            new SessionMessage(lastUser.id, lastUser.role, newParts,
-                                    lastUser.createdAt, lastUser.agent, lastUser.model));
+                        new SessionMessage(lastUser.id, lastUser.role, newParts,
+                            lastUser.createdAt, lastUser.agent, lastUser.model));
                 } else {
                     // No prior user message — create a synthetic one
                     MutableMessage userMsg = new MutableMessage("user", null);
@@ -111,8 +111,8 @@ public final class EntryDataConverter {
                 String agent = agentOf(entry);
 
                 boolean needsNewMsg = currentMsg == null
-                        || !"assistant".equals(currentMsg.role)
-                        || (agent != null && !agent.equals(currentMsg.agent));
+                    || !"assistant".equals(currentMsg.role)
+                    || (agent != null && !agent.equals(currentMsg.agent));
 
                 if (needsNewMsg) {
                     if (currentMsg != null) result.add(currentMsg.build());
@@ -140,7 +140,11 @@ public final class EntryDataConverter {
                     invocation.addProperty("result", toolCall.getResult() != null ? toolCall.getResult() : "");
                     if (toolCall.getAutoDenied()) {
                         invocation.addProperty("denialReason",
-                                toolCall.getDenialReason() != null ? toolCall.getDenialReason() : "");
+                            toolCall.getDenialReason() != null ? toolCall.getDenialReason() : "");
+                    }
+                    String kind = toolCall.getKind();
+                    if (!kind.isEmpty() && !"other".equals(kind)) {
+                        invocation.addProperty("kind", kind);
                     }
 
                     JsonObject part = new JsonObject();
@@ -186,8 +190,8 @@ public final class EntryDataConverter {
         for (SessionMessage msg : messages) {
             if ("separator".equals(msg.role)) {
                 result.add(new EntryData.SessionSeparator(
-                        "",
-                        msg.agent != null ? msg.agent : ""));
+                    "",
+                    msg.agent != null ? msg.agent : ""));
                 continue;
             }
 
@@ -201,17 +205,17 @@ public final class EntryDataConverter {
                             result.add(new EntryData.Prompt(text, "", null));
                         } else {
                             result.add(new EntryData.Text(
-                                    new StringBuilder(text),
-                                    "",
-                                    msg.agent != null ? msg.agent : ""));
+                                new StringBuilder(text),
+                                "",
+                                msg.agent != null ? msg.agent : ""));
                         }
                     }
                     case "reasoning" -> {
                         String text = part.has("text") ? part.get("text").getAsString() : "";
                         result.add(new EntryData.Thinking(
-                                new StringBuilder(text),
-                                "",
-                                msg.agent != null ? msg.agent : ""));
+                            new StringBuilder(text),
+                            "",
+                            msg.agent != null ? msg.agent : ""));
                     }
                     case "tool-invocation" -> {
                         JsonObject inv = part.has("toolInvocation") ? part.getAsJsonObject("toolInvocation") : new JsonObject();
@@ -220,10 +224,11 @@ public final class EntryDataConverter {
                         String toolResult = inv.has("result") ? inv.get("result").getAsString() : null;
                         boolean autoDenied = inv.has("denialReason");
                         String denialReason = autoDenied ? inv.get("denialReason").getAsString() : null;
+                        String kind = inv.has("kind") ? inv.get("kind").getAsString() : "other";
                         result.add(new EntryData.ToolCall(
-                                toolName, args, "other", toolResult, null, null, null,
-                                autoDenied, denialReason, false,
-                                "", msg.agent != null ? msg.agent : ""));
+                            toolName, args, kind, toolResult, null, null, null,
+                            autoDenied, denialReason, false,
+                            "", msg.agent != null ? msg.agent : ""));
                     }
                     case "subagent" -> {
                         String agentType = part.has("agentType") ? part.get("agentType").getAsString() : "general-purpose";
@@ -233,12 +238,12 @@ public final class EntryDataConverter {
                         String status = part.has("status") ? part.get("status").getAsString() : "completed";
                         int colorIndex = part.has("colorIndex") ? part.get("colorIndex").getAsInt() : 0;
                         result.add(new EntryData.SubAgent(
-                                agentType, description,
-                                (prompt == null || prompt.isEmpty()) ? null : prompt,
-                                (subResult == null || subResult.isEmpty()) ? null : subResult,
-                                (status == null || status.isEmpty()) ? "completed" : status,
-                                colorIndex, null, false, null,
-                                "", msg.agent != null ? msg.agent : ""));
+                            agentType, description,
+                            (prompt == null || prompt.isEmpty()) ? null : prompt,
+                            (subResult == null || subResult.isEmpty()) ? null : subResult,
+                            (status == null || status.isEmpty()) ? "completed" : status,
+                            colorIndex, null, false, null,
+                            "", msg.agent != null ? msg.agent : ""));
                     }
                     case "status" -> {
                         String icon = part.has("icon") ? part.get("icon").getAsString() : "ℹ";
@@ -297,12 +302,12 @@ public final class EntryDataConverter {
         @NotNull
         SessionMessage build() {
             return new SessionMessage(
-                    UUID.randomUUID().toString(),
-                    role,
-                    new ArrayList<>(parts),
-                    createdAt,
-                    agent,
-                    null);
+                UUID.randomUUID().toString(),
+                role,
+                new ArrayList<>(parts),
+                createdAt,
+                agent,
+                null);
         }
     }
 }
