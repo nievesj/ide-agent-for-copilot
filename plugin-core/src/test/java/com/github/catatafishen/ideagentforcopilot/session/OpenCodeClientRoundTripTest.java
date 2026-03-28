@@ -338,18 +338,19 @@ class OpenCodeClientRoundTripTest {
                  WHERE m.session_id = ?""")) {
             ps.setString(1, sessionId);
             try (var rs = ps.executeQuery()) {
-                boolean foundText = false;
+                boolean foundSubagentText = false;
                 while (rs.next()) {
                     JsonObject partData = GSON.fromJson(rs.getString("data"), JsonObject.class);
                     String type = partData.get("type").getAsString();
                     assertFalse("subagent".equals(type), "subagent type must not be written to DB");
                     if ("text".equals(type)) {
                         String text = partData.get("text").getAsString();
-                        assertTrue(text.contains("Exploring codebase"), "text should contain description");
-                        foundText = true;
+                        if (text.contains("Exploring codebase")) {
+                            foundSubagentText = true;
+                        }
                     }
                 }
-                assertTrue(foundText, "Should have converted subagent to text part");
+                assertTrue(foundSubagentText, "Should have converted subagent to text part");
             }
         }
     }
@@ -459,6 +460,104 @@ class OpenCodeClientRoundTripTest {
     }
 
     // ── Helper methods ──────────────────────────────────────────────
+
+    /**
+     * Verifies that exported message data includes all fields required by OpenCode's Zod schema.
+     * User messages need: role, time.created, agent, model.providerID, model.modelID.
+     * Assistant messages need: role, time.created, time.completed, parentID, modelID, providerID,
+     * mode, agent, path.cwd, path.root, cost, tokens.input, tokens.output, tokens.reasoning,
+     * tokens.cache.read, tokens.cache.write.
+     */
+    @Test
+    void exportIncludesRequiredZodFields() throws SQLException {
+        List<SessionMessage> messages = List.of(
+            userMessage("Hello"),
+            assistantMessage("World")
+        );
+
+        String sessionId = OpenCodeClientExporter.exportSession(messages, dbPath, PROJECT_DIR);
+        assertNotNull(sessionId);
+
+        try (Connection conn = connect(dbPath);
+             var ps = conn.prepareStatement(
+                 "SELECT data FROM message WHERE session_id = ? ORDER BY time_created")) {
+            ps.setString(1, sessionId);
+            try (var rs = ps.executeQuery()) {
+                // User message
+                assertTrue(rs.next(), "Should have user message row");
+                JsonObject userData = GSON.fromJson(rs.getString("data"), JsonObject.class);
+                assertEquals("user", userData.get("role").getAsString());
+                assertTrue(userData.has("time"), "user.time is required");
+                assertTrue(userData.getAsJsonObject("time").has("created"), "user.time.created is required");
+                assertTrue(userData.has("agent"), "user.agent is required by Zod");
+                assertTrue(userData.has("model"), "user.model is required by Zod");
+                assertTrue(userData.getAsJsonObject("model").has("providerID"),
+                    "user.model.providerID is required");
+                assertTrue(userData.getAsJsonObject("model").has("modelID"),
+                    "user.model.modelID is required");
+
+                // Assistant message
+                assertTrue(rs.next(), "Should have assistant message row");
+                JsonObject assistData = GSON.fromJson(rs.getString("data"), JsonObject.class);
+                assertEquals("assistant", assistData.get("role").getAsString());
+                assertTrue(assistData.has("parentID"), "assistant.parentID is required by Zod");
+                assertTrue(assistData.has("modelID"), "assistant.modelID is required by Zod");
+                assertTrue(assistData.has("providerID"), "assistant.providerID is required by Zod");
+                assertTrue(assistData.has("mode"), "assistant.mode is required by Zod");
+                assertTrue(assistData.has("agent"), "assistant.agent is required by Zod");
+                assertTrue(assistData.has("path"), "assistant.path is required by Zod");
+                JsonObject path = assistData.getAsJsonObject("path");
+                assertTrue(path.has("cwd"), "assistant.path.cwd is required");
+                assertTrue(path.has("root"), "assistant.path.root is required");
+                assertTrue(assistData.has("cost"), "assistant.cost is required by Zod");
+                assertTrue(assistData.has("tokens"), "assistant.tokens is required by Zod");
+                JsonObject tokens = assistData.getAsJsonObject("tokens");
+                assertTrue(tokens.has("input"), "tokens.input is required");
+                assertTrue(tokens.has("output"), "tokens.output is required");
+                assertTrue(tokens.has("reasoning"), "tokens.reasoning is required");
+                assertTrue(tokens.has("cache"), "tokens.cache is required");
+            }
+        }
+    }
+
+    /**
+     * Verifies that exported tool parts in completed state include all Zod-required fields:
+     * state.title, state.metadata, state.time.start, state.time.end, state.output, state.input.
+     */
+    @Test
+    void exportToolPartIncludesRequiredZodFields() throws SQLException {
+        JsonObject toolPart = toolInvocationPart(
+            "call-1", "read_file", "{\"path\":\"test.txt\"}", "file content");
+        SessionMessage assistant = new SessionMessage(
+            "a1", "assistant", List.of(toolPart), System.currentTimeMillis(), null, null);
+
+        String sessionId = OpenCodeClientExporter.exportSession(
+            List.of(userMessage("Q"), assistant), dbPath, PROJECT_DIR);
+        assertNotNull(sessionId);
+
+        try (Connection conn = connect(dbPath);
+             var ps = conn.prepareStatement("""
+                 SELECT p.data FROM part p
+                 JOIN message m ON p.message_id = m.id
+                 WHERE m.session_id = ? AND json_extract(p.data, '$.type') = 'tool'""")) {
+            ps.setString(1, sessionId);
+            try (var rs = ps.executeQuery()) {
+                assertTrue(rs.next(), "Should have a tool part");
+                JsonObject partData = GSON.fromJson(rs.getString("data"), JsonObject.class);
+                JsonObject state = partData.getAsJsonObject("state");
+                assertNotNull(state, "tool part must have state");
+                assertEquals("completed", state.get("status").getAsString());
+                assertTrue(state.has("input"), "state.input is required by Zod");
+                assertTrue(state.has("output"), "state.output is required by Zod");
+                assertTrue(state.has("title"), "state.title is required by Zod (ToolStateCompleted)");
+                assertTrue(state.has("metadata"), "state.metadata is required by Zod (ToolStateCompleted)");
+                assertTrue(state.has("time"), "state.time is required by Zod");
+                JsonObject time = state.getAsJsonObject("time");
+                assertTrue(time.has("start"), "state.time.start is required");
+                assertTrue(time.has("end"), "state.time.end is required");
+            }
+        }
+    }
 
     private static SessionMessage userMessage(String text) {
         JsonObject part = new JsonObject();

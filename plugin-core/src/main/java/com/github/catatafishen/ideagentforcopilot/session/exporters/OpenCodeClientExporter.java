@@ -116,9 +116,15 @@ public final class OpenCodeClientExporter {
 
             insertSession(conn, sessionId, projectId, projectDir, now);
 
+            // Track the last user message ID so assistant messages can reference it
+            // via the required parentID field in OpenCode's Zod schema.
+            String lastUserMessageId = null;
             for (SessionMessage msg : messages) {
                 if ("separator".equals(msg.role)) continue;
-                insertMessage(conn, sessionId, msg, now);
+                String messageId = insertMessage(conn, sessionId, msg, now, projectDir, lastUserMessageId);
+                if ("user".equals(msg.role)) {
+                    lastUserMessageId = messageId;
+                }
             }
 
             LOG.info("Exported v2 session to OpenCode: " + sessionId
@@ -299,16 +305,24 @@ public final class OpenCodeClientExporter {
 
     // ── Message insertion ─────────────────────────────────────────────────────
 
-    private static void insertMessage(
+    /**
+     * Inserts a message and its parts into the database.
+     *
+     * @return the generated message ID (for parentID linking)
+     */
+    @NotNull
+    private static String insertMessage(
         @NotNull Connection conn,
         @NotNull String sessionId,
         @NotNull SessionMessage msg,
-        long baseTime) throws SQLException {
+        long baseTime,
+        @NotNull String projectDir,
+        @Nullable String parentMessageId) throws SQLException {
 
         String messageId = generateId("msg");
         long timeCreated = msg.createdAt > 0 ? msg.createdAt : baseTime;
 
-        JsonObject msgData = buildMessageData(msg, timeCreated);
+        JsonObject msgData = buildMessageData(msg, timeCreated, projectDir, parentMessageId);
 
         try (PreparedStatement ps = conn.prepareStatement(
             "INSERT INTO message (id, session_id, time_created, time_updated, data) "
@@ -324,33 +338,75 @@ public final class OpenCodeClientExporter {
         for (JsonObject part : msg.parts) {
             insertPart(conn, messageId, sessionId, part, timeCreated);
         }
+
+        return messageId;
     }
 
     /**
-     * Builds the message-level {@code data} JSON matching OpenCode's schema.
+     * Builds the message-level {@code data} JSON matching OpenCode's Zod schema.
+     *
+     * <p><b>Required fields (non-optional in Zod):</b></p>
+     * <ul>
+     *   <li>User: {@code role, time.created, agent, model.providerID, model.modelID}</li>
+     *   <li>Assistant: {@code role, time.created, parentID, modelID, providerID, mode, agent,
+     *       path.cwd, path.root, cost, tokens.input, tokens.output, tokens.reasoning,
+     *       tokens.cache.read, tokens.cache.write}</li>
+     * </ul>
      */
     @NotNull
-    private static JsonObject buildMessageData(@NotNull SessionMessage msg, long timeCreated) {
+    private static JsonObject buildMessageData(
+        @NotNull SessionMessage msg,
+        long timeCreated,
+        @NotNull String projectDir,
+        @Nullable String parentMessageId) {
+
         JsonObject data = new JsonObject();
         data.addProperty("role", msg.role);
 
-        JsonObject time = new JsonObject();
-        time.addProperty("created", timeCreated);
-        if ("assistant".equals(msg.role)) {
-            time.addProperty("completed", timeCreated);
-        }
-        data.add("time", time);
+        String modelId = (msg.model != null && !msg.model.isEmpty()) ? msg.model : "imported";
+        String providerId = "imported";
+        String agentName = (msg.agent != null && !msg.agent.isEmpty()) ? msg.agent : "build";
 
-        if (msg.model != null && !msg.model.isEmpty()) {
-            if ("assistant".equals(msg.role)) {
-                data.addProperty("modelID", msg.model);
-                data.addProperty("providerID", "imported");
-            } else {
-                JsonObject model = new JsonObject();
-                model.addProperty("modelID", msg.model);
-                model.addProperty("providerID", "imported");
-                data.add("model", model);
-            }
+        if ("user".equals(msg.role)) {
+            JsonObject time = new JsonObject();
+            time.addProperty("created", timeCreated);
+            data.add("time", time);
+
+            data.addProperty("agent", agentName);
+
+            JsonObject model = new JsonObject();
+            model.addProperty("providerID", providerId);
+            model.addProperty("modelID", modelId);
+            data.add("model", model);
+        } else {
+            // assistant
+            JsonObject time = new JsonObject();
+            time.addProperty("created", timeCreated);
+            time.addProperty("completed", timeCreated);
+            data.add("time", time);
+
+            data.addProperty("parentID", parentMessageId != null ? parentMessageId : "");
+            data.addProperty("modelID", modelId);
+            data.addProperty("providerID", providerId);
+            data.addProperty("mode", "build");
+            data.addProperty("agent", agentName);
+
+            JsonObject path = new JsonObject();
+            path.addProperty("cwd", projectDir);
+            path.addProperty("root", projectDir);
+            data.add("path", path);
+
+            data.addProperty("cost", 0);
+
+            JsonObject cache = new JsonObject();
+            cache.addProperty("read", 0);
+            cache.addProperty("write", 0);
+            JsonObject tokens = new JsonObject();
+            tokens.addProperty("input", 0);
+            tokens.addProperty("output", 0);
+            tokens.addProperty("reasoning", 0);
+            tokens.add("cache", cache);
+            data.add("tokens", tokens);
         }
 
         return data;
@@ -387,17 +443,17 @@ public final class OpenCodeClientExporter {
      *
      * <p>V2 tool invocations ({@code tool-invocation}) are converted to OpenCode's
      * {@code tool} type with the structure: {@code {"type":"tool","callID":"...","tool":"...",
-     * "state":{"status":"completed","input":{...},"output":"...","time":{"start":T,"end":T}}}}.</p>
+     * "state":{"status":"completed","input":{...},"output":"...","title":"","metadata":{},
+     * "time":{"start":T,"end":T}}}}.</p>
      *
      * <p>V2-specific part types that OpenCode doesn't recognise (e.g. {@code subagent},
      * {@code status}, {@code file}) are either converted to a text summary or skipped.
      * Writing an unknown {@code type} value to OpenCode's DB causes a Zod discriminated-union
      * validation failure when OpenCode reads the session back, breaking resume entirely.</p>
      *
-     * <p>OpenCode always writes {@code time} on reasoning parts it owns. Tool parts need
-     * {@code state.time} (with {@code start}/{@code end}) because {@code toModelMessages}
-     * accesses {@code part.state.time.compacted} to detect compacted entries — if
-     * {@code state.time} is absent the property read throws a TypeError.</p>
+     * <p><b>Zod required fields for ToolStateCompleted:</b>
+     * {@code status, input, output, title, metadata, time.start, time.end}.
+     * {@code attachments} is optional.</p>
      *
      * @return the converted part, or {@code null} if the part should be skipped
      */
@@ -412,8 +468,6 @@ public final class OpenCodeClientExporter {
                 result.addProperty("type", "text");
                 String text = JsonlUtil.getStr(v2Part, "text");
                 result.addProperty("text", text != null ? text : "");
-                // Real OpenCode text parts do NOT carry a top-level time object.
-                // Only reasoning parts have time. Zod validation may reject extra fields.
             }
             case "reasoning" -> {
                 result.addProperty("type", "reasoning");
@@ -450,16 +504,27 @@ public final class OpenCodeClientExporter {
                         inputObj.addProperty("_raw", argsStr);
                         stateObj.add("input", inputObj);
                     }
-                }
-                if (resultStr != null) {
-                    stateObj.addProperty("output", resultStr);
+                } else {
+                    stateObj.add("input", new JsonObject());
                 }
 
-                // OpenCode always writes state.time; toModelMessages accesses
-                // part.state.time.compacted which throws if state.time is absent.
+                if ("result".equals(state)) {
+                    // ToolStateCompleted requires: output, title, metadata, time
+                    stateObj.addProperty("output", resultStr != null ? resultStr : "");
+                    stateObj.addProperty("title", "");
+                    stateObj.add("metadata", new JsonObject());
+                } else {
+                    // ToolStateRunning requires: input, time.start
+                    if (resultStr != null) {
+                        stateObj.addProperty("output", resultStr);
+                    }
+                }
+
                 JsonObject time = new JsonObject();
                 time.addProperty("start", timeMs);
-                time.addProperty("end", timeMs);
+                if ("result".equals(state)) {
+                    time.addProperty("end", timeMs);
+                }
                 stateObj.add("time", time);
 
                 result.add("state", stateObj);
@@ -480,12 +545,12 @@ public final class OpenCodeClientExporter {
                 result.addProperty("type", "text");
                 result.addProperty("text", sb.toString());
             }
-            default ->
+            default -> {
                 // Unknown v2 part type (e.g. "status", "file"). Writing it as-is would cause
                 // Zod schema validation failure in OpenCode because its discriminated union on
                 // "type" doesn't include these values. Skip the part entirely.
-                // ignore
-                result = null;
+                return null;
+            }
         }
         return result;
     }
