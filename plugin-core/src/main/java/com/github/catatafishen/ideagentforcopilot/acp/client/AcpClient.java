@@ -639,10 +639,14 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     /**
-     * Hook called when a non-allowed built-in tool is auto-approved. Subclasses may
+     * Hook called when a non-allowed built-in tool is approved. Subclasses may
      * override to track tool misuse for corrective guidance. Default: no-op.
+     *
+     * @param toolId       the tool that was approved
+     * @param userApproved {@code true} if the user explicitly approved via a prompt;
+     *                     {@code false} if the plugin auto-approved without asking
      */
-    protected void onBuiltInToolApproved(String toolId) {
+    protected void onBuiltInToolApproved(String toolId, boolean userApproved) {
         // no-op — subclasses like CopilotClient may track for reprimand
     }
 
@@ -1450,7 +1454,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             } else {
                 LOG.warn(displayName() + ": auto-approving built-in tool '" + toolId
                     + "' — should use MCP tools instead");
-                onBuiltInToolApproved(toolId);
+                onBuiltInToolApproved(toolId, false);
             }
             chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
             if (chosenOption == null) {

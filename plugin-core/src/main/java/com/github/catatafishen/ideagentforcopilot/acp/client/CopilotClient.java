@@ -508,8 +508,10 @@ public final class CopilotClient extends AcpClient {
     // ─── Built-in tool reprimand (Copilot-specific workaround for bug #556) ───
 
     @Override
-    protected void onBuiltInToolApproved(String toolId) {
-        misusedBuiltInTools.add(toolId);
+    protected void onBuiltInToolApproved(String toolId, boolean userApproved) {
+        if (!userApproved) {
+            misusedBuiltInTools.add(toolId);
+        }
     }
 
     @Override
