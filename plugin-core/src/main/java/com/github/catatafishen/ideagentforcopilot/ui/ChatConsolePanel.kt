@@ -346,7 +346,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             currentTextData = EntryData.Text(StringBuilder(), timestamp(), currentAgent).also { entries.add(it) }
         }
         currentTextData!!.raw.append(text)
-        executeJs("ChatController.appendAgentText('$currentTurnId','main','${escJs(text)}')")
+        val ts = displayTs(currentTextData!!.timestamp)
+        executeJs("ChatController.appendAgentText('$currentTurnId','main','${escJs(text)}','$ts')")
         fallbackArea?.let { ApplicationManager.getApplication().invokeLater { it.append(text) } }
     }
 
