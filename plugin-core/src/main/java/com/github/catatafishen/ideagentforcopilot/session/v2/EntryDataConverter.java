@@ -180,9 +180,6 @@ public final class EntryDataConverter {
 
     // ── SessionMessage → EntryData ────────────────────────────────────────────
 
-    /**
-     * Reverses the conversion: reconstructs a list of {@link EntryData} from stored messages.
-     */
     @NotNull
     public static List<EntryData> fromMessages(@NotNull List<SessionMessage> messages) {
         List<EntryData> result = new ArrayList<>();
@@ -194,6 +191,9 @@ public final class EntryDataConverter {
                     msg.agent != null ? msg.agent : ""));
                 continue;
             }
+
+            int entriesBefore = result.size();
+            boolean hasTextOrThinking = false;
 
             for (JsonObject part : msg.parts) {
                 String type = part.has("type") ? part.get("type").getAsString() : "";
@@ -208,6 +208,7 @@ public final class EntryDataConverter {
                                 new StringBuilder(text),
                                 "",
                                 msg.agent != null ? msg.agent : ""));
+                            hasTextOrThinking = true;
                         }
                     }
                     case "reasoning" -> {
@@ -216,6 +217,7 @@ public final class EntryDataConverter {
                             new StringBuilder(text),
                             "",
                             msg.agent != null ? msg.agent : ""));
+                        hasTextOrThinking = true;
                     }
                     case "tool-invocation" -> {
                         JsonObject inv = part.has("toolInvocation") ? part.getAsJsonObject("toolInvocation") : new JsonObject();
@@ -260,6 +262,16 @@ public final class EntryDataConverter {
                         // Unknown part type — skip for forward-compat
                     }
                 }
+            }
+
+            // When an assistant message has tool/subagent entries but no text or thinking,
+            // the renderer groups all entries into a single segment with no message bubble.
+            // Insert a trailing empty Text so appendAgentTurn() produces a proper message block.
+            if ("assistant".equals(msg.role) && !hasTextOrThinking && result.size() > entriesBefore) {
+                result.add(new EntryData.Text(
+                    new StringBuilder(),
+                    "",
+                    msg.agent != null ? msg.agent : ""));
             }
         }
 

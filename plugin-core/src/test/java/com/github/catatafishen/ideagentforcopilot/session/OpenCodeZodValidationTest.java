@@ -171,6 +171,59 @@ class OpenCodeZodValidationTest {
     // ── Helpers ──────────────────────────────────────────────────────────
 
     /**
+     * Verifies that tool invocations with empty args (common when restoring tool calls
+     * from an external agent like OpenCode) produce valid state.input objects rather than
+     * being dropped by GSON serialization.
+     * <p>
+     * Root cause: {@code JsonParser.parseString("")} returns {@code JsonNull} which GSON's
+     * default serializer drops, leaving {@code state.input} absent and failing Zod validation.
+     */
+    @Test
+    void exportedToolPartWithEmptyArgsPassesZodValidation() throws Exception {
+        List<SessionMessage> messages = List.of(
+            userMessage("test empty args"),
+            new SessionMessage("a1", "assistant",
+                List.of(toolInvocationPart("call-1", "read_file", "", "file content")),
+                System.currentTimeMillis(), null, null)
+        );
+
+        Path dbPath = tempDir.resolve("opencode.db");
+        String sessionId = OpenCodeClientExporter.exportSession(messages, dbPath, PROJECT_DIR);
+        assertNotNull(sessionId);
+
+        JsonObject validatorInput = extractValidatorInput(dbPath, sessionId);
+        String result = runValidator(validatorInput);
+        JsonObject resultObj = JsonParser.parseString(result).getAsJsonObject();
+
+        assertTrue(resultObj.get("valid").getAsBoolean(),
+            "Tool part with empty args should pass Zod validation:\n" + result);
+    }
+
+    /**
+     * Verifies that tool invocations with null args produce valid state.input objects.
+     */
+    @Test
+    void exportedToolPartWithNullArgsPassesZodValidation() throws Exception {
+        List<SessionMessage> messages = List.of(
+            userMessage("test null args"),
+            new SessionMessage("a1", "assistant",
+                List.of(toolInvocationPart("call-1", "search_text", null, "results")),
+                System.currentTimeMillis(), null, null)
+        );
+
+        Path dbPath = tempDir.resolve("opencode.db");
+        String sessionId = OpenCodeClientExporter.exportSession(messages, dbPath, PROJECT_DIR);
+        assertNotNull(sessionId);
+
+        JsonObject validatorInput = extractValidatorInput(dbPath, sessionId);
+        String result = runValidator(validatorInput);
+        JsonObject resultObj = JsonParser.parseString(result).getAsJsonObject();
+
+        assertTrue(resultObj.get("valid").getAsBoolean(),
+            "Tool part with null args should pass Zod validation:\n" + result);
+    }
+
+    /**
      * Verifies that consecutive assistant messages (e.g. main response + sub-agent result
      * + continuation) are merged into a single assistant message during export, maintaining
      * the linear user→assistant chain that OpenCode expects.

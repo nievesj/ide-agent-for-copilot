@@ -4,6 +4,7 @@ import com.github.catatafishen.ideagentforcopilot.session.importers.JsonlUtil;
 import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
@@ -526,26 +527,6 @@ public final class OpenCodeClientExporter {
         }
     }
 
-    /**
-     * Converts a v2 part to OpenCode's native part format.
-     *
-     * <p>V2 tool invocations ({@code tool-invocation}) are converted to OpenCode's
-     * {@code tool} type with the structure: {@code {"type":"tool","callID":"...","tool":"...",
-     * "state":{"status":"completed","input":{...},"output":"...","title":"","metadata":{},
-     * "time":{"start":T,"end":T}}}}.</p>
-     *
-     * <p>V2-specific part types that OpenCode doesn't recognise (e.g. {@code subagent},
-     * {@code status}, {@code file}) are either converted to a text summary or skipped.
-     * Writing an unknown {@code type} value to OpenCode's DB causes a Zod discriminated-union
-     * validation failure when OpenCode reads the session back, breaking resume entirely.</p>
-     *
-     * <p><b>Zod required fields for ToolStateCompleted:</b>
-     * {@code status, input, output, title, metadata, time.start, time.end}.
-     * {@code attachments} is optional.</p>
-     *
-     * @return the converted part, or {@code null} if the part should be skipped
-     */
-    @Nullable
     private static JsonObject convertV2PartToOpenCodePart(@NotNull JsonObject v2Part, long timeMs) {
         String type = JsonlUtil.getStr(v2Part, "type");
         if (type == null) return null;
@@ -584,13 +565,19 @@ public final class OpenCodeClientExporter {
                 stateObj.addProperty("status",
                     "result".equals(state) ? "completed" : "running");
 
-                if (argsStr != null) {
+                // OpenCode Zod schema requires input: z.record(z.string(), z.any()) — must be a JSON object.
+                // JsonParser.parseString("") returns JsonNull which GSON drops during serialization,
+                // so we must explicitly handle empty/blank args and non-object parse results.
+                if (argsStr != null && !argsStr.isBlank()) {
                     try {
-                        stateObj.add("input", com.google.gson.JsonParser.parseString(argsStr));
+                        JsonElement parsed = com.google.gson.JsonParser.parseString(argsStr);
+                        if (parsed.isJsonObject()) {
+                            stateObj.add("input", parsed);
+                        } else {
+                            stateObj.add("input", wrapRawInput(argsStr));
+                        }
                     } catch (Exception e) {
-                        JsonObject inputObj = new JsonObject();
-                        inputObj.addProperty("_raw", argsStr);
-                        stateObj.add("input", inputObj);
+                        stateObj.add("input", wrapRawInput(argsStr));
                     }
                 } else {
                     stateObj.add("input", new JsonObject());
@@ -641,5 +628,16 @@ public final class OpenCodeClientExporter {
             }
         }
         return result;
+    }
+
+    /**
+     * Wraps a non-object args string into a JSON object with a {@code _raw} key,
+     * ensuring the Zod {@code z.record(z.string(), z.any())} requirement is met.
+     */
+    @NotNull
+    private static JsonObject wrapRawInput(@NotNull String argsStr) {
+        JsonObject inputObj = new JsonObject();
+        inputObj.addProperty("_raw", argsStr);
+        return inputObj;
     }
 }

@@ -811,4 +811,43 @@ the separate resume method (Copilot, Kiro, Junie).
 **Related**: [anomalyco/opencode#8931](https://github.com/anomalyco/opencode/issues/8931),
 [xsa-dev/anomalyco-opencode#1](https://github.com/xsa-dev/anomalyco-opencode/pull/1)
 
+### Bug 27: OpenCode Zod `state.input` validation failure on exported tool parts
+
+**Symptom**: After restoring a session to OpenCode, the IDE log shows:
+```
+WARN - Failed to parse JSON-RPC message: schema validation failure
+com.google.gson.JsonSyntaxException: MalformedJsonException
+```
+OpenCode prints `schema validation failure` followed by a Bun stack trace to **stdout**
+(not stderr), which the `JsonRpcTransport` tries to parse as JSON.
+
+**Root cause**: `JsonParser.parseString("")` returns `JsonNull.INSTANCE` in GSON 2.13.1
+(does **not** throw). GSON's default serializer then drops `JsonNull` members from
+`JsonObject`, so the exported tool parts have no `state.input` field at all. OpenCode's Zod
+schema requires `input: z.record(z.string(), z.any())` for both `ToolStateCompleted` and
+`ToolStateRunning` — a missing field fails validation.
+
+This affected 29 out of 178 tool parts in a real exported session. All 29 had `args: ""`
+(empty string) from tool calls where the original arguments were not captured.
+
+**Fix**: In `OpenCodeClientExporter.convertV2PartToOpenCodePart()`, explicitly check for
+blank `argsStr` (treat same as null → empty `JsonObject`), and verify the parsed result is
+actually a `JsonObject` before adding it. Non-object parse results (arrays, primitives) are
+wrapped in `{"_raw": argsStr}`. Added `wrapRawInput()` helper.
+
+### Bug 28: Tool-only assistant messages render as single empty message
+
+**Symptom**: When restoring a session that included an OpenCode assistant turn with only tool
+calls (no text), the UI rendered all tool call chips in a single message block with no text
+bubble — appearing as one large empty message.
+
+**Root cause**: `EntryDataConverter.fromMessages()` produced `EntryData.ToolCall` entries for
+each tool invocation but no `EntryData.Text` entry when the assistant message had zero `text`
+parts. The renderer (`ChatConsolePanel.appendAgentTurn()`) relies on `Text`/`Thinking` entries
+to flush tool-call segments into separate `<chat-message>` blocks. Without any, all tool calls
+accumulated in a single segment.
+
+**Fix**: In `fromMessages()`, after processing all parts of an assistant message, if the
+message produced tool/subagent entries but zero `Text`/`Thinking` entries, append a synthetic
+empty `EntryData.Text`. This gives the renderer a proper message boundary and text bubble.
 

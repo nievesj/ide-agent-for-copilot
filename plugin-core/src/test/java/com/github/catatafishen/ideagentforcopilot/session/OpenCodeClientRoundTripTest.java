@@ -2,7 +2,9 @@ package com.github.catatafishen.ideagentforcopilot.session;
 
 import com.github.catatafishen.ideagentforcopilot.session.exporters.OpenCodeClientExporter;
 import com.github.catatafishen.ideagentforcopilot.session.importers.OpenCodeClientImporter;
+import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataConverter;
 import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
+import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
@@ -22,6 +24,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -557,6 +560,70 @@ class OpenCodeClientRoundTripTest {
                 assertTrue(time.has("end"), "state.time.end is required");
             }
         }
+    }
+
+    /**
+     * Verifies that tool parts with empty args still have state.input after serialization.
+     * <p>
+     * Root cause: {@code JsonParser.parseString("")} returns {@code JsonNull},
+     * and GSON's default serializer drops null members — leaving {@code state.input} absent.
+     */
+    @Test
+    void exportToolPartWithEmptyArgsHasStateInput() throws SQLException {
+        JsonObject toolPart = toolInvocationPart("call-1", "read_file", "", "result");
+        SessionMessage assistant = new SessionMessage(
+            "a1", "assistant", List.of(toolPart), System.currentTimeMillis(), null, null);
+
+        String sessionId = OpenCodeClientExporter.exportSession(
+            List.of(userMessage("Q"), assistant), dbPath, PROJECT_DIR);
+        assertNotNull(sessionId);
+
+        try (Connection conn = connect(dbPath);
+             var ps = conn.prepareStatement("""
+                 SELECT p.data FROM part p
+                 JOIN message m ON p.message_id = m.id
+                 WHERE m.session_id = ? AND json_extract(p.data, '$.type') = 'tool'""")) {
+            ps.setString(1, sessionId);
+            try (var rs = ps.executeQuery()) {
+                assertTrue(rs.next(), "Should have a tool part");
+                JsonObject partData = GSON.fromJson(rs.getString("data"), JsonObject.class);
+                JsonObject state = partData.getAsJsonObject("state");
+                assertTrue(state.has("input"),
+                    "state.input must be present even with empty args — GSON drops JsonNull members");
+                assertTrue(state.get("input").isJsonObject(),
+                    "state.input must be a JSON object (Zod z.record requirement)");
+            }
+        }
+    }
+
+    /**
+     * Verifies that fromMessages() adds a synthetic empty Text entry for assistant messages
+     * that contain only tool-invocation parts. Without this, the UI renderer groups all
+     * tool call chips into a single empty message segment with no text bubble.
+     */
+    @Test
+    void fromMessagesAddsTextEntryForToolOnlyAssistantMessages() {
+        JsonObject toolPart1 = toolInvocationPart("c1", "read_file", "", "result1");
+        JsonObject toolPart2 = toolInvocationPart("c2", "search_text", "", "result2");
+
+        List<SessionMessage> messages = List.of(
+            userMessage("Q"),
+            new SessionMessage("a1", "assistant", List.of(toolPart1, toolPart2),
+                System.currentTimeMillis(), null, null)
+        );
+
+        List<EntryData> entries = EntryDataConverter.fromMessages(messages);
+
+        // Should have: Prompt, ToolCall, ToolCall, Text (synthetic)
+        long toolCount = entries.stream().filter(e -> e instanceof EntryData.ToolCall).count();
+        long textCount = entries.stream().filter(e -> e instanceof EntryData.Text).count();
+        assertEquals(2, toolCount, "Should have 2 tool call entries");
+        assertEquals(1, textCount, "Should have 1 synthetic text entry for tool-only assistant message");
+
+        // The synthetic text should follow the tool calls
+        EntryData last = entries.getLast();
+        assertInstanceOf(EntryData.Text.class, last,
+            "Synthetic text should be the last entry in the tool-only message");
     }
 
     private static SessionMessage userMessage(String text) {
