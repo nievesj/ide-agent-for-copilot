@@ -37,7 +37,7 @@ public final class GitCommitTool extends GitTool {
         return "Commit staged changes with a message";
     }
 
-    
+
 
     @Override
     public @NotNull Kind kind() {
@@ -63,6 +63,14 @@ public final class GitCommitTool extends GitTool {
 
         if (!args.has(PARAM_MESSAGE) || args.get(PARAM_MESSAGE).getAsString().isEmpty()) {
             return "Error: 'message' parameter is required";
+        }
+
+        // Open Version Control tool window in follow mode
+        if (com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
+            com.github.catatafishen.ideagentforcopilot.psi.EdtUtil.invokeLater(() -> {
+                var tw = com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow("Version Control");
+                if (tw != null) tw.activate(null);
+            });
         }
 
         List<String> cmdArgs = new ArrayList<>();
