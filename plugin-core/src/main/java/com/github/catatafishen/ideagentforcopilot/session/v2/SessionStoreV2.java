@@ -1,14 +1,17 @@
 package com.github.catatafishen.ideagentforcopilot.session.v2;
 
 import com.github.catatafishen.ideagentforcopilot.bridge.ConversationStore;
+import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.ui.ConversationSerializer;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -18,11 +21,17 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
- * Drop-in replacement for {@link ConversationStore} that additionally writes v2 JSONL sessions.
+ * Project-level singleton that manages v2 JSONL session persistence.
+ *
+ * <p>Also writes v1 JSON via {@link ConversationStore} for backward compatibility.
  *
  * <p>Directory layout:
  * <pre>
@@ -34,13 +43,14 @@ import java.util.UUID;
  *     &lt;uuid&gt;.jsonl             ← one file per session
  * </pre>
  */
-public final class SessionStoreV2 {
+public final class SessionStoreV2 implements Disposable {
 
     private static final Logger LOG = Logger.getInstance(SessionStoreV2.class);
 
     private static final String SESSIONS_DIR = "sessions";
     private static final String SESSIONS_INDEX = "sessions-index.json";
     private static final String CURRENT_SESSION_FILE = ".current-session-id";
+    private static final String JSONL_EXT = ".jsonl";
 
     private static final String KEY_ID = "id";
     private static final String KEY_AGENT = "agent";
@@ -53,9 +63,23 @@ public final class SessionStoreV2 {
     private final ConversationStore v1Store = new ConversationStore();
 
     /**
+     * Tracks the most recent async save so that {@link #awaitPendingSave(long)} can
+     * block until the write completes before reading the v2 JSONL from disk.
+     */
+    private volatile CompletableFuture<Void> pendingSave = CompletableFuture.completedFuture(null);
+
+    /**
      * Display name of the agent currently writing sessions (e.g. "GitHub Copilot").
      */
     private volatile String currentAgent = "Unknown";
+
+    /**
+     * Returns the project-level singleton instance.
+     */
+    @NotNull
+    public static SessionStoreV2 getInstance(@NotNull Project project) {
+        return PlatformApiCompat.getService(project, SessionStoreV2.class);
+    }
 
     /**
      * Sets the display name of the agent that is currently writing sessions.
@@ -95,7 +119,7 @@ public final class SessionStoreV2 {
             long updatedAt = rec.has(KEY_UPDATED_AT) ? rec.get(KEY_UPDATED_AT).getAsLong() : 0;
             result.add(new SessionRecord(id, agent, createdAt, updatedAt));
         }
-        result.sort(java.util.Comparator.comparingLong(SessionRecord::updatedAt).reversed());
+        result.sort(Comparator.comparingLong(SessionRecord::updatedAt).reversed());
         return result;
     }
 
@@ -131,7 +155,7 @@ public final class SessionStoreV2 {
      * session ID for subsequent export steps.
      */
     public void archive(@Nullable String basePath) {
-        finaliseCurrentSession(basePath);
+        finaliseCurrentSession();
         v1Store.archive(basePath);
     }
 
@@ -160,9 +184,37 @@ public final class SessionStoreV2 {
 
     /**
      * Saves the conversation on a pooled thread (non-blocking).
+     * The resulting future is tracked so that {@link #awaitPendingSave(long)} can wait
+     * for the write to complete before reading the v2 JSONL from disk.
      */
     public void saveAsync(@Nullable String basePath, @NotNull String json) {
-        ApplicationManager.getApplication().executeOnPooledThread(() -> save(basePath, json));
+        pendingSave = CompletableFuture.runAsync(
+            () -> save(basePath, json),
+            AppExecutorUtil.getAppExecutorService());
+    }
+
+    /**
+     * Blocks until the most recent {@link #saveAsync} call completes, or until
+     * {@code timeoutMs} elapses. Safe to call when no save is pending — returns immediately.
+     *
+     * <p>Call this before reading the v2 JSONL from disk to ensure the latest conversation
+     * state has been flushed.
+     *
+     * @param timeoutMs maximum wait in milliseconds
+     */
+    public void awaitPendingSave(long timeoutMs) {
+        CompletableFuture<Void> future = pendingSave;
+        if (future.isDone()) return;
+        try {
+            future.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            LOG.warn("Timed out waiting for pending save (" + timeoutMs + " ms)");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("Interrupted waiting for pending save", e);
+        } catch (Exception e) {
+            LOG.warn("Error waiting for pending save", e);
+        }
     }
 
     /**
@@ -216,8 +268,7 @@ public final class SessionStoreV2 {
             //noinspection ResultOfMethodCallIgnored  — best-effort
             sessionsDir.mkdirs();
 
-            // Write JSONL (rewrite whole file)
-            File jsonlFile = new File(sessionsDir, sessionId + ".jsonl");
+            File jsonlFile = new File(sessionsDir, sessionId + JSONL_EXT);
             StringBuilder sb = new StringBuilder();
             for (SessionMessage msg : messages) {
                 sb.append(GSON.toJson(msg)).append('\n');
@@ -225,7 +276,6 @@ public final class SessionStoreV2 {
             Files.writeString(jsonlFile.toPath(), sb.toString(), StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 
-            // Update sessions index
             updateSessionsIndex(basePath, sessionId, sessionsDir, jsonlFile.getName());
 
         } catch (Exception e) {
@@ -304,7 +354,7 @@ public final class SessionStoreV2 {
                 newRec.addProperty("directory", basePath != null ? basePath : "");
                 newRec.addProperty(KEY_CREATED_AT, now);
                 newRec.addProperty(KEY_UPDATED_AT, now);
-                newRec.addProperty(KEY_JSONL_PATH, sessionId + ".jsonl");
+                newRec.addProperty(KEY_JSONL_PATH, sessionId + JSONL_EXT);
                 records.add(newRec);
             }
 
@@ -334,7 +384,7 @@ public final class SessionStoreV2 {
         }
         if (sessionId.isEmpty()) return null;
 
-        File jsonlFile = new File(sessionsDir, sessionId + ".jsonl");
+        File jsonlFile = new File(sessionsDir, sessionId + JSONL_EXT);
         if (!jsonlFile.exists() || jsonlFile.length() < 2) return null;
 
         try {
@@ -367,9 +417,15 @@ public final class SessionStoreV2 {
 
     // ── session finalisation ──────────────────────────────────────────────────
 
-    private void finaliseCurrentSession(@Nullable String basePath) { // basePath reserved for future session finalization logic
+    private void finaliseCurrentSession() {
         // Nothing special needed — the JSONL is already up-to-date.
         // This is a hook for future use (e.g. writing a "closed" marker).
+    }
+
+    @Override
+    public void dispose() {
+        // Await any in-flight save so it isn't lost on shutdown
+        awaitPendingSave(3_000);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

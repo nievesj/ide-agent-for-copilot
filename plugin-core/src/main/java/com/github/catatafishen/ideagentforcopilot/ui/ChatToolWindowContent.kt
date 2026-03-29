@@ -87,7 +87,7 @@ class ChatToolWindowContent(
     private var statusBanner: StatusBanner? = null
     private var inlineAuthProcess: Process? = null
 
-    private val conversationStore = SessionStoreV2()
+    private val conversationStore = SessionStoreV2.getInstance(project)
     private val conversationReplayer = ConversationReplayer()
 
     // Throttled incremental save during streaming (avoid data loss on crash)

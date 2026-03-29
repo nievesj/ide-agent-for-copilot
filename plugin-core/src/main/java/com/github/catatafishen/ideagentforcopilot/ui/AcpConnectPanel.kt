@@ -365,7 +365,7 @@ class AcpConnectPanel(
 
     private fun refreshSessionCombo() {
         sessionCombo.removeAllItems()
-        val sessionStore = SessionStoreV2()
+        val sessionStore = SessionStoreV2.getInstance(project)
         val sessions = sessionStore.listSessions(project.basePath)
 
         if (sessions.isNotEmpty()) {

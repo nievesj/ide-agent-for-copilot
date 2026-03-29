@@ -97,7 +97,6 @@ public final class SessionSwitchService implements Disposable {
     private static final String CLAUDE_RESUME_ID_FILE = "claude-resume-id.txt";
 
     private final Project project;
-    private final SessionStoreV2 sessionStore = new SessionStoreV2();
     private volatile CompletableFuture<Void> pendingExport = CompletableFuture.completedFuture(null);
 
     public SessionSwitchService(@NotNull Project project) {
@@ -176,6 +175,11 @@ public final class SessionSwitchService implements Disposable {
 
     private void doExport(@NotNull String fromProfileId, @NotNull String toProfileId) {
         String basePath = project.getBasePath();
+
+        // Wait for any in-flight saveAsync to flush the v2 JSONL to disk before we read it.
+        // Without this, the export may read stale data if the user switches agents immediately
+        // after a conversation turn completes.
+        SessionStoreV2.getInstance(project).awaitPendingSave(5_000);
 
         // Load v2 session — this is our source of truth, kept up-to-date by the plugin
         // on every conversation save. No need to re-import from the previous client's
@@ -263,7 +267,7 @@ public final class SessionSwitchService implements Disposable {
                         try {
                             List<SessionMessage> imported = AnthropicClientImporter.importFile(mostRecent);
                             if (imported.size() > currentCount) {
-                                String sessionId = sessionStore.getCurrentSessionId(basePath);
+                                String sessionId = SessionStoreV2.getInstance(project).getCurrentSessionId(basePath);
                                 writeV2Session(basePath, sessionId, imported, "Claude Code CLI");
                                 LOG.info(LOG_PRE_IMPORTED + imported.size()
                                     + " messages from Claude CLI: " + mostRecent.getFileName());
@@ -343,7 +347,7 @@ public final class SessionSwitchService implements Disposable {
 
             List<SessionMessage> imported = AnthropicClientImporter.importFile(messagesPath);
             if (imported.size() > currentCount) {
-                String sessionId = sessionStore.getCurrentSessionId(basePath);
+                String sessionId = SessionStoreV2.getInstance(project).getCurrentSessionId(basePath);
                 writeV2Session(basePath, sessionId, imported, clientName);
                 LOG.info(LOG_PRE_IMPORTED + imported.size()
                     + " messages from " + clientName + " session: " + sessionDir.getFileName());
@@ -375,7 +379,7 @@ public final class SessionSwitchService implements Disposable {
             return;
         }
 
-        String sessionId = sessionStore.getCurrentSessionId(basePath);
+        String sessionId = SessionStoreV2.getInstance(project).getCurrentSessionId(basePath);
         if (sessionId == null) return;
 
         List<SessionMessage> current = loadCurrentV2Session(basePath);
@@ -397,7 +401,7 @@ public final class SessionSwitchService implements Disposable {
             return;
         }
 
-        String sessionId = sessionStore.getCurrentSessionId(basePath);
+        String sessionId = SessionStoreV2.getInstance(project).getCurrentSessionId(basePath);
         if (sessionId == null) return;
 
         List<SessionMessage> current = loadCurrentV2Session(basePath);
@@ -427,7 +431,7 @@ public final class SessionSwitchService implements Disposable {
                         try {
                             List<SessionMessage> imported = CopilotClientImporter.importFile(eventsFile);
                             if (imported.size() > currentCount) {
-                                String sessionId = sessionStore.getCurrentSessionId(basePath);
+                                String sessionId = SessionStoreV2.getInstance(project).getCurrentSessionId(basePath);
                                 writeV2Session(basePath, sessionId, imported, "GitHub Copilot");
                                 LOG.info(LOG_PRE_IMPORTED + imported.size()
                                     + " messages from Copilot CLI: " + eventsFile);
@@ -785,7 +789,7 @@ public final class SessionSwitchService implements Disposable {
             Files.writeString(jsonlFile.toPath(), sb.toString(), StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 
-            sessionStore.updateSessionAgent(basePath, sessionId, agentName);
+            SessionStoreV2.getInstance(project).updateSessionAgent(basePath, sessionId, agentName);
         } catch (IOException e) {
             LOG.warn("Failed to write v2 session for sessionId=" + sessionId, e);
         }
@@ -800,7 +804,7 @@ public final class SessionSwitchService implements Disposable {
     @Nullable
     private List<SessionMessage> loadCurrentV2Session(@Nullable String basePath) {
         try {
-            String sessionId = sessionStore.getCurrentSessionId(basePath);
+            String sessionId = SessionStoreV2.getInstance(project).getCurrentSessionId(basePath);
 
             File sessionsDir = sessionsDir(basePath);
             File jsonlFile = new File(sessionsDir, sessionId + JSONL_EXT);

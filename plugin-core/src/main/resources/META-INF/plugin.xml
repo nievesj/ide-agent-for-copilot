@@ -327,6 +327,10 @@
     <projectService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.session.SessionSwitchService"/>
 
+    <!-- Conversation persistence (v2 JSONL + v1 compat) — singleton to prevent race conditions -->
+    <projectService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.session.v2.SessionStoreV2"/>
+
     <!-- Settings: AgentBridge (root) -->
     <projectConfigurable
       parentId="tools"
