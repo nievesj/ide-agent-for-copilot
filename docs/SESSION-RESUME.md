@@ -665,22 +665,35 @@ into the `doExport()` flow. The v2 session is maintained during all conversation
 **Status**: Documented. Not causing failures. May be useful if importing sessions from
 clients that ran outside the plugin.
 
-### Current Status (2026-03-27)
+### Current Status (2026-03-29)
 
-| Route                   | Status | Notes                                         |
-|-------------------------|--------|-----------------------------------------------|
-| Copilot → Universal v2  | ✅      | CopilotClientImporter confirmed working       |
-| Claude → Universal v2   | ✅      | ClaudeClientImporter confirmed working        |
-| Codex → Universal v2    | ❓      | CodexClientImporter implemented, untested     |
-| OpenCode → Universal v2 | 🔧     | Bugs 12-18 fixed, driver fix (Bug 19) applied |
-| Junie → Universal v2    | ❓      | AnthropicClientImporter, untested             |
-| Kiro → Universal v2     | ❓      | AnthropicClientImporter, untested             |
-| Universal v2 → Copilot  | 🔧     | CWD fix (Bug 20) applied, awaiting retest     |
-| Universal v2 → Claude   | ✅      | Confirmed working                             |
-| Universal v2 → Codex    | ❓      | CodexClientExporter implemented, untested     |
-| Universal v2 → OpenCode | 🔧     | Bugs 12-19 fixed, driver fix applied          |
-| Universal v2 → Junie    | ❓      | AnthropicClientExporter, untested             |
-| Universal v2 → Kiro     | ❓      | AnthropicClientExporter, untested             |
+| Route                   | Status | Notes                                     |
+|-------------------------|--------|-------------------------------------------|
+| Copilot → Universal v2  | ✅      | CopilotClientImporter confirmed working   |
+| Claude → Universal v2   | ✅      | ClaudeClientImporter confirmed working    |
+| Codex → Universal v2    | ❓      | CodexClientImporter implemented, untested |
+| OpenCode → Universal v2 | ✅      | Confirmed working as of 2026-03-29        |
+| Junie → Universal v2    | ✅      | Confirmed working as of 2026-03-29        |
+| Kiro → Universal v2     | ✅      | Confirmed working as of 2026-03-29        |
+| Universal v2 → Copilot  | 🔧     | CWD fix (Bug 20) applied, awaiting retest |
+| Universal v2 → Claude   | ✅      | Confirmed working                         |
+| Universal v2 → Codex    | ❓      | CodexClientExporter implemented, untested |
+| Universal v2 → OpenCode | ✅      | Confirmed working as of 2026-03-29        |
+| Universal v2 → Junie    | ✅      | Confirmed working as of 2026-03-29        |
+| Universal v2 → Kiro     | ✅      | Confirmed working as of 2026-03-29        |
+
+### ✅ Working: Claude CLI, Junie, OpenCode, Kiro Session Resume (2026-03-29)
+
+Session resume is now **confirmed working** for four agents:
+
+- **Claude CLI**: ✅ Confirmed working (multiple bug fixes: empty text blocks, stop_reason, interleaved tool turns,
+  sourceToolAssistantUUID)
+- **Junie CLI**: ✅ Confirmed working (uses same Anthropic format as Claude)
+- **OpenCode**: ✅ Confirmed working (SQLite export with session/resume RPC method)
+- **Kiro**: ✅ Confirmed working (uses same Anthropic format as Claude/Junie)
+
+The session restoration was tested end-to-end — switching between these agents now preserves conversation context
+correctly.
 
 ### Bug 22: `buildCommand()` clear-after-read loses resume ID (2026-03-27)
 
@@ -893,9 +906,15 @@ history including that information.
 **Root cause**: Claude CLI sessions are a linked-list tree (each event has a `parentUuid`).
 When resuming, Claude CLI needs to know the "conversation head" — the last point in the chain
 to continue from. It determines this via a `last-prompt` entry at the end of the session file:
+
 ```json
-{"type": "last-prompt", "lastPrompt": "<last user message text>", "sessionId": "<id>"}
+{
+  "type": "last-prompt",
+  "lastPrompt": "<last user message text>",
+  "sessionId": "<id>"
+}
 ```
+
 The plugin's `ClaudeCliExporter` wrote the `queue-operation` + message events correctly, but
 omitted the `last-prompt` entry. Without it, Claude CLI created a synthetic assistant branch
 (`model: "<synthetic>"`) from the **first user message** (parentUuid = L2) instead of
@@ -903,8 +922,9 @@ continuing from the end of the conversation (L5). The actual conversation chain 
 became a dead branch, invisible to Claude's context.
 
 **Evidence** (from session `3845b593-...`):
+
 - L0-L5: correctly exported chain (L2→L3→L4→L5, including "Secret word: tangerine")
-- L6-L7: new queue-operation events added by Claude CLI on resume  
+- L6-L7: new queue-operation events added by Claude CLI on resume
 - **L8**: `{"type":"assistant", "model":"<synthetic>", "parentUuid": L2.uuid}` ← wrong branch!
 - L9-L11: user "What is the secret word?" parented to L8, NOT to L5
 - Result: Claude's context was L2→L8→L9 — missing L3→L4→L5 (the "tangerine" history)
