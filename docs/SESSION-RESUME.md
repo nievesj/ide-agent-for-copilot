@@ -814,10 +814,12 @@ the separate resume method (Copilot, Kiro, Junie).
 ### Bug 27: OpenCode Zod `state.input` validation failure on exported tool parts
 
 **Symptom**: After restoring a session to OpenCode, the IDE log shows:
+
 ```
 WARN - Failed to parse JSON-RPC message: schema validation failure
 com.google.gson.JsonSyntaxException: MalformedJsonException
 ```
+
 OpenCode prints `schema validation failure` followed by a Bun stack trace to **stdout**
 (not stderr), which the `JsonRpcTransport` tries to parse as JSON.
 
@@ -850,4 +852,33 @@ accumulated in a single segment.
 **Fix**: In `fromMessages()`, after processing all parts of an assistant message, if the
 message produced tool/subagent entries but zero `Text`/`Thinking` entries, append a synthetic
 empty `EntryData.Text`. This gives the renderer a proper message boundary and text bubble.
+
+---
+
+### ✅ OpenCode v2 Conversion: Import and Export Fixed (2026-03-29)
+
+After fixing Bugs 27 and 28, the **v2 ↔ OpenCode conversion pipeline is now working**:
+
+- Copilot → v2: Plugin imports Copilot session correctly
+- v2 → OpenCode: Plugin exports v2 session to OpenCode SQLite, OpenCode loads via `session/resume`
+- OpenCode displays the restored conversation with correct UI rendering for tool-only messages
+
+**What made it work**:
+
+1. Bug 27 fix — Handle blank/malformed `args` in `convertV2PartToOpenCodePart()`: checks for
+   blank strings and non-object parse results, ensuring `state.input` is always a valid object
+2. Bug 28 fix — Add synthetic empty `Text` entry in `fromMessages()` for tool-only assistant
+   messages, giving the UI renderer proper message boundaries
+
+**Not yet tested**: Whether the session can be resumed from OpenCode to another agent
+(OpenCode → Copilot, OpenCode → Claude). The export from v2 to OpenCode is working, but
+the reverse path (OpenCode → v2 → other agent) hasn't been verified yet.
+
+| Path               | Status | Notes                                       |
+|--------------------|--------|---------------------------------------------|
+| Copilot → v2       | ✅      | Importer confirmed working                  |
+| v2 → OpenCode      | ✅      | Exporter confirmed working as of 2026-03-29 |
+| OpenCode → v2      | ❓      | Importer implemented, untested              |
+| OpenCode → Copilot | ❓      | Requires OpenCode → v2 import to work first |
+| OpenCode → Claude  | ❓      | Requires OpenCode → v2 import to work first |
 
