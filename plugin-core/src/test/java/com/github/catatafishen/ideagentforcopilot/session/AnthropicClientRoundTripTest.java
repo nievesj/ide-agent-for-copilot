@@ -434,6 +434,74 @@ class AnthropicClientRoundTripTest {
         assertEquals(3, toolCount, "All 3 tool results should round-trip");
     }
 
+    @Test
+    void exportFiltersEmptyTextBlocksFromAssistantMessages() throws IOException {
+        JsonObject emptyTextPart = new JsonObject();
+        emptyTextPart.addProperty("type", "text");
+        emptyTextPart.addProperty("text", "");
+
+        JsonObject realTextPart = textPart("Real content");
+        JsonObject toolPart = toolInvocationPart("tc1", "read_file", "{\"path\":\"/a\"}", "data");
+
+        SessionMessage assistant = new SessionMessage(
+            "a1", "assistant", List.of(emptyTextPart, realTextPart, toolPart),
+            System.currentTimeMillis(), null, null);
+
+        Path target = tempDir.resolve("empty-text.jsonl");
+        AnthropicClientExporter.exportToFile(List.of(userMessage("Q"), assistant), target);
+
+        String content = Files.readString(target, StandardCharsets.UTF_8);
+        // The empty text block must NOT appear — Anthropic API rejects it
+        assertFalse(content.contains("\"text\":\"\""),
+            "Empty text blocks must be filtered out to avoid Anthropic API 400 errors");
+        assertTrue(content.contains("Real content"));
+        assertTrue(content.contains("\"type\":\"tool_use\""));
+    }
+
+    @Test
+    void exportFiltersEmptyTextBlocksFromUserMessages() throws IOException {
+        JsonObject emptyTextPart = new JsonObject();
+        emptyTextPart.addProperty("type", "text");
+        emptyTextPart.addProperty("text", "");
+
+        JsonObject realTextPart = textPart("User question");
+
+        SessionMessage user = new SessionMessage(
+            "u1", "user", List.of(emptyTextPart, realTextPart),
+            System.currentTimeMillis(), null, null);
+
+        Path target = tempDir.resolve("empty-user-text.jsonl");
+        AnthropicClientExporter.exportToFile(List.of(user, assistantMessage("Answer")), target);
+
+        String content = Files.readString(target, StandardCharsets.UTF_8);
+        assertFalse(content.contains("\"text\":\"\""),
+            "Empty text blocks must be filtered out from user messages too");
+        assertTrue(content.contains("User question"));
+    }
+
+    @Test
+    void exportToolOnlyAssistantMessageOmitsEmptyText() throws IOException {
+        // Simulates the EntryDataConverter bug: tool-only assistant messages get an empty
+        // EntryData.Text appended for UI rendering, which serializes as {"type":"text","text":""}
+        JsonObject emptyTextPart = new JsonObject();
+        emptyTextPart.addProperty("type", "text");
+        emptyTextPart.addProperty("text", "");
+
+        JsonObject toolPart = toolInvocationPart("tc1", "search_text", "{\"query\":\"foo\"}", "found");
+
+        SessionMessage assistant = new SessionMessage(
+            "a1", "assistant", List.of(emptyTextPart, toolPart),
+            System.currentTimeMillis(), null, null);
+
+        Path target = tempDir.resolve("tool-only.jsonl");
+        AnthropicClientExporter.exportToFile(List.of(userMessage("search"), assistant), target);
+
+        String content = Files.readString(target, StandardCharsets.UTF_8);
+        assertFalse(content.contains("\"text\":\"\""),
+            "Tool-only assistant messages must not have empty text blocks");
+        assertTrue(content.contains("\"type\":\"tool_use\""));
+    }
+
     private List<SessionMessage> importJsonl(String jsonl) throws IOException {
         Path file = tempDir.resolve("test.jsonl");
         Files.writeString(file, jsonl, StandardCharsets.UTF_8);

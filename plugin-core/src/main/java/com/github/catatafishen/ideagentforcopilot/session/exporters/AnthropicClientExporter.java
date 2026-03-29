@@ -132,10 +132,13 @@ public final class AnthropicClientExporter {
                 for (JsonObject part : msg.parts) {
                     String type = part.has("type") ? part.get("type").getAsString() : "";
                     if ("text".equals(type)) {
-                        JsonObject block = new JsonObject();
-                        block.addProperty("type", "text");
-                        block.addProperty("text", part.has("text") ? part.get("text").getAsString() : "");
-                        blocks.add(block);
+                        String text = part.has("text") ? part.get("text").getAsString() : "";
+                        if (!text.isEmpty()) {
+                            JsonObject block = new JsonObject();
+                            block.addProperty("type", "text");
+                            block.addProperty("text", text);
+                            blocks.add(block);
+                        }
                     }
                 }
                 if (!blocks.isEmpty()) {
@@ -150,14 +153,13 @@ public final class AnthropicClientExporter {
                     String type = part.has("type") ? part.get("type").getAsString() : "";
 
                     if ("text".equals(type)) {
-                        JsonObject block = new JsonObject();
-                        block.addProperty("type", "text");
-                        block.addProperty("text", part.has("text") ? part.get("text").getAsString() : "");
-                        assistantBlocks.add(block);
-
-                    } else if ("reasoning".equals(type) || "subagent".equals(type)
-                        || "status".equals(type) || "file".equals(type)) {
-                        continue;
+                        String text = part.has("text") ? part.get("text").getAsString() : "";
+                        if (!text.isEmpty()) {
+                            JsonObject block = new JsonObject();
+                            block.addProperty("type", "text");
+                            block.addProperty("text", text);
+                            assistantBlocks.add(block);
+                        }
 
                     } else if ("tool-invocation".equals(type) && part.has("toolInvocation")) {
                         JsonObject inv = part.getAsJsonObject("toolInvocation");
