@@ -68,6 +68,9 @@ public final class ClaudeCliExporter {
         var ctx = new EventContext(sessionId, cwd, cliVersion, gitBranch);
         StringBuilder sb = new StringBuilder();
         String parentUuid = null;
+        // Track the UUID of the most recent assistant message that contained tool_use blocks,
+        // so we can set sourceToolAssistantUUID on the subsequent user message.
+        String lastToolAssistantUuid = null;
 
         sb.append(queueEvent("enqueue", sessionId, sessionStart)).append('\n');
         sb.append(queueEvent("dequeue", sessionId, sessionStart)).append('\n');
@@ -77,8 +80,20 @@ public final class ClaudeCliExporter {
             Instant msgTimestamp = msg.createdAt > 0
                 ? Instant.ofEpochMilli(msg.createdAt)
                 : sessionStart;
-            sb.append(messageEvent(msg, uuid, parentUuid, ctx, msgTimestamp)).append('\n');
+
+            boolean hasToolUse = "assistant".equals(msg.role) && msg.contentBlocks.stream()
+                .anyMatch(b -> b.has("type") && "tool_use".equals(b.get("type").getAsString()));
+            boolean hasToolResult = "user".equals(msg.role) && msg.contentBlocks.stream()
+                .anyMatch(b -> b.has("type") && "tool_result".equals(b.get("type").getAsString()));
+
+            String sourceAssistantUuid = hasToolResult ? lastToolAssistantUuid : null;
+            sb.append(messageEvent(msg, uuid, parentUuid, sourceAssistantUuid, ctx, msgTimestamp)).append('\n');
             parentUuid = uuid;
+            if (hasToolUse) {
+                lastToolAssistantUuid = uuid;
+            } else if (hasToolResult) {
+                lastToolAssistantUuid = null; // reset after tool results are consumed
+            }
         }
 
         // Append last-prompt so Claude CLI can identify the conversation head for resume.
@@ -227,6 +242,7 @@ public final class ClaudeCliExporter {
         @NotNull AnthropicMessage msg,
         @NotNull String uuid,
         @Nullable String parentUuid,
+        @Nullable String sourceToolAssistantUuid,
         @NotNull EventContext ctx,
         @NotNull Instant timestamp) {
 
@@ -238,6 +254,12 @@ public final class ClaudeCliExporter {
             event.addProperty("permissionMode", "bypassPermissions");
             event.addProperty("userType", "external");
             event.addProperty("entrypoint", "sdk-cli");
+            // sourceToolAssistantUUID links tool_result blocks back to the assistant that
+            // issued the corresponding tool_use.  Claude CLI uses this for local validation
+            // of tool-use concurrency before calling the Anthropic API.
+            if (sourceToolAssistantUuid != null) {
+                event.addProperty("sourceToolAssistantUUID", sourceToolAssistantUuid);
+            }
         } else {
             event.addProperty("type", "assistant");
             event.addProperty("requestId", UUID.randomUUID().toString());
