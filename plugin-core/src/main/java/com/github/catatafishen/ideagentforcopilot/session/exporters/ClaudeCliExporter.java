@@ -34,7 +34,7 @@ import java.util.UUID;
 public final class ClaudeCliExporter {
 
     private static final Logger LOG = Logger.getInstance(ClaudeCliExporter.class);
-    private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
+    private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().serializeNulls().create();
     private static final String FIELD_SESSION_ID = "sessionId";
     private static final String FIELD_VERSION = "version";
 
@@ -250,7 +250,8 @@ public final class ClaudeCliExporter {
 
         // Root node must have "parentUuid": null explicitly — the CLI uses this to
         // identify the conversation root when building the message tree for --resume.
-        // Using JsonNull.INSTANCE because Gson's add(key, null) silently drops the key.
+        // Requires serializeNulls() on the Gson instance; without it, JsonNull entries
+        // are silently dropped and the CLI branches from the wrong message.
         if (parentUuid != null) {
             event.addProperty("parentUuid", parentUuid);
         } else {
