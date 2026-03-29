@@ -5,6 +5,7 @@ import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
@@ -15,7 +16,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.FileTime;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,12 +36,14 @@ public final class ClaudeCliExporter {
     private static final Logger LOG = Logger.getInstance(ClaudeCliExporter.class);
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
     private static final String FIELD_SESSION_ID = "sessionId";
+    private static final String FIELD_VERSION = "version";
 
     /**
-     * Version string used in exported events. Must match a real Claude CLI version string —
-     * Claude CLI validates this when loading sessions for {@code --resume}.
+     * Fallback version used in exported events when the real CLI version cannot be
+     * detected from existing native session files.  Must be a version the CLI
+     * recognises when loading sessions for {@code --resume}.
      */
-    private static final String CLAUDE_CLI_VERSION = "1.0.0";
+    private static final String CLAUDE_CLI_VERSION_FALLBACK = "2.1.78";
 
     private ClaudeCliExporter() {
     }
@@ -50,8 +55,10 @@ public final class ClaudeCliExporter {
      * resuming via {@code --resume}. Applying a budget caused aggressive trimming that
      * dropped important conversation turns in favour of tool-heavy recent ones.</p>
      *
-     * @param sessionId the UUID that identifies this Claude session
-     * @param cwd       the project working directory
+     * @param messages   the conversation messages to export
+     * @param targetPath path to write the JSONL file
+     * @param sessionId  the UUID that identifies this Claude session
+     * @param cwd        the project working directory
      */
     public static void exportToFile(
         @NotNull List<SessionMessage> messages,
@@ -62,28 +69,29 @@ public final class ClaudeCliExporter {
         List<AnthropicMessage> anthropicMessages = AnthropicClientExporter.toAnthropicMessages(messages);
         anthropicMessages = AnthropicClientExporter.ensureUserFirst(anthropicMessages);
 
+        String cliVersion = detectCliVersion(targetPath.getParent());
+        String gitBranch = detectGitBranch(cwd);
+
+        var ctx = new EventContext(sessionId, cwd, Instant.now(), cliVersion, gitBranch);
         StringBuilder sb = new StringBuilder();
-        Instant now = Instant.now();
         String parentUuid = null;
 
-        sb.append(queueEvent("enqueue", sessionId, now)).append('\n');
-        sb.append(queueEvent("dequeue", sessionId, now)).append('\n');
+        sb.append(queueEvent("enqueue", sessionId, ctx.timestamp)).append('\n');
+        sb.append(queueEvent("dequeue", sessionId, ctx.timestamp)).append('\n');
 
         for (AnthropicMessage msg : anthropicMessages) {
             String uuid = UUID.randomUUID().toString();
-            sb.append(messageEvent(msg, uuid, parentUuid, sessionId, cwd, now)).append('\n');
+            sb.append(messageEvent(msg, uuid, parentUuid, ctx)).append('\n');
             parentUuid = uuid;
         }
 
-        // Append last-prompt entry so Claude CLI knows the conversation head.
-        // Without this, Claude CLI creates a synthetic assistant branch from the first user message
-        // when resuming via --resume, causing it to ignore the exported conversation history.
-        // With last-prompt, Claude correctly resumes from after the last assistant response.
-        String lastUserPromptText = extractLastUserPromptText(anthropicMessages);
-        if (!lastUserPromptText.isEmpty()) {
+        // Append last-prompt so Claude CLI can identify the conversation head for resume.
+        // Uses the FIRST user message text, matching native CLI behavior.
+        String firstUserPromptText = extractFirstUserPromptText(anthropicMessages);
+        if (!firstUserPromptText.isEmpty()) {
             JsonObject lastPromptEvent = new JsonObject();
             lastPromptEvent.addProperty("type", "last-prompt");
-            lastPromptEvent.addProperty("lastPrompt", lastUserPromptText);
+            lastPromptEvent.addProperty("lastPrompt", firstUserPromptText);
             lastPromptEvent.addProperty(FIELD_SESSION_ID, sessionId);
             sb.append(GSON.toJson(lastPromptEvent)).append('\n');
         }
@@ -94,18 +102,103 @@ public final class ClaudeCliExporter {
         }
         Files.writeString(targetPath, sb.toString(), StandardCharsets.UTF_8,
             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-        LOG.info("Exported v2 session to Claude CLI format: " + targetPath);
+        LOG.info("Exported v2 session to Claude CLI format: " + targetPath
+            + " (version=" + cliVersion + ", branch=" + gitBranch + ")");
+    }
+
+    // ------------------------------------------------------------------
+    // Version & branch detection
+    // ------------------------------------------------------------------
+
+    /**
+     * Detects the CLI version by reading the most recent native session file in the
+     * same Claude projects directory.  Native sessions written by the CLI include a
+     * {@code version} field on every event.
+     *
+     * @param claudeProjectDir the {@code ~/.claude/projects/<project>/} directory
+     *                         (parent of the target file)
+     * @return the detected version, or {@link #CLAUDE_CLI_VERSION_FALLBACK}
+     */
+    @NotNull
+    private static String detectCliVersion(@Nullable Path claudeProjectDir) {
+        if (claudeProjectDir == null || !Files.isDirectory(claudeProjectDir)) {
+            return CLAUDE_CLI_VERSION_FALLBACK;
+        }
+        try (var stream = Files.list(claudeProjectDir)) {
+            Path latest = stream
+                .filter(p -> p.toString().endsWith(".jsonl"))
+                .max(Comparator.comparing(ClaudeCliExporter::lastModifiedSafe))
+                .orElse(null);
+            if (latest == null) return CLAUDE_CLI_VERSION_FALLBACK;
+            return extractVersionFromSessionFile(latest);
+        } catch (Exception e) {
+            LOG.debug("Could not detect Claude CLI version from project dir: " + e.getMessage());
+        }
+        return CLAUDE_CLI_VERSION_FALLBACK;
+    }
+
+    @NotNull
+    private static FileTime lastModifiedSafe(@NotNull Path path) {
+        try {
+            return Files.getLastModifiedTime(path);
+        } catch (IOException e) {
+            return FileTime.fromMillis(0);
+        }
     }
 
     /**
-     * Extracts the text content from the last user message in the list that contains
-     * text blocks (skipping tool_result-only user messages). Used to populate the
-     * {@code last-prompt} entry in the exported Claude CLI session file.
+     * Reads the last few lines of a session file and extracts the CLI version string.
      */
     @NotNull
-    private static String extractLastUserPromptText(@NotNull List<AnthropicMessage> messages) {
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            AnthropicMessage msg = messages.get(i);
+    private static String extractVersionFromSessionFile(@NotNull Path sessionFile) {
+        try {
+            List<String> allLines = Files.readAllLines(sessionFile, StandardCharsets.UTF_8);
+            for (int i = allLines.size() - 1; i >= Math.max(0, allLines.size() - 10); i--) {
+                String line = allLines.get(i).trim();
+                if (line.isEmpty()) continue;
+                JsonObject obj = GSON.fromJson(line, JsonObject.class);
+                if (obj.has(FIELD_VERSION) && obj.get(FIELD_VERSION).isJsonPrimitive()) {
+                    String ver = obj.get(FIELD_VERSION).getAsString();
+                    if (ver.contains(".") && !ver.equals("1.0.0")) {
+                        return ver;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("Could not extract version from " + sessionFile + ": " + e.getMessage());
+        }
+        return CLAUDE_CLI_VERSION_FALLBACK;
+    }
+
+    @Nullable
+    private static String detectGitBranch(@NotNull String cwd) {
+        try {
+            Path head = Path.of(cwd, ".git", "HEAD");
+            if (!Files.exists(head)) return null;
+            String content = Files.readString(head, StandardCharsets.UTF_8).trim();
+            String prefix = "ref: refs/heads/";
+            if (content.startsWith(prefix)) {
+                return content.substring(prefix.length());
+            }
+            return content.substring(0, Math.min(12, content.length()));
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Message extraction
+    // ------------------------------------------------------------------
+
+    /**
+     * Extracts the text content from the <b>first</b> user message that contains text
+     * blocks. Claude CLI's {@code last-prompt} event records the initial prompt of
+     * the conversation cycle — the CLI uses it as metadata (the tree structure via
+     * {@code parentUuid} determines the actual resume position).
+     */
+    @NotNull
+    private static String extractFirstUserPromptText(@NotNull List<AnthropicMessage> messages) {
+        for (AnthropicMessage msg : messages) {
             if (!"user".equals(msg.role)) continue;
             StringBuilder sb = new StringBuilder();
             for (JsonObject block : msg.contentBlocks) {
@@ -119,6 +212,10 @@ public final class ClaudeCliExporter {
         }
         return "";
     }
+
+    // ------------------------------------------------------------------
+    // JSONL event builders
+    // ------------------------------------------------------------------
 
     @NotNull
     private static String queueEvent(
@@ -139,9 +236,7 @@ public final class ClaudeCliExporter {
         @NotNull AnthropicMessage msg,
         @NotNull String uuid,
         @Nullable String parentUuid,
-        @NotNull String sessionId,
-        @NotNull String cwd,
-        @NotNull Instant timestamp) {
+        @NotNull EventContext ctx) {
 
         JsonObject event = new JsonObject();
 
@@ -158,10 +253,13 @@ public final class ClaudeCliExporter {
             event.addProperty("entrypoint", "sdk-cli");
         }
 
+        // Root node must have "parentUuid": null explicitly — the CLI uses this to
+        // identify the conversation root when building the message tree for --resume.
+        // Using JsonNull.INSTANCE because Gson's add(key, null) silently drops the key.
         if (parentUuid != null) {
             event.addProperty("parentUuid", parentUuid);
         } else {
-            event.add("parentUuid", null);
+            event.add("parentUuid", JsonNull.INSTANCE);
         }
         event.addProperty("isSidechain", false);
 
@@ -172,24 +270,37 @@ public final class ClaudeCliExporter {
         messagePayload.add("content", contentArray);
 
         // Assistant messages must match the Anthropic API response structure that Claude CLI
-        // expects when rebuilding conversation context during --resume. Without these fields,
-        // Claude CLI may silently skip our exported messages.
+        // expects when rebuilding conversation context during --resume.
         if ("assistant".equals(msg.role)) {
             messagePayload.addProperty("id", "msg_" + uuid.replace("-", "").substring(0, 24));
             messagePayload.addProperty("type", "message");
             messagePayload.addProperty("model", "claude-sonnet-4-6");
             messagePayload.addProperty("stop_reason", "end_turn");
-            messagePayload.add("stop_sequence", null);
+            messagePayload.add("stop_sequence", JsonNull.INSTANCE);
         }
 
         event.add("message", messagePayload);
 
         event.addProperty("uuid", uuid);
-        event.addProperty("timestamp", timestamp.toString());
-        event.addProperty("cwd", cwd);
-        event.addProperty(FIELD_SESSION_ID, sessionId);
-        event.addProperty("version", CLAUDE_CLI_VERSION);
+        event.addProperty("timestamp", ctx.timestamp.toString());
+        event.addProperty("cwd", ctx.cwd);
+        event.addProperty(FIELD_SESSION_ID, ctx.sessionId);
+        event.addProperty(FIELD_VERSION, ctx.cliVersion);
+        if (ctx.gitBranch != null) {
+            event.addProperty("gitBranch", ctx.gitBranch);
+        }
 
         return GSON.toJson(event);
+    }
+
+    /**
+     * Groups the immutable context fields shared across all events in a single export.
+     */
+    private record EventContext(
+        @NotNull String sessionId,
+        @NotNull String cwd,
+        @NotNull Instant timestamp,
+        @NotNull String cliVersion,
+        @Nullable String gitBranch) {
     }
 }
