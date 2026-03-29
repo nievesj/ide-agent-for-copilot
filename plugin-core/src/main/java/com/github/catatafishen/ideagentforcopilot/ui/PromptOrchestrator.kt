@@ -331,6 +331,9 @@ class PromptOrchestrator(
     /**
      * Attempts to call [sendCall] with [initialSessionId]. If it fails with a "not found" session
      * error, invalidates the current session, creates a fresh one, and retries once.
+     *
+     * **Important:** when the retry fires, the resumed session context is lost — the agent
+     * starts fresh. A warning is shown in the chat so the user knows why the agent lost context.
      */
     private fun sendWithSessionRetry(
         client: AbstractAgentClient,
@@ -342,9 +345,23 @@ class PromptOrchestrator(
         } catch (e: Exception) {
             val msg = e.message ?: ""
             if (msg.contains("not found", ignoreCase = true)) {
-                log.info("Session expired ('not found'), creating new session and retrying")
+                val agentName = agentManager.activeProfile.displayName
+                log.warn(
+                    "$agentName: session '$initialSessionId' not found — " +
+                        "falling back to fresh session. Previous context will be lost. " +
+                        "Original error: $msg",
+                    e
+                )
                 currentSessionId = null
                 val newSessionId = ensureSessionCreated(client)
+
+                ApplicationManager.getApplication().invokeLater {
+                    consolePanel().addErrorEntry(
+                        "⚠ Session resume failed — $agentName could not find the previous session. " +
+                            "Started a fresh session; earlier conversation context was not restored."
+                    )
+                }
+
                 sendCall(newSessionId)
             } else {
                 throw e

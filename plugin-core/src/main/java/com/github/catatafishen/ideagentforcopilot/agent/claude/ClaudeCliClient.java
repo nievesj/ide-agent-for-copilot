@@ -435,7 +435,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
             String stderr = stderrBuf.toString().trim();
             if (!stderr.isEmpty()) {
-                LOG.warn("claude CLI stderr: " + stderr);
+                String cliSessionId = cliSessionIds.get(sessionId);
+                if (cliSessionId != null) {
+                    LOG.warn("claude CLI stderr (resume=" + cliSessionId + "): " + stderr);
+                } else {
+                    LOG.warn("claude CLI stderr: " + stderr);
+                }
                 if (stopReason.equals(STOP_REASON_END_TURN) && onChunk != null) {
                     // No output was produced; surface the CLI error to the user
                     onChunk.accept("\n[Claude CLI error: " + stderr + "]");
@@ -554,6 +559,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                     && SUBTYPE_ERROR.equals(event.get(FIELD_SUBTYPE).getAsString());
                 if (isError && event.has(SUBTYPE_ERROR)) {
                     String errorText = extractErrorText(event.get(SUBTYPE_ERROR));
+                    LOG.warn("Claude CLI error (session=" + sessionId + "): " + errorText);
+                    String cliSessionId = cliSessionIds.get(sessionId);
+                    if (cliSessionId != null) {
+                        LOG.warn("Session was resumed with --resume " + cliSessionId
+                            + " — the error may indicate the session file is invalid or corrupted");
+                    }
                     if (onChunk != null) onChunk.accept("\n[Error: " + errorText + "]");
                     if (isRateLimitError(errorText)) emitRateLimitBanner(errorText, onUpdate);
                 }

@@ -32,14 +32,23 @@ public final class ClaudeCliExporter {
 
     private static final Logger LOG = Logger.getInstance(ClaudeCliExporter.class);
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
-    private static final int DEFAULT_MAX_TOKEN_ESTIMATE = 20_000;
     private static final String FIELD_SESSION_ID = "sessionId";
+
+    /**
+     * Version string used in exported events. Must match a real Claude CLI version string —
+     * Claude CLI validates this when loading sessions for {@code --resume}.
+     */
+    private static final String CLAUDE_CLI_VERSION = "1.0.0";
 
     private ClaudeCliExporter() {
     }
 
     /**
      * Exports v2 messages to a Claude CLI session JSONL file.
+     *
+     * <p>No token budget is applied here — Claude CLI manages its own context window when
+     * resuming via {@code --resume}. Applying a budget caused aggressive trimming that
+     * dropped important conversation turns in favour of tool-heavy recent ones.</p>
      *
      * @param sessionId the UUID that identifies this Claude session
      * @param cwd       the project working directory
@@ -50,9 +59,7 @@ public final class ClaudeCliExporter {
         @NotNull String sessionId,
         @NotNull String cwd) throws IOException {
 
-        List<SessionMessage> budgeted = AnthropicClientExporter.applyTokenBudget(
-            messages, DEFAULT_MAX_TOKEN_ESTIMATE);
-        List<AnthropicMessage> anthropicMessages = AnthropicClientExporter.toAnthropicMessages(budgeted);
+        List<AnthropicMessage> anthropicMessages = AnthropicClientExporter.toAnthropicMessages(messages);
         anthropicMessages = AnthropicClientExporter.ensureUserFirst(anthropicMessages);
 
         StringBuilder sb = new StringBuilder();
@@ -163,13 +170,25 @@ public final class ClaudeCliExporter {
         JsonArray contentArray = new JsonArray();
         msg.contentBlocks.forEach(contentArray::add);
         messagePayload.add("content", contentArray);
+
+        // Assistant messages must match the Anthropic API response structure that Claude CLI
+        // expects when rebuilding conversation context during --resume. Without these fields,
+        // Claude CLI may silently skip our exported messages.
+        if ("assistant".equals(msg.role)) {
+            messagePayload.addProperty("id", "msg_" + uuid.replace("-", "").substring(0, 24));
+            messagePayload.addProperty("type", "message");
+            messagePayload.addProperty("model", "claude-sonnet-4-6");
+            messagePayload.addProperty("stop_reason", "end_turn");
+            messagePayload.add("stop_sequence", null);
+        }
+
         event.add("message", messagePayload);
 
         event.addProperty("uuid", uuid);
         event.addProperty("timestamp", timestamp.toString());
         event.addProperty("cwd", cwd);
         event.addProperty(FIELD_SESSION_ID, sessionId);
-        event.addProperty("version", "1");
+        event.addProperty("version", CLAUDE_CLI_VERSION);
 
         return GSON.toJson(event);
     }

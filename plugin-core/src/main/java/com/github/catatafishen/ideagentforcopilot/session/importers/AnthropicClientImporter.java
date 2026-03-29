@@ -136,9 +136,10 @@ public final class AnthropicClientImporter {
     }
 
     /**
-     * Collects tool results from ALL consecutive tool-result-only user messages
-     * following the assistant message at the given index. Native Claude CLI sessions
-     * emit one user message per tool_result, so we must scan all of them.
+     * Collects tool results from ALL consecutive user messages following the assistant
+     * message at the given index. Handles both native Claude CLI format (one user message
+     * per tool_result) and merged format (tool_result + text in the same user message,
+     * produced by {@code mergeConsecutiveSameRole}).
      */
     @NotNull
     private static ToolResultMap collectToolResultsFromFollowing(
@@ -148,16 +149,21 @@ public final class AnthropicClientImporter {
             JsonObject m = messages.get(j);
             if (!"user".equals(JsonlUtil.getStr(m, "role"))) break;
             JsonArray content = JsonlUtil.getArray(m, "content");
-            if (content == null || !isOnlyToolResults(content)) break;
+            if (content == null) break;
+
+            boolean foundToolResult = false;
             for (JsonElement el : content) {
                 if (!el.isJsonObject()) continue;
                 JsonObject block = el.getAsJsonObject();
+                if (!"tool_result".equals(JsonlUtil.getStr(block, "type"))) continue;
+                foundToolResult = true;
                 String toolUseId = JsonlUtil.getStr(block, "tool_use_id");
                 String resultContent = extractToolResultContent(block);
                 if (toolUseId != null && !toolUseId.isEmpty()) {
                     map.put(toolUseId, resultContent);
                 }
             }
+            if (!foundToolResult) break;
         }
         return map;
     }

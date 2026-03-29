@@ -307,11 +307,6 @@ class AnthropicClientRoundTripTest {
         assertEquals("tc2", block2.get("tool_use_id").getAsString());
     }
 
-    /**
-     * Validates the exported JSONL matches Claude CLI's native session structure:
-     * assistant messages contain tool_use blocks, and the following user message
-     * contains the corresponding tool_result blocks.
-     */
     @Test
     void exportMatchesClaudeCliNativeStructure() throws IOException {
         // Build a multi-turn conversation with tool calls (matching native Claude pattern)
@@ -335,14 +330,15 @@ class AnthropicClientRoundTripTest {
             if (!line.isBlank()) exported.add(JsonParser.parseString(line).getAsJsonObject());
         }
 
-        // Expected structure: user, assistant(text+tool_use+tool_use), user(tool_result+tool_result), user(text), assistant(text)
-        assertEquals(5, exported.size());
+        // mergeConsecutiveSameRole merges the tool_result user message and "Now commit" user message
+        // into a single user message: user, assistant(text+tool_use+tool_use),
+        // user(tool_result+tool_result+text), assistant(text)
+        assertEquals(4, exported.size());
 
         assertEquals("user", exported.get(0).get("role").getAsString());
         assertEquals("assistant", exported.get(1).get("role").getAsString());
         assertEquals("user", exported.get(2).get("role").getAsString());
-        assertEquals("user", exported.get(3).get("role").getAsString());
-        assertEquals("assistant", exported.get(4).get("role").getAsString());
+        assertEquals("assistant", exported.get(3).get("role").getAsString());
 
         // Verify assistant message has text + 2 tool_use blocks
         var assistantContent = exported.get(1).getAsJsonArray("content");
@@ -357,11 +353,15 @@ class AnthropicClientRoundTripTest {
         assertEquals("read_file", toolUse1.get("name").getAsString());
         assertTrue(toolUse1.has("input"), "tool_use must have 'input' field");
 
-        // Verify consolidated tool results
-        var toolResultContent = exported.get(2).getAsJsonArray("content");
-        assertEquals(2, toolResultContent.size());
-        assertEquals("tu1", toolResultContent.get(0).getAsJsonObject().get("tool_use_id").getAsString());
-        assertEquals("tu2", toolResultContent.get(1).getAsJsonObject().get("tool_use_id").getAsString());
+        // Verify merged user message has tool_result blocks + text
+        var mergedUserContent = exported.get(2).getAsJsonArray("content");
+        assertEquals(3, mergedUserContent.size());
+        assertEquals("tool_result", mergedUserContent.get(0).getAsJsonObject().get("type").getAsString());
+        assertEquals("tu1", mergedUserContent.get(0).getAsJsonObject().get("tool_use_id").getAsString());
+        assertEquals("tool_result", mergedUserContent.get(1).getAsJsonObject().get("type").getAsString());
+        assertEquals("tu2", mergedUserContent.get(1).getAsJsonObject().get("tool_use_id").getAsString());
+        assertEquals("text", mergedUserContent.get(2).getAsJsonObject().get("type").getAsString());
+        assertEquals("Now commit", mergedUserContent.get(2).getAsJsonObject().get("text").getAsString());
     }
 
     /**
@@ -382,7 +382,7 @@ class AnthropicClientRoundTripTest {
         // Native sessions start with assistant (no initial user message in file)
         assertEquals(2, messages.size());
 
-        SessionMessage first = messages.get(0);
+        SessionMessage first = messages.getFirst();
         assertEquals("assistant", first.role);
 
         // Should have text + 2 tool invocations with results merged
