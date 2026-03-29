@@ -37,8 +37,8 @@ public final class GitRevertTool extends GitTool {
     
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 @Override
     public @NotNull JsonObject inputSchema() {

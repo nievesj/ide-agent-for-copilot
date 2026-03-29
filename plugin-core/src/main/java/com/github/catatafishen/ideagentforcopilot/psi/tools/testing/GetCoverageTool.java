@@ -38,13 +38,12 @@ public final class GetCoverageTool extends TestingTool {
         return "Retrieve code coverage data, optionally filtered by file or class";
     }
 
-    
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.READ;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
-    }
-@Override
     public boolean isReadOnly() {
         return true;
     }

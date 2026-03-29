@@ -30,13 +30,12 @@ public final class GetFileHistoryTool extends GitTool {
         return "Get git commit history for a file, including renames";
     }
 
-    
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.READ;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
-    }
-@Override
     public boolean isReadOnly() {
         return true;
     }
