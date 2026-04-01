@@ -63,21 +63,14 @@ public class ShellEnvironment {
     @NotNull
     private static Map<String, String> captureUnixEnvironment() {
         try {
-            // Use the user's login shell so that ~/.zprofile / ~/.bash_profile are sourced.
-            // This is critical on macOS with Apple Silicon where Homebrew lives in
-            // /opt/homebrew/bin, which is added to PATH only by the login-shell init file
-            // (not by bash -i, which is what we used to use).
+            // Use the user's actual login shell to capture the full environment.
+            // On macOS (zsh default since Catalina), -l loads ~/.zprofile where
+            // Homebrew adds /opt/homebrew/bin via `eval "$(brew shellenv)"`.
             String userShell = System.getenv("SHELL");
             if (userShell == null || userShell.isBlank()) {
-                // Fall back to zsh on macOS, bash everywhere else
-                String os = System.getProperty("os.name", "").toLowerCase();
-                userShell = os.contains("mac") ? "/bin/zsh" : "/bin/bash";
+                userShell = "/bin/sh";
             }
-
-            // -l  = login shell  → reads /etc/profile, ~/.zprofile, ~/.bash_profile
-            // -i  = interactive  → also reads ~/.zshrc / ~/.bashrc (picks up nvm, sdkman, etc.)
-            // Redirect stderr to suppress "cannot set terminal process group" noise
-            ProcessBuilder pb = new ProcessBuilder(userShell, "-l", "-i", "-c", "env 2>/dev/null");
+            ProcessBuilder pb = new ProcessBuilder(userShell, "-l", "-c", "env 2>/dev/null");
             pb.redirectErrorStream(false);
 
             Process process = pb.start();

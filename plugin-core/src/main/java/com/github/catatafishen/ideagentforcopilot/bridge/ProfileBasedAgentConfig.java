@@ -102,7 +102,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
 
     @Override
     public @NotNull String findAgentBinary() throws AgentException {
-        // 1. User-provided custom path takes priority
+        // 1. User-provided custom path takes priority; validate it exists
         String customPath = profile.getCustomBinaryPath();
         if (!customPath.isEmpty()) {
             File custom = new File(customPath);
@@ -114,22 +114,25 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
                 null, false);
         }
 
-        // 2. Search PATH and common locations for the primary binary name
+        // 2. Auto-detect primary binary name and alternates
+        com.github.catatafishen.ideagentforcopilot.settings.ProfileBinaryDetector detector =
+            new com.github.catatafishen.ideagentforcopilot.settings.ProfileBinaryDetector(profile);
         String binaryName = profile.getBinaryName();
         if (!binaryName.isEmpty()) {
-            String found = searchForBinary(binaryName);
+            String found = detector.resolve(binaryName,
+                profile.getAlternateNames().toArray(String[]::new));
             if (found != null) {
                 resolvedBinaryPath = found;
                 return found;
             }
-        }
-
-        // 3. Try alternate names
-        for (String altName : profile.getAlternateNames()) {
-            String found = searchForBinary(altName);
-            if (found != null) {
-                resolvedBinaryPath = found;
-                return found;
+        } else {
+            // No primary name - try alternates only
+            for (String altName : profile.getAlternateNames()) {
+                String found = com.github.catatafishen.ideagentforcopilot.settings.BinaryDetector.findBinaryPath(altName);
+                if (found != null) {
+                    resolvedBinaryPath = found;
+                    return found;
+                }
             }
         }
 
@@ -378,20 +381,6 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     @Override
     public boolean sendResourceReferences() {
         return profile.isSendResourceReferences();
-    }
-
-    /**
-     * Search for a binary by name on PATH and common installation locations.
-     */
-    @Nullable
-    private String searchForBinary(@NotNull String binaryName) {
-        // Delegate to BinaryDetector which uses a login shell to find binaries
-        // This ensures we see the same PATH as the user's terminal (nvm, sdkman, etc.)
-        String path = com.github.catatafishen.ideagentforcopilot.settings.BinaryDetector.findBinaryPath(binaryName);
-        if (path != null) {
-            LOG.info("Found " + binaryName + " at: " + path);
-        }
-        return path;
     }
 
     /**

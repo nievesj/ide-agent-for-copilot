@@ -14,7 +14,6 @@ import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.github.catatafishen.ideagentforcopilot.session.SessionSwitchService;
-import com.github.catatafishen.ideagentforcopilot.settings.ClaudeAgentBinaryResolver;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -835,8 +834,16 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     // ── Binary resolution ────────────────────────────────────────────────────
 
     private String resolveBinary() throws AgentException {
-        String resolved = new ClaudeAgentBinaryResolver().resolve();
-        if (resolved != null) return resolved;
+        String custom = profile.getCustomBinaryPath();
+        if (!custom.isEmpty()) {
+            if (Files.isExecutable(Path.of(custom))) return custom;
+            throw new AgentException("Claude binary not found at: " + custom, null, false);
+        }
+        // Auto-detect using the unified detector (shell environment + known paths)
+        com.github.catatafishen.ideagentforcopilot.settings.ProfileBinaryDetector detector =
+            new com.github.catatafishen.ideagentforcopilot.settings.ProfileBinaryDetector(profile);
+        String found = detector.resolve("claude");
+        if (found != null) return found;
         throw new AgentException(
             "Claude CLI not found. Install it from code.claude.com and run 'claude auth login'.",
             null, false);

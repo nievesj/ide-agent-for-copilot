@@ -142,17 +142,31 @@ public class BinaryDetector {
             }
 
             int exitCode = process.exitValue();
-            if (exitCode != 0) {
-                return null;
+            if (exitCode == 0) {
+                String path = output.toString().trim();
+                if (!path.isEmpty()) {
+                    // On Windows, 'where' may return multiple paths - take the first
+                    String[] lines = path.split("\n");
+                    path = lines[0].trim();
+                    LOG.info("Found " + binaryName + " at: " + path);
+                    return path;
+                }
             }
 
-            String path = output.toString().trim();
-            if (!path.isEmpty()) {
-                // On Windows, 'where' may return multiple paths - take the first
-                String[] lines = path.split("\n");
-                path = lines[0].trim();
-                LOG.info("Found " + binaryName + " at: " + path);
-                return path;
+            // Fallback: check well-known install locations for macOS/Linux
+            if (!os.contains("win")) {
+                java.util.List<String> knownDirs = java.util.List.of(
+                    "/opt/homebrew/bin",   // macOS Apple Silicon Homebrew
+                    "/usr/local/bin",      // macOS Intel Homebrew + Linux
+                    "/usr/bin"
+                );
+                for (String dir : knownDirs) {
+                    java.nio.file.Path candidate = java.nio.file.Paths.get(dir, binaryName);
+                    if (java.nio.file.Files.isExecutable(candidate)) {
+                        LOG.info("Found " + binaryName + " in known path: " + candidate);
+                        return candidate.toString();
+                    }
+                }
             }
             return null;
 

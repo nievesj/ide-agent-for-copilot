@@ -21,7 +21,6 @@ import com.github.catatafishen.ideagentforcopilot.bridge.McpServerJarLocator;
 import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption;
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.services.McpServerControl;
-import com.github.catatafishen.ideagentforcopilot.settings.AcpClientBinaryResolver;
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -1088,11 +1087,12 @@ public abstract class AcpClient extends AbstractAgentClient {
         // Already an absolute or relative path — no resolution needed
         if (binaryName.startsWith("/") || binaryName.startsWith("./")) return command;
 
-        String resolved = new AcpClientBinaryResolver(agentId(), binaryName).resolve();
-        if (resolved != null) {
-            List<String> result = new ArrayList<>(command);
-            result.set(0, resolved);
-            return result;
+        // Check user-configured override first, then auto-detect via shell environment
+        String resolvedPath = new com.github.catatafishen.ideagentforcopilot.settings.AcpClientBinaryDetector(agentId()).resolve(binaryName);
+        if (resolvedPath != null && !resolvedPath.isEmpty()) {
+            List<String> resolved = new ArrayList<>(command);
+            resolved.set(0, resolvedPath);
+            return resolved;
         }
 
         LOG.warn("Could not resolve absolute path for '" + binaryName + "'; attempting launch with unresolved name");
