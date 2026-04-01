@@ -136,7 +136,7 @@ public final class AgentProfile {
         this.alternateNames = new ArrayList<>();
         this.installHint = "";
         this.customBinaryPath = "";
-        this.acpArgs = List.of("--acp", "--stdio");
+        this.acpArgs = new ArrayList<>(List.of("--acp", "--stdio"));
         this.mcpMethod = McpInjectionMethod.CONFIG_FLAG;
         this.mcpConfigTemplate = "";
         this.supportsModelFlag = true;
