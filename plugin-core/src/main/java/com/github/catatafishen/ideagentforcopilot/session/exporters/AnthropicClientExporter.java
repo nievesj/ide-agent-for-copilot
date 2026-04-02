@@ -3,6 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.session.exporters;
 import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.intellij.openapi.diagnostic.Logger;
@@ -16,6 +17,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 public final class AnthropicClientExporter {
 
@@ -30,6 +32,29 @@ public final class AnthropicClientExporter {
     private static final String STATE_RESULT = "result";
     private static final String ROLE_USER = "user";
     private static final String ROLE_ASSISTANT = "assistant";
+
+    private static final int MAX_TOOL_NAME_LENGTH = 200;
+    private static final Pattern INVALID_TOOL_NAME_CHARS = Pattern.compile("[^a-zA-Z0-9_-]");
+    private static final Pattern CONSECUTIVE_UNDERSCORES = Pattern.compile("_{3,}");
+
+    /**
+     * Sanitizes a tool name for the Anthropic API, which requires tool_use names to match
+     * {@code [a-zA-Z0-9_-]+} and be at most 200 characters.
+     *
+     * <p>Our session data stores human-readable titles for tool calls (e.g., "git add src/Foo.java",
+     * "Viewing .../ChatConsolePanel.kt") which can exceed the API limit. This method replaces
+     * invalid characters, collapses runs of 3+ underscores (preserving the {@code __} MCP
+     * separator), and truncates to fit.</p>
+     */
+    public static String sanitizeToolName(@NotNull String rawName) {
+        if (rawName.isEmpty()) return "unknown_tool";
+        String sanitized = INVALID_TOOL_NAME_CHARS.matcher(rawName).replaceAll("_");
+        sanitized = CONSECUTIVE_UNDERSCORES.matcher(sanitized).replaceAll("__");
+        if (sanitized.startsWith("_")) sanitized = sanitized.substring(1);
+        if (sanitized.endsWith("_")) sanitized = sanitized.substring(0, sanitized.length() - 1);
+        if (sanitized.length() > MAX_TOOL_NAME_LENGTH) sanitized = sanitized.substring(0, MAX_TOOL_NAME_LENGTH);
+        return sanitized.isEmpty() ? "unknown_tool" : sanitized;
+    }
 
     private AnthropicClientExporter() {
     }
@@ -66,12 +91,10 @@ public final class AnthropicClientExporter {
         List<AnthropicMessage> raw = new ArrayList<>();
 
         for (SessionMessage msg : messages) {
-            if ("separator".equals(msg.role)) continue;
-
-            if (ROLE_USER.equals(msg.role)) {
-                convertUserMessage(msg, raw);
-            } else if (ROLE_ASSISTANT.equals(msg.role)) {
-                convertAssistantMessage(msg, raw);
+            switch (msg.role) {
+                case ROLE_USER -> convertUserMessage(msg, raw);
+                case ROLE_ASSISTANT -> convertAssistantMessage(msg, raw);
+                default -> { /* separator and other roles: skip */ }
             }
         }
 
@@ -158,7 +181,8 @@ public final class AnthropicClientExporter {
         if (!STATE_RESULT.equals(state)) return null;
 
         String toolCallId = inv.has("toolCallId") ? inv.get("toolCallId").getAsString() : "";
-        String toolName = inv.has("toolName") ? inv.get("toolName").getAsString() : "unknown";
+        String toolName = sanitizeToolName(
+            inv.has("toolName") ? inv.get("toolName").getAsString() : "unknown");
         String argsStr = inv.has("args") ? inv.get("args").getAsString() : "{}";
         String resultStr = inv.has(STATE_RESULT) ? inv.get(STATE_RESULT).getAsString() : "";
 
@@ -236,29 +260,21 @@ public final class AnthropicClientExporter {
     private record ToolBlocks(@NotNull JsonObject toolUse, @NotNull JsonObject toolResult) {
     }
 
-    static final class AnthropicMessage {
-        final String role;
-        final List<JsonObject> contentBlocks;
-        /**
-         * Epoch millis when the original SessionMessage was created (0 if unknown).
-         */
-        final long createdAt;
-
+    /**
+     * @param createdAt Epoch millis when the original SessionMessage was created (0 if unknown).
+     */
+    record AnthropicMessage(String role, List<JsonObject> contentBlocks, long createdAt) {
         AnthropicMessage(@NotNull String role, @NotNull List<JsonObject> contentBlocks, long createdAt) {
             this.role = role;
             this.contentBlocks = List.copyOf(contentBlocks);
             this.createdAt = createdAt;
         }
 
-        AnthropicMessage(@NotNull String role, @NotNull List<JsonObject> contentBlocks) {
-            this(role, contentBlocks, 0);
-        }
-
         @NotNull
         String toJsonLine() {
             JsonObject obj = new JsonObject();
             obj.addProperty("role", role);
-            var contentArray = new com.google.gson.JsonArray();
+            var contentArray = new JsonArray();
             contentBlocks.forEach(contentArray::add);
             obj.add("content", contentArray);
             return GSON.toJson(obj);

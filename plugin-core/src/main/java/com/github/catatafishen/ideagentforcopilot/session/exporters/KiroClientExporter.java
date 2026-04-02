@@ -330,7 +330,8 @@ public final class KiroClientExporter {
         if (!STATE_RESULT.equals(state)) return null;
 
         String toolCallId = inv.has("toolCallId") ? inv.get("toolCallId").getAsString() : UUID.randomUUID().toString();
-        String toolName = inv.has(KEY_TOOL_NAME) ? inv.get(KEY_TOOL_NAME).getAsString() : "unknown";
+        String toolName = AnthropicClientExporter.sanitizeToolName(
+            inv.has(KEY_TOOL_NAME) ? inv.get(KEY_TOOL_NAME).getAsString() : "unknown");
         String argsStr = inv.has("args") ? inv.get("args").getAsString() : "{}";
         String resultStr = inv.has(STATE_RESULT) ? inv.get(STATE_RESULT).getAsString() : "";
 
