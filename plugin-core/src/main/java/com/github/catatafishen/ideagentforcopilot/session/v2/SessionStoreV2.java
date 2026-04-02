@@ -264,6 +264,9 @@ public final class SessionStoreV2 implements Disposable {
 
     private void saveV2(@Nullable String basePath, @NotNull String v1Json) {
         try {
+            // Capture agent name once at the start to avoid races with setCurrentAgent()
+            String agent = currentAgent;
+
             var entries = ConversationSerializer.INSTANCE.deserialize(v1Json);
             List<SessionMessage> messages = EntryDataConverter.toMessages(entries);
 
@@ -282,7 +285,7 @@ public final class SessionStoreV2 implements Disposable {
             Files.writeString(jsonlFile.toPath(), sb.toString(), StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 
-            updateSessionsIndex(basePath, sessionId, sessionsDir, jsonlFile.getName(), turnCount);
+            updateSessionsIndex(basePath, sessionId, sessionsDir, jsonlFile.getName(), agent, turnCount);
 
         } catch (Exception e) {
             LOG.warn("Failed to write v2 session JSONL", e);
@@ -294,6 +297,7 @@ public final class SessionStoreV2 implements Disposable {
         @NotNull String sessionId,
         @NotNull File sessionsDir,
         @NotNull String jsonlFileName,
+        @NotNull String agentName,
         int turnCount) throws IOException {
 
         File indexFile = new File(sessionsDir, SESSIONS_INDEX);
@@ -306,7 +310,7 @@ public final class SessionStoreV2 implements Disposable {
         for (JsonObject rec : records) {
             if (rec.has(KEY_ID) && sessionId.equals(rec.get(KEY_ID).getAsString())) {
                 rec.addProperty(KEY_UPDATED_AT, now);
-                rec.addProperty(KEY_AGENT, currentAgent);
+                rec.addProperty(KEY_AGENT, agentName);
                 rec.addProperty(KEY_TURN_COUNT, turnCount);
                 found = true;
                 break;
@@ -315,7 +319,7 @@ public final class SessionStoreV2 implements Disposable {
         if (!found) {
             JsonObject newRec = new JsonObject();
             newRec.addProperty(KEY_ID, sessionId);
-            newRec.addProperty(KEY_AGENT, currentAgent);
+            newRec.addProperty(KEY_AGENT, agentName);
             newRec.addProperty("directory", directory);
             newRec.addProperty(KEY_CREATED_AT, now);
             newRec.addProperty(KEY_UPDATED_AT, now);
