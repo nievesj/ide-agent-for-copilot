@@ -79,6 +79,16 @@ public final class GetHighlightsTool extends QualityTool {
             return ERROR_IDE_INITIALIZING;
         }
 
+        // For single-file queries, ensure the file is open in an editor so the daemon
+        // produces highlights. Without this, files edited with follow-agent mode off
+        // may never get daemon analysis.
+        if (pathStr != null && !pathStr.isEmpty()) {
+            VirtualFile vf = resolveVirtualFile(pathStr);
+            if (vf != null) {
+                ensureDaemonAnalyzed(vf);
+            }
+        }
+
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
@@ -135,6 +145,72 @@ public final class GetHighlightsTool extends QualityTool {
         }
 
         resultFuture.complete(result.toString());
+    }
+
+    /**
+     * Ensures the target file is open in an editor and daemon analysis has completed.
+     * When follow-agent mode is off, files may be edited programmatically without ever
+     * being opened in an editor tab, so the daemon never produces highlights for them.
+     * This method opens the file silently (no focus) and waits for the daemon to finish.
+     */
+    private void ensureDaemonAnalyzed(@NotNull VirtualFile vf) {
+        // Check on EDT whether the file is already open
+        CompletableFuture<Boolean> openCheck = new CompletableFuture<>();
+        EdtUtil.invokeLater(() ->
+            openCheck.complete(
+                com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).isFileOpen(vf)));
+        boolean alreadyOpen;
+        try {
+            alreadyOpen = openCheck.get(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        } catch (Exception e) {
+            return;
+        }
+        if (alreadyOpen) return;
+
+        // Subscribe BEFORE opening so we don't miss the daemon pass
+        var latch = new java.util.concurrent.CountDownLatch(1);
+        Runnable disconnect = PlatformApiCompat.subscribeDaemonListener(project,
+            new com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.DaemonListener() {
+                @Override
+                public void daemonFinished(
+                    @NotNull java.util.Collection<? extends com.intellij.openapi.fileEditor.FileEditor> fileEditors) {
+                    if (fileEditors.stream().anyMatch(fe -> vf.equals(fe.getFile()))) {
+                        latch.countDown();
+                    }
+                }
+            });
+        try {
+            CompletableFuture<Void> opened = new CompletableFuture<>();
+            EdtUtil.invokeLater(() -> {
+                try {
+                    com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+                        .openFile(vf, false);
+                    com.intellij.psi.PsiFile psiFile =
+                        com.intellij.psi.PsiManager.getInstance(project).findFile(vf);
+                    if (psiFile != null) {
+                        com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.getInstance(project)
+                            .restart(psiFile, "get_highlights: file opened for analysis");
+                    }
+                } finally {
+                    opened.complete(null);
+                }
+            });
+            opened.get(5, TimeUnit.SECONDS);
+
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                LOG.info("get_highlights: daemon analysis timed out for " + vf.getPath());
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            LOG.info("get_highlights: ensureDaemonAnalyzed failed for " + vf.getPath()
+                + ": " + e.getMessage());
+        } finally {
+            disconnect.run();
+        }
     }
 
     private int[] analyzeFilesForHighlights(Collection<VirtualFile> files, int limit, List<String> problems) {
