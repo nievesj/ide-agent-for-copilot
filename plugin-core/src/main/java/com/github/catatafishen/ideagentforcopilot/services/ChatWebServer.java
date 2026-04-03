@@ -447,6 +447,13 @@ public final class ChatWebServer implements Disposable {
     /**
      * Pushes a notification to live SSE clients and, if any Web Push subscriptions are registered,
      * sends a Web Push to devices that may have the browser closed.
+     *
+     * <p><b>Security:</b> The Web Push payload intentionally contains only the event sequence
+     * number and title — never the notification body. Push payloads travel through third-party
+     * push services (Google FCM, Apple APNs, Mozilla autopush) and may contain sensitive
+     * information (code snippets, file paths, error messages). The service worker fetches the
+     * actual body from the local server via {@code /state} after receiving the push, keeping
+     * sensitive content on the local network only.</p>
      */
     public void pushNotification(@NotNull String title, @NotNull String body) {
         if (!running) return;
@@ -457,11 +464,12 @@ public final class ChatWebServer implements Disposable {
         String json = "{\"seq\":" + seq + ",\"notification\":true,\"title\":"
             + GSON.toJson(title) + ",\"body\":" + GSON.toJson(body) + "}";
         broadcast(json);
-        // Also send via Web Push for devices with the browser closed
+        // Also send via Web Push for devices with the browser closed.
+        // Only seq + title — never body (see Javadoc above).
         WebPushSender wp = webPush; // read volatile once; null if not yet initialised
         if (wp != null) {
             if (wp.hasSubscriptions()) {
-                String payload = "{\"title\":" + GSON.toJson(title) + ",\"body\":" + GSON.toJson(body) + "}";
+                String payload = "{\"seq\":" + seq + ",\"title\":" + GSON.toJson(title) + "}";
                 wp.sendToAll(payload);
             } else {
                 LOG.debug("[Chat] Web Push configured but no subscriptions registered for: " + title);
