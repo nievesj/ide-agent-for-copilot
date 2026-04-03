@@ -167,7 +167,7 @@ public abstract class GitTool extends Tool {
 
                 EdtUtil.invokeLater(() -> {
                     var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
-                    var tw = twm.getToolWindow("Version Control");
+                    var tw = twm.getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
                     if (tw != null) tw.activate(null);
 
                     PlatformApiCompat.showRevisionInLogAfterRefresh(project, fullHash);

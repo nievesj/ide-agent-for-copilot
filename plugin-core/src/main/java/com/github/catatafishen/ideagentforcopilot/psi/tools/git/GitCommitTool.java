@@ -4,7 +4,6 @@ import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitCommitRenderer
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -67,10 +66,11 @@ public final class GitCommitTool extends GitTool {
             return "Error: 'message' parameter is required";
         }
 
-        // Open Version Control tool window in follow mode
+        // Open VCS tool window in follow mode
         if (com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
             com.github.catatafishen.ideagentforcopilot.psi.EdtUtil.invokeLater(() -> {
-                var tw = com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow("Version Control");
+                var tw = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+                    .getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
                 if (tw != null) tw.activate(null);
             });
         }

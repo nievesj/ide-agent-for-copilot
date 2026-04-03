@@ -1,8 +1,12 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
+import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
+import com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitStageRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vcs.changes.ChangesViewManager;
+import com.intellij.openapi.wm.ToolWindowManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -60,7 +64,6 @@ public final class GitStageTool extends GitTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
-        activateCommitPanel();
 
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("add");
@@ -72,6 +75,8 @@ public final class GitStageTool extends GitTool {
 
         String result = runGit(cmdArgs.toArray(String[]::new));
 
+        refreshAndActivateCommitPanel();
+
         if (result == null || result.isBlank()) {
             return "Staged: " + String.join(", ", stagedFiles);
         }
@@ -79,18 +84,18 @@ public final class GitStageTool extends GitTool {
     }
 
     /**
-     * Opens the Commit tool window in follow-agent mode so the user sees staged
-     * files and can commit directly. Falls back to "Version Control" if the
-     * non-modal commit interface is unavailable.
+     * Refreshes VCS status and opens the Commit tool window so the user sees
+     * the newly staged files. Uses {@link ChangesViewManager#getLocalChangesToolWindowName}
+     * to resolve the correct tool window ID regardless of commit UI mode.
      */
-    private void activateCommitPanel() {
-        if (!com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
+    private void refreshAndActivateCommitPanel() {
+        if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
             return;
         }
-        com.github.catatafishen.ideagentforcopilot.psi.EdtUtil.invokeLater(() -> {
-            var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
-            var tw = twm.getToolWindow("Commit");
-            if (tw == null) tw = twm.getToolWindow("Version Control");
+        ChangesViewManager.getInstance(project).scheduleRefresh();
+        EdtUtil.invokeLater(() -> {
+            String toolWindowName = ChangesViewManager.getLocalChangesToolWindowName(project);
+            var tw = ToolWindowManager.getInstance(project).getToolWindow(toolWindowName);
             if (tw != null) tw.activate(null);
         });
     }
