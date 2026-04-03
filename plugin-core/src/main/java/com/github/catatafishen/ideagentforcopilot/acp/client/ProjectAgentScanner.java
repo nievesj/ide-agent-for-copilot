@@ -19,19 +19,21 @@ import java.util.Set;
 /**
  * Scans project directories for user-defined Copilot agent {@code .md} files and
  * exposes them as {@link AgentMode} entries for the agent dropdown.
- * <p>
- * Scanned directories (relative to project root, in priority order):
+ *
+ * <p>Scanned directories (relative to project root, in priority order):
  * <ol>
- *   <li>{@code .copilot/agents/}</li>
- *   <li>{@code .github/agents/}</li>
+ *   <li>{@code .copilot/agents/} — primary; Copilot CLI convention</li>
+ *   <li>{@code .github/agents/} — secondary; GitHub ecosystem convention</li>
+ *   <li>{@code agents/}         — fallback; generic project agents directory</li>
  * </ol>
- * If both directories contain a file with the same name, the {@code .copilot/agents/} version wins.
+ * If multiple directories contain a file with the same slug, the first directory wins.
+ * IO errors during scan or copy are logged as warnings and never propagate to callers.
  */
 final class ProjectAgentScanner {
 
     private static final Logger LOG = Logger.getInstance(ProjectAgentScanner.class);
 
-    private static final String[] AGENT_DIRS = {".copilot/agents", ".github/agents"};
+    private static final String[] AGENT_DIRS = {".copilot/agents", ".github/agents", "agents"};
 
     private ProjectAgentScanner() {
     }
@@ -62,10 +64,11 @@ final class ProjectAgentScanner {
                     AgentMode mode = parseAgentFile(file, slug);
                     if (mode != null) {
                         discovered.put(slug, mode);
+                        LOG.info("ProjectAgentScanner: discovered agent '" + slug + "' from " + file);
                     }
                 }
             } catch (IOException e) {
-                LOG.warn("Failed to scan agent directory: " + dir, e);
+                LOG.warn("ProjectAgentScanner: failed to scan agent directory: " + dir, e);
             }
         }
 
@@ -90,20 +93,29 @@ final class ProjectAgentScanner {
 
             try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "*.md")) {
                 for (Path file : stream) {
-                    String filename = file.getFileName().toString();
-                    String slug = filename.substring(0, filename.length() - ".md".length());
-                    if (builtInSlugs.contains(slug)) continue;
-
-                    Path dest = globalAgentsDir.resolve(filename);
-                    try {
-                        Files.copy(file, dest, StandardCopyOption.REPLACE_EXISTING);
-                    } catch (IOException e) {
-                        LOG.warn("Failed to copy agent file to global dir: " + file + " → " + dest, e);
-                    }
+                    copyAgentFile(file, globalAgentsDir, builtInSlugs);
                 }
             } catch (IOException e) {
-                LOG.warn("Failed to scan agent directory for copy: " + dir, e);
+                LOG.warn("ProjectAgentScanner: failed to scan agent directory for copy: " + dir, e);
             }
+        }
+    }
+
+    private static void copyAgentFile(@NotNull Path file, @NotNull Path globalAgentsDir,
+                                      @NotNull Set<String> builtInSlugs) {
+        String filename = file.getFileName().toString();
+        String slug = filename.substring(0, filename.length() - ".md".length());
+        if (builtInSlugs.contains(slug)) {
+            LOG.warn("ProjectAgentScanner: skipping '" + filename
+                + "' — would shadow built-in agent '" + slug + "'");
+            return;
+        }
+        Path dest = globalAgentsDir.resolve(filename);
+        try {
+            Files.copy(file, dest, StandardCopyOption.REPLACE_EXISTING);
+            LOG.info("ProjectAgentScanner: copied " + file + " → " + dest);
+        } catch (IOException e) {
+            LOG.warn("ProjectAgentScanner: failed to copy " + file + " → " + dest, e);
         }
     }
 
@@ -120,8 +132,9 @@ final class ProjectAgentScanner {
             return null;
         }
 
-        if (lines.isEmpty() || !lines.get(0).trim().equals("---")) {
-            return null;
+        if (lines.isEmpty() || !lines.getFirst().trim().equals("---")) {
+            // No frontmatter — still valid; use slug as name with no description
+            return new AgentMode(slug, slug, null);
         }
 
         String name = null;
@@ -151,8 +164,8 @@ final class ProjectAgentScanner {
     private static @NotNull String stripYamlValue(@NotNull String raw) {
         String trimmed = raw.trim();
         if (trimmed.length() >= 2
-                && ((trimmed.startsWith("\"") && trimmed.endsWith("\""))
-                || (trimmed.startsWith("'") && trimmed.endsWith("'")))) {
+            && ((trimmed.startsWith("\"") && trimmed.endsWith("\""))
+            || (trimmed.startsWith("'") && trimmed.endsWith("'")))) {
             trimmed = trimmed.substring(1, trimmed.length() - 1);
         }
         return trimmed;
