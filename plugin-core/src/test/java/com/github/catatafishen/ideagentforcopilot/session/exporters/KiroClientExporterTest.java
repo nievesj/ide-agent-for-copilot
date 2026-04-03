@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -385,6 +386,34 @@ class KiroClientExporterTest {
             .getAsJsonObject("data").getAsJsonArray("content")
             .get(0).getAsJsonObject().get("data").getAsString();
         assertEquals("Msg C", text, "Should keep the last Prompt's text");
+    }
+
+    @Test
+    void consecutiveAssistantMessagesMerged() {
+        // Regression test: two v2 assistant messages in a row (no user Prompt between them)
+        // can produce consecutive AssistantMessages that Kiro rejects as "invalid conversation history".
+        // The last part of turn 1 is plain text → AssistantMessage[text].
+        // Turn 2 opens with tool use → AssistantMessage[toolUse] + ToolResults.
+        // Without the fix these would be adjacent AssistantMessages.
+        SessionMessage user = userMessage("Do something");
+        SessionMessage assistant1 = assistantMessage("Starting work...");
+        SessionMessage assistant2 = new SessionMessage(
+            "a2", "assistant",
+            List.of(toolInvocationPart("tc1", "read_file", "{}", "{\"result\":\"ok\"}")),
+            System.currentTimeMillis(), null, null);
+
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
+            List.of(user, assistant1, assistant2));
+
+        List<String> kinds = kiroMessages.stream()
+            .map(m -> m.get("kind").getAsString())
+            .toList();
+        // Consecutive AssistantMessages must be merged — no two AssistantMessages in a row
+        for (int i = 0; i < kinds.size() - 1; i++) {
+            assertFalse(
+                "AssistantMessage".equals(kinds.get(i)) && "AssistantMessage".equals(kinds.get(i + 1)),
+                "Consecutive AssistantMessages at index " + i + ": " + kinds);
+        }
     }
 
     // ── Helper methods ──────────────────────────────────────────────
