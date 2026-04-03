@@ -235,6 +235,10 @@ class ChatToolWindowContent(
         if (agentManager.activeProfileId != profileId) {
             agentManager.switchAgent(profileId)
         }
+        // Always sync the session store agent name on connect — switchAgent only fires
+        // the listener when the profile changes, so reconnecting to the same profile
+        // after a disconnect would leave currentAgent stale.
+        conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
         if (::promptOrchestrator.isInitialized) resetSessionState()
         // Stay on connect panel while spinner shows "Connecting…"
         // loadModelsAsync triggers agent.start() via getClient() — wait for it to complete
