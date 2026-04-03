@@ -7,9 +7,11 @@ Usage:
     python3 scripts/issue-fixer.py [--dry-run] [--once]
 
 Configuration (env vars):
-    GITHUB_REPO          owner/repo  (default: catatafishen/agentbridge)
-    GITHUB_TOKEN         personal access token with read:issues, contents, pull_requests, checks scopes
-    AGENT_GITHUB_LOGIN   GitHub login of the bot account (used to skip bot's own PR comments)
+    GITHUB_REPO               owner/repo  (default: catatafishen/agentbridge)
+    GITHUB_APP_ID             GitHub App ID (preferred — enables app-identity auth)
+    GITHUB_APP_PRIVATE_KEY_FILE  path to the App's RSA private key PEM file
+    GITHUB_TOKEN              personal access token fallback (used if App auth not configured)
+    AGENT_GITHUB_LOGIN        GitHub login of the bot account (used to skip bot's own PR comments)
     PLUGIN_URL           base URL of the Chat Web Server  (default: https://localhost:9642)
     STATE_FILE           path to JSON state file  (default: ~/.local/share/issue-fixer/state.json)
     POLL_INTERVAL        seconds between polls  (default: 300)
@@ -58,6 +60,8 @@ from typing import Any
 # ── Configuration ──────────────────────────────────────────────────────────────
 
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "catatafishen/agentbridge")
+GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID", "")
+GITHUB_APP_PRIVATE_KEY_FILE = os.environ.get("GITHUB_APP_PRIVATE_KEY_FILE", "")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 AGENT_GITHUB_LOGIN = os.environ.get("AGENT_GITHUB_LOGIN", "")
 PLUGIN_URL = os.environ.get("PLUGIN_URL", "https://localhost:9642")
@@ -70,8 +74,6 @@ BUSY_WAIT_TIMEOUT = int(os.environ.get("BUSY_WAIT_TIMEOUT", "86400"))
 # ── Prompt templates ───────────────────────────────────────────────────────────
 
 ISSUE_PROMPT = """\
->
-
 Please investigate GitHub issue #{number}: **{title}**
 
 **Issue description:**
@@ -110,8 +112,6 @@ Start now.
 """
 
 EXISTING_PR_PROMPT = """\
->
-
 GitHub issue #{number} (**{title}**) already has a pull request:
 
 **PR #{pr_number}**: {pr_title}
@@ -137,8 +137,6 @@ Start now.
 """
 
 CLARIFICATION_RECEIVED_PROMPT = """\
->
-
 GitHub issue #{number} (**{title}**) has a new response from the author.
 
 **Full issue description:**
@@ -163,8 +161,6 @@ Start now.
 """
 
 PR_COMMENT_PROMPT = """\
->
-
 PR #{pr_number} "{pr_title}" has a new comment from @{author}.
 
 **Comment:**
@@ -178,8 +174,6 @@ push a follow-up commit, or explain your decision.
 """
 
 PR_REVIEW_PROMPT = """\
->
-
 PR #{pr_number} "{pr_title}" has a new review from @{author} — verdict: **{state}**.
 
 **Review summary:**
@@ -193,8 +187,6 @@ and push. If the review is approved, you can merge.
 """
 
 CI_FAILURE_PROMPT = """\
->
-
 PR #{pr_number} "{pr_title}" has a failing CI check.
 
 **Check:** {check_name}
@@ -209,8 +201,6 @@ and push a corrected commit.
 """
 
 PR_CONFLICT_PROMPT = """\
->
-
 PR #{pr_number} "{pr_title}" has merge conflicts with `{base_branch}`.
 
 **PR branch:** `{branch}`
@@ -234,6 +224,72 @@ class GitHubRateLimitError(Exception):
     """Raised on HTTP 403 from GitHub — stops the current poll cycle."""
 
 
+# Installation token cache: (token, expires_at_epoch)
+_installation_token_cache: tuple[str, float] | None = None
+
+
+def _get_auth_token() -> str:
+    """Returns a valid GitHub bearer token.
+
+    Prefers GitHub App installation tokens (when GITHUB_APP_ID and
+    GITHUB_APP_PRIVATE_KEY_FILE are configured) for higher rate limits (5 000/hr)
+    and app-identity authorship.  Falls back to GITHUB_TOKEN (personal access
+    token or empty string for unauthenticated access).
+    """
+    global _installation_token_cache
+
+    if not GITHUB_APP_ID or not GITHUB_APP_PRIVATE_KEY_FILE:
+        return GITHUB_TOKEN
+
+    now = time.time()
+    if _installation_token_cache is not None and now < _installation_token_cache[1] - 60:
+        return _installation_token_cache[0]
+
+    import jwt as pyjwt  # PyJWT + cryptography must be installed
+
+    key_bytes = Path(GITHUB_APP_PRIVATE_KEY_FILE).read_bytes()
+    jwt_payload = {"iat": int(now) - 60, "exp": int(now) + 540, "iss": GITHUB_APP_ID}
+    app_jwt = pyjwt.encode(jwt_payload, key_bytes, algorithm="RS256")
+
+    owner = GITHUB_REPO.split("/")[0]
+    installations = _gh_raw_request_with_token(
+        "https://api.github.com/app/installations", app_jwt
+    )
+    installation_id = next(
+        (inst["id"] for inst in installations
+         if inst.get("account", {}).get("login") == owner),
+        None,
+    )
+    if installation_id is None:
+        raise RuntimeError(f"No GitHub App installation found for owner '{owner}'")
+
+    result = _gh_raw_request_with_token(
+        f"https://api.github.com/app/installations/{installation_id}/access_tokens",
+        app_jwt,
+        method="POST",
+    )
+    token = result["token"]
+    _installation_token_cache = (token, now + 3600)
+    print(f"[auth] obtained GitHub App installation token (expires in ~1h)")
+    return token
+
+
+def _gh_raw_request_with_token(url: str, token: str,
+                                method: str = "GET",
+                                data: bytes | None = None) -> Any:
+    """Raw GitHub request using an explicit bearer token."""
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("User-Agent", "issue-fixer/1.0")
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("X-GitHub-Api-Version", "2022-11-28")
+    req.add_header("Authorization", f"Bearer {token}")
+    if data:
+        req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        body = resp.read()
+        return json.loads(body) if body else {}
+
+
 def _gh_request(path: str) -> Any:
     """GET request to the GitHub repos API for GITHUB_REPO."""
     url = f"https://api.github.com/repos/{GITHUB_REPO}/{path}"
@@ -245,8 +301,9 @@ def _gh_raw_request(url: str, method: str = "GET", data: bytes | None = None) ->
     req.add_header("User-Agent", "issue-fixer/1.0")
     req.add_header("Accept", "application/vnd.github+json")
     req.add_header("X-GitHub-Api-Version", "2022-11-28")
-    if GITHUB_TOKEN:
-        req.add_header("Authorization", f"Bearer {GITHUB_TOKEN}")
+    token = _get_auth_token()
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
     if data:
         req.add_header("Content-Type", "application/json")
     try:
@@ -823,8 +880,17 @@ def process_prs(state: dict, dry_run: bool) -> None:
         print("[poll] no open PRs")
         return
 
+    last_check = state.get("last_check")
+
     print(f"[poll] {len(prs)} open PR(s): {[p['number'] for p in prs]}")
     for pr in prs:
+        # Skip per-PR detail fetches for PRs not updated since the last poll —
+        # the list endpoint already contains updated_at, saving several API calls.
+        pr_updated = pr.get("updated_at", "")
+        if last_check and pr_updated and pr_updated < last_check:
+            print(f"\n  PR #{pr['number']}: {pr['title']} (unchanged since last poll, skipping)")
+            continue
+
         print(f"\n  PR #{pr['number']}: {pr['title']}")
         process_pr_conflicts(pr, state, dry_run)
         process_pr_comments(pr, state, dry_run)
@@ -871,6 +937,12 @@ def main() -> None:
     args = parser.parse_args()
 
     print(f"issue-fixer starting — repo={GITHUB_REPO} plugin={PLUGIN_URL}")
+    if GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY_FILE:
+        print(f"  [auth] GitHub App ID={GITHUB_APP_ID} (installation token, 5 000 req/hr)")
+    elif GITHUB_TOKEN:
+        print(f"  [auth] personal access token (5 000 req/hr)")
+    else:
+        print("  [auth] unauthenticated (60 req/hr — set GITHUB_TOKEN or GITHUB_APP_* in .env)")
     if args.dry_run:
         print("  [dry-run mode — no prompts will be sent]\n")
 
