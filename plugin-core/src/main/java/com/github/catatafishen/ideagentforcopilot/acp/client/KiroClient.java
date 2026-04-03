@@ -14,6 +14,14 @@ public final class KiroClient extends AcpClient {
 
     private static final Logger LOG = Logger.getInstance(KiroClient.class);
     private static final String KEY_RAW_INPUT = "rawInput";
+    private static final String KEY_AGENTBRIDGE = "@agentbridge/";
+    private static final String KEY_STATUS = "status";
+
+    /**
+     * Rolling buffer of the last few stderr lines for crash diagnostics.
+     */
+    private final java.util.Deque<String> recentStderr = new java.util.ArrayDeque<>();
+    private static final int STDERR_BUFFER_SIZE = 30;
 
     public KiroClient(Project project) {
         super(project);
@@ -34,8 +42,13 @@ public final class KiroClient extends AcpClient {
 
         // Register request and stderr handlers from parent
         transport.onRequest(this::handleAgentRequest);
-        transport.onStderr(line ->
-            LOG.warn("[" + agentId() + " stderr] " + line));
+        transport.onStderr(line -> {
+            LOG.warn("[" + agentId() + " stderr] " + line);
+            synchronized (recentStderr) {
+                recentStderr.addLast(line);
+                if (recentStderr.size() > STDERR_BUFFER_SIZE) recentStderr.removeFirst();
+            }
+        });
     }
 
     private void handleKiroNotification(String method, JsonObject params) {
@@ -71,18 +84,6 @@ public final class KiroClient extends AcpClient {
         });
     }
 
-    public void getCommandOptions(String partial, java.util.function.Consumer<JsonArray> callback) {
-        JsonObject params = new JsonObject();
-        params.addProperty("partial", partial);
-        transport.sendRequest("_kiro.dev/commands/options", params).thenAccept(response -> {
-            JsonArray options = (response != null && response.isJsonObject()
-                && response.getAsJsonObject().has("options"))
-                ? response.getAsJsonObject().getAsJsonArray("options")
-                : new JsonArray();
-            callback.accept(options);
-        });
-    }
-
     public JsonArray getAvailableCommands() {
         return availableCommands;
     }
@@ -91,7 +92,7 @@ public final class KiroClient extends AcpClient {
         if (params != null && params.has("url")) {
             String oauthUrl = params.get("url").getAsString();
             LOG.info("MCP OAuth required: " + oauthUrl);
-            // TODO: Show notification with clickable link
+            // OAuth for MCP servers is not yet exposed via ACP — log and ignore for now.
         }
     }
 
@@ -103,15 +104,15 @@ public final class KiroClient extends AcpClient {
     }
 
     private void handleCompactionStatus(JsonObject params) {
-        if (params != null && params.has("status")) {
-            String status = params.get("status").getAsString();
+        if (params != null && params.has(KEY_STATUS)) {
+            String status = params.get(KEY_STATUS).getAsString();
             LOG.debug("Context compaction: " + status);
         }
     }
 
     private void handleClearStatus(JsonObject params) {
-        if (params != null && params.has("status")) {
-            String status = params.get("status").getAsString();
+        if (params != null && params.has(KEY_STATUS)) {
+            String status = params.get(KEY_STATUS).getAsString();
             LOG.debug("Clear session: " + status);
         }
     }
@@ -150,8 +151,8 @@ public final class KiroClient extends AcpClient {
 
     @Override
     protected String resolveToolId(String protocolTitle) {
-        if (protocolTitle.startsWith("@agentbridge/")) {
-            return protocolTitle.substring("@agentbridge/".length());
+        if (protocolTitle.startsWith(KEY_AGENTBRIDGE)) {
+            return protocolTitle.substring(KEY_AGENTBRIDGE.length());
         }
         String cleaned = protocolTitle.replaceFirst("^Running: @agentbridge/", "");
         // Map Kiro's human-readable titles to actual tool names
@@ -164,8 +165,8 @@ public final class KiroClient extends AcpClient {
 
     @Override
     protected boolean isMcpToolTitle(@org.jetbrains.annotations.NotNull String protocolTitle) {
-        return protocolTitle.startsWith("Running: @agentbridge/")
-            || protocolTitle.startsWith("@agentbridge/");
+        return protocolTitle.startsWith("Running: " + KEY_AGENTBRIDGE)
+            || protocolTitle.startsWith(KEY_AGENTBRIDGE);
     }
 
     @Override
@@ -224,11 +225,11 @@ public final class KiroClient extends AcpClient {
     protected SessionUpdate processUpdate(SessionUpdate update) {
         // Kiro sends thinking as agent_message_chunk with ContentBlock.Thinking blocks —
         // convert to agent_thought_chunk for proper UI rendering.
-        if (update instanceof SessionUpdate.AgentMessageChunk chunk) {
-            boolean hasThinking = chunk.content().stream()
+        if (update instanceof SessionUpdate.AgentMessageChunk(var content)) {
+            boolean hasThinking = content.stream()
                 .anyMatch(block -> block instanceof ContentBlock.Thinking);
             if (hasThinking) {
-                return new SessionUpdate.AgentThoughtChunk(chunk.content());
+                return new SessionUpdate.AgentThoughtChunk(content);
             }
         }
         if (update instanceof SessionUpdate.ToolCall tc) {
@@ -242,6 +243,27 @@ public final class KiroClient extends AcpClient {
             return extractPurpose(tc);
         }
         return update;  // Pass through all other update types unchanged
+    }
+
+    /**
+     * When Kiro crashes (Rust panic), the process writes the panic message to stderr and the
+     * transport stops. The generic "Transport stopped" message is unhelpful; this override
+     * inspects the buffered stderr lines and surfaces the actual panic reason to the UI.
+     */
+    @Override
+    protected @org.jetbrains.annotations.Nullable com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse
+    tryRecoverPromptException(Exception cause) {
+        String panicLine;
+        synchronized (recentStderr) {
+            panicLine = recentStderr.stream()
+                .filter(l -> l.contains("panicked") || l.contains("Message:"))
+                .reduce((first, second) -> second) // keep last matching line
+                .orElse(null);
+        }
+        if (panicLine == null) return null;
+        // Throw an unchecked exception whose message surfaces in the UI via handlePromptError.
+        throw new java.io.UncheckedIOException(
+            new java.io.IOException("Kiro crashed: " + panicLine.trim(), cause));
     }
 
     private SessionUpdate.ToolCall extractPurpose(SessionUpdate.ToolCall tc) {

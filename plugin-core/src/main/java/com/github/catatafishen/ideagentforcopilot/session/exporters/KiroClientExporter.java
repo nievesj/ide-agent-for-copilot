@@ -198,6 +198,11 @@ public final class KiroClientExporter {
         // Merge any consecutive Prompts by appending the later content into the earlier one.
         mergeConsecutivePrompts(result);
 
+        // Kiro may also reject consecutive AssistantMessages (two v2 assistant turns in a row
+        // with no user message between them produces this when the last part of turn N is text
+        // and the first part of turn N+1 opens with tool calls). Merge them by concatenating content.
+        mergeConsecutiveAssistantMessages(result);
+
         return result;
     }
 
@@ -219,6 +224,35 @@ public final class KiroClientExporter {
                 LOG.warn("Kiro export: removing duplicate consecutive Prompt at index " + i);
                 messages.remove(i);
                 // don't advance i — the item now at i may also be followed by another Prompt
+            } else {
+                i++;
+            }
+        }
+    }
+
+    /**
+     * Merges consecutive {@code AssistantMessage} entries in-place by appending the later
+     * message's content into the earlier one.
+     *
+     * <p>Two consecutive AssistantMessages can occur when two v2 assistant turns appear
+     * back-to-back (no user Prompt between them) and the first turn's last part was plain text
+     * while the second turn opens with tool calls. In Kiro's format this is invalid —
+     * AssistantMessages must alternate with Prompts (and optional ToolResults in between).</p>
+     */
+    private static void mergeConsecutiveAssistantMessages(@NotNull List<JsonObject> messages) {
+        int i = 0;
+        while (i < messages.size() - 1) {
+            JsonObject current = messages.get(i);
+            JsonObject next = messages.get(i + 1);
+            if (KIND_ASSISTANT_MESSAGE.equals(current.get("kind").getAsString())
+                && KIND_ASSISTANT_MESSAGE.equals(next.get("kind").getAsString())) {
+                LOG.warn("Kiro export: merging consecutive AssistantMessages at index " + i);
+                JsonArray mergedContent = current.getAsJsonObject("data").getAsJsonArray(KEY_CONTENT).deepCopy();
+                next.getAsJsonObject("data").getAsJsonArray(KEY_CONTENT)
+                    .forEach(mergedContent::add);
+                current.getAsJsonObject("data").add(KEY_CONTENT, mergedContent);
+                messages.remove(i + 1);
+                // don't advance i — the merged message may still be followed by another AssistantMessage
             } else {
                 i++;
             }
