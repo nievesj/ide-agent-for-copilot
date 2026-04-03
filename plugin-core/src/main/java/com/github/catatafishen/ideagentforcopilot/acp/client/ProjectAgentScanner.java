@@ -33,9 +33,6 @@ final class ProjectAgentScanner {
 
     private static final Logger LOG = Logger.getInstance(ProjectAgentScanner.class);
 
-    /**
-     * Relative paths searched, in priority order.
-     */
     private static final String[] AGENT_DIRS = {".copilot/agents", ".github/agents", "agents"};
 
     private ProjectAgentScanner() {
@@ -48,7 +45,7 @@ final class ProjectAgentScanner {
      *
      * @param projectBasePath root of the open project
      * @param builtInSlugs    slugs of the hardcoded built-in agents to exclude
-     * @return discovered agents in the order they were found (never null, may be empty)
+     * @return discovered agents (may be empty, never null)
      */
     static @NotNull List<AgentMode> scanProjectAgents(@NotNull Path projectBasePath,
                                                       @NotNull Set<String> builtInSlugs) {
@@ -78,6 +75,15 @@ final class ProjectAgentScanner {
         return new ArrayList<>(discovered.values());
     }
 
+    /**
+     * Copies all discovered project agent {@code .md} files into the global Copilot agents
+     * directory ({@code ~/.copilot/agents/}) so the CLI can resolve them via {@code --agent <slug>}.
+     * Built-in agent filenames are never overwritten.
+     *
+     * @param projectBasePath root of the open project
+     * @param globalAgentsDir the global agents directory (e.g. {@code ~/.copilot/agents/})
+     * @param builtInSlugs    slugs of the hardcoded built-in agents to skip
+     */
     static void copyToGlobalAgentsDir(@NotNull Path projectBasePath,
                                       @NotNull Path globalAgentsDir,
                                       @NotNull Set<String> builtInSlugs) {
@@ -114,16 +120,15 @@ final class ProjectAgentScanner {
     }
 
     /**
-     * Parses a {@code .md} agent file's YAML frontmatter to extract {@code name} and
-     * {@code description}. Returns {@code null} if the file has no valid frontmatter or
-     * cannot be read.
+     * Parses a {@code .md} agent file's YAML frontmatter to extract {@code name} and {@code description}.
+     * Returns {@code null} if the file has no valid frontmatter.
      */
     private static AgentMode parseAgentFile(@NotNull Path file, @NotNull String slug) {
         List<String> lines;
         try {
             lines = Files.readAllLines(file, StandardCharsets.UTF_8);
         } catch (IOException e) {
-            LOG.warn("ProjectAgentScanner: failed to read agent file: " + file, e);
+            LOG.warn("Failed to read agent file: " + file, e);
             return null;
         }
 
