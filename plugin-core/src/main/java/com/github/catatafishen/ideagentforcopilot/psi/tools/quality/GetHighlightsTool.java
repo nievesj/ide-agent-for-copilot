@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.quality;
 
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
+import com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -151,7 +152,8 @@ public final class GetHighlightsTool extends QualityTool {
      * Ensures the target file is open in an editor and daemon analysis has completed.
      * When follow-agent mode is off, files may be edited programmatically without ever
      * being opened in an editor tab, so the daemon never produces highlights for them.
-     * This method opens the file silently (no focus) and waits for the daemon to finish.
+     * This method opens the file silently (no focus), waits for the daemon to finish,
+     * then closes the file again if follow-agent mode is off (to avoid polluting the editor).
      */
     private void ensureDaemonAnalyzed(@NotNull VirtualFile vf) {
         // Check on EDT whether the file is already open
@@ -169,6 +171,8 @@ public final class GetHighlightsTool extends QualityTool {
             return;
         }
         if (alreadyOpen) return;
+
+        boolean followAgent = ToolLayerSettings.getInstance(project).getFollowAgentFiles();
 
         // Subscribe BEFORE opening so we don't miss the daemon pass
         var latch = new java.util.concurrent.CountDownLatch(1);
@@ -210,6 +214,13 @@ public final class GetHighlightsTool extends QualityTool {
                 + ": " + e.getMessage());
         } finally {
             disconnect.run();
+            // Close the file again if we opened it and follow-agent mode is off,
+            // to avoid leaving stale editor tabs from silent background analysis.
+            if (!followAgent) {
+                EdtUtil.invokeLater(() ->
+                    com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+                        .closeFile(vf));
+            }
         }
     }
 
