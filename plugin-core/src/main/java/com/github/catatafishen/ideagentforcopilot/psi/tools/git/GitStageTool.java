@@ -1,8 +1,12 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
+import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
+import com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitStageRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vcs.changes.ChangesViewManager;
+import com.intellij.openapi.wm.ToolWindowManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -36,13 +40,12 @@ public final class GitStageTool extends GitTool {
         return "Stage one or more files for the next commit";
     }
 
-
-
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public @NotNull String permissionTemplate() {
         return "Stage {path}";
     }
@@ -62,25 +65,53 @@ public final class GitStageTool extends GitTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
-        // Open Version Control tool window in follow mode
-        if (com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
-            com.github.catatafishen.ideagentforcopilot.psi.EdtUtil.invokeLater(() -> {
-                var tw = com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow("Version Control");
-                if (tw != null) tw.activate(null);
-            });
-        }
-
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("add");
 
-        List<String> stagedFiles = new ArrayList<>();
+        List<String> stagedFiles = collectStagePaths(args, cmdArgs);
+        if (stagedFiles == null) {
+            return "Error: provide 'path', 'paths', or 'all' parameter";
+        }
 
+        String result = runGit(cmdArgs.toArray(String[]::new));
+
+        refreshAndActivateCommitPanel();
+
+        if (result == null || result.isBlank()) {
+            return "Staged: " + String.join(", ", stagedFiles);
+        }
+        return result;
+    }
+
+    /**
+     * Refreshes VCS status and opens the Commit tool window so the user sees
+     * the newly staged files. Uses {@link ChangesViewManager#getLocalChangesToolWindowName}
+     * to resolve the correct tool window ID regardless of commit UI mode.
+     */
+    private void refreshAndActivateCommitPanel() {
+        if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
+            return;
+        }
+        ChangesViewManager.getInstance(project).scheduleRefresh();
+        EdtUtil.invokeLater(() -> {
+            String toolWindowName = ChangesViewManager.getLocalChangesToolWindowName(project);
+            var tw = ToolWindowManager.getInstance(project).getToolWindow(toolWindowName);
+            if (tw != null) tw.activate(null);
+        });
+    }
+
+    /**
+     * Parses stage target from args (all / paths / path) and populates cmdArgs.
+     * Returns the list of staged file descriptions, or null if no valid target.
+     */
+    @Nullable
+    private static List<String> collectStagePaths(JsonObject args, List<String> cmdArgs) {
+        List<String> stagedFiles = new ArrayList<>();
         if (args.has("all") && args.get("all").getAsBoolean()) {
             cmdArgs.add("--all");
             stagedFiles.add("all changes");
         } else if (args.has(PARAM_PATHS) && args.get(PARAM_PATHS).isJsonArray()) {
-            var paths = args.getAsJsonArray(PARAM_PATHS);
-            for (var p : paths) {
+            for (var p : args.getAsJsonArray(PARAM_PATHS)) {
                 String file = p.getAsString();
                 cmdArgs.add(file);
                 stagedFiles.add(file);
@@ -90,15 +121,9 @@ public final class GitStageTool extends GitTool {
             cmdArgs.add(file);
             stagedFiles.add(file);
         } else {
-            return "Error: provide 'path', 'paths', or 'all' parameter";
+            return null;
         }
-
-        String result = runGit(cmdArgs.toArray(String[]::new));
-
-        if (result == null || result.isBlank()) {
-            return "Staged: " + String.join(", ", stagedFiles);
-        }
-        return result;
+        return stagedFiles;
     }
 
     @Override
