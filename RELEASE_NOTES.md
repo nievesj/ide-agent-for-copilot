@@ -1,8 +1,61 @@
 # Release Notes
 
-## 1.16.0
+## Unreleased
 
-### OpenAI Codex Support
+### Cross-Client Session Continuity
+
+Conversations started in one agent can now be resumed in another. When you switch agents, the full
+session history is exported in each agent's native format:
+
+- **Kiro** — sessions written to `~/.kiro/sessions/cli/` with the Kiro JSON schema; `resumeSessionId` passed on connect
+- **Codex** — sessions exported as Codex-format conversation files for seamless pickup
+- **Junie**, **opencode**, **Copilot** — session handoff via their respective protocol formats
+
+Switch from Copilot to Kiro mid-task and pick up exactly where you left off.
+
+### Long-Term Memory
+
+Agents can now build and query a persistent memory store that survives session boundaries:
+
+- Backed by the built-in IntelliJ embedded database — no external services required
+- Organised into a **Memory Palace** hierarchy: wings (projects) → rooms (topics) → drawers (facts)
+- Vector-based semantic search with an on-device embedding model (no API calls)
+- **Knowledge Graph** layer — structured subject → predicate → object triples with timeline support
+- Automatic memory mining from conversation history via the `BackfillMiner`
+- New MCP tools: `memory_store`, `memory_search`, `memory_recall`, `memory_wake_up`,
+  `memory_status`, `memory_kg_add`, `memory_kg_query`, `memory_kg_invalidate`, `memory_kg_timeline`
+- Inspired by [MemPalace](https://github.com/milla-jovovich/mempalace) — a structured long-term memory design for AI
+  agents
+
+The agent remembers decisions, preferences, and architecture context across tasks without you having
+to repeat them every session.
+
+### Tool Usage Statistics
+
+New **Statistics** view in the AgentBridge tool window:
+
+- **Tool tab** — per-tool call counts, average duration, average data size, total I/O, and error rate
+- **Charts tab** — usage breakdown by category and client, color-coded per agent
+- Filter by time range (last hour / day / week / all time) and by agent
+- Backed by a local SQLite database — no external services
+
+---
+
+### Performance & Reliability
+
+- Reconnects automatically to the statistics database if it is moved (e.g., by git stash or external tooling)
+- Reduced SSE queue-full log noise (downgraded from WARN to INFO)
+- `git_branch create` fixed — was passing `-c` (a `git switch` flag) to `git checkout`, causing crashes
+
+### Test Coverage & CI Security
+
+- Significantly expanded unit test coverage across statistics, memory, and session mapping layers
+- CI/CD pipeline hardened: pinned third-party actions to commit SHAs, added `CODEOWNERS`, `SECURITY.md`, Dependabot
+  config
+
+---
+
+## 1.16.0
 
 Full support for OpenAI Codex agents — drives the locally-installed `codex` CLI via JSON-RPC 2.0 over stdio, routes user
 input requests to the built-in `ask_user` flow, and shows a window notification when a prompt arrives while the IDE is
