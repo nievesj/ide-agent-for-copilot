@@ -1547,7 +1547,7 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
      *
      * Three visual states track the full lifecycle:
      * - [McpPauseService.PauseState.RUNNING]  → Pause icon, enabled — click to pause
-     * - [McpPauseService.PauseState.PENDING]  → Pause icon, disabled — waiting for a tool call to arrive
+     * - [McpPauseService.PauseState.PENDING]  → Pause icon, enabled — click to cancel the pending pause
      * - [McpPauseService.PauseState.PAUSED]   → Resume icon, enabled — click to unblock
      */
     private inner class PauseToggleAction : AnAction() {
@@ -1572,8 +1572,8 @@ private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth
                 McpPauseService.PauseState.PENDING -> {
                     e.presentation.icon = AllIcons.Actions.Pause
                     e.presentation.text = "Pausing…"
-                    e.presentation.description = "Waiting for the agent to make a tool call"
-                    e.presentation.isEnabled = false
+                    e.presentation.description = "Waiting for the agent to make a tool call — click to cancel"
+                    e.presentation.isEnabled = true
                 }
 
                 McpPauseService.PauseState.PAUSED -> {
