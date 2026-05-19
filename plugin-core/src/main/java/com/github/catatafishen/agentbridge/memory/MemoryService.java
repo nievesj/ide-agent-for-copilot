@@ -18,6 +18,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+
+import org.apache.lucene.store.LockObtainFailedException;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
