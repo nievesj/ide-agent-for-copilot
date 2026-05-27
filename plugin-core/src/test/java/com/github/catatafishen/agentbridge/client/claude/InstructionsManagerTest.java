@@ -161,6 +161,36 @@ class InstructionsManagerTest {
         assertFalse(content.endsWith("   "), "blank additional instructions must not be appended as-is");
     }
 
+    // ── sandbox-conditional section ───────────────────────────────────────────
+
+    @Test
+    void doesNotIncludeBwrapSectionWhenSandboxDisabled() {
+        InstructionsManager.ensureInstructions(projectRoot.toString(), "CLAUDE.md", "", false);
+
+        String content = readFile(projectRoot.resolve("CLAUDE.md"));
+        assertFalse(content.contains("RUNNING INSIDE A BWRAP SANDBOX"),
+            "bwrap section must not appear when sandbox is disabled");
+    }
+
+    @Test
+    void includesBwrapSectionWhenSandboxEnabled() {
+        InstructionsManager.ensureInstructions(projectRoot.toString(), "CLAUDE.md", "", true);
+
+        String content = readFile(projectRoot.resolve("CLAUDE.md"));
+        assertTrue(content.contains("RUNNING INSIDE A BWRAP SANDBOX"),
+            "bwrap section must appear when sandbox is enabled");
+    }
+
+    @Test
+    void threeArgOverloadDoesNotIncludeBwrapSection() {
+        // The 3-arg overload exists for backwards compatibility and must default to sandbox=false.
+        InstructionsManager.ensureInstructions(projectRoot.toString(), "CLAUDE.md", "");
+
+        String content = readFile(projectRoot.resolve("CLAUDE.md"));
+        assertFalse(content.contains("RUNNING INSIDE A BWRAP SANDBOX"),
+            "3-arg overload must not include bwrap section by default");
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private static String readFile(Path path) {

@@ -55,16 +55,34 @@ public final class InstructionsManager {
      * {@link AgentConfig#getSessionInstructions()} in {@code AcpClient.createSession()}.
      *
      * <p>Thread-safe: uses a class-level lock so concurrent calls don't race.</p>
+     *
+     * <p>Equivalent to {@link #ensureInstructions(String, String, String, boolean)} with
+     * {@code sandboxEnabled=false}.</p>
      */
     public static void ensureInstructions(@Nullable String projectBasePath,
                                           @NotNull String relativeTargetPath,
                                           @NotNull String additionalInstructions) {
+        ensureInstructions(projectBasePath, relativeTargetPath, additionalInstructions, false);
+    }
+
+    /**
+     * Workaround: prepend plugin instructions to a file on the filesystem.
+     *
+     * <p>When {@code sandboxEnabled} is {@code true}, an extra section is appended that
+     * tells the agent it is running inside a bwrap sandbox and that native shell-based
+     * tools may fail on paths outside the bind-mounted dirs — so it should prefer the
+     * {@code agentbridge-*} MCP tools which execute in the IDE host.</p>
+     */
+    public static void ensureInstructions(@Nullable String projectBasePath,
+                                          @NotNull String relativeTargetPath,
+                                          @NotNull String additionalInstructions,
+                                          boolean sandboxEnabled) {
         if (projectBasePath == null || relativeTargetPath.isEmpty()) return;
 
         synchronized (LOCK) {
             try {
                 Path targetFile = Path.of(projectBasePath, relativeTargetPath);
-                String pluginInstructions = buildInstructions(additionalInstructions);
+                String pluginInstructions = buildInstructions(additionalInstructions, sandboxEnabled);
 
                 if (Files.isRegularFile(targetFile)) {
                     String existing = Files.readString(targetFile, StandardCharsets.UTF_8);
@@ -94,24 +112,32 @@ public final class InstructionsManager {
     }
 
     @NotNull
-    private static String buildInstructions(@NotNull String additionalInstructions) {
+    private static String buildInstructions(@NotNull String additionalInstructions, boolean sandboxEnabled) {
         StringBuilder sb = new StringBuilder(INSTRUCTIONS_SENTINEL).append("\n\n");
-        try (InputStream is = InstructionsManager.class.getResourceAsStream("/default-startup-instructions.md")) {
-            if (is != null) {
-                sb.append(new String(is.readAllBytes(), StandardCharsets.UTF_8));
-            } else {
-                LOG.warn("Resource /default-startup-instructions.md not found in classpath");
-                sb.append("You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.");
-            }
-        } catch (IOException e) {
-            LOG.error("Failed to read /default-startup-instructions.md from classpath", e);
-            sb.append("You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.");
+        appendResource(sb, "/default-startup-instructions.md");
+        if (sandboxEnabled) {
+            sb.append("\n\n");
+            appendResource(sb, "/bwrap-sandbox-instructions.md");
         }
         if (!additionalInstructions.isBlank()) {
             sb.append("\n\n").append(additionalInstructions);
         }
         sb.append("\n\n").append(INSTRUCTIONS_END);
         return sb.toString();
+    }
+
+    private static void appendResource(@NotNull StringBuilder sb, @NotNull String resourcePath) {
+        try (InputStream is = InstructionsManager.class.getResourceAsStream(resourcePath)) {
+            if (is != null) {
+                sb.append(new String(is.readAllBytes(), StandardCharsets.UTF_8));
+            } else {
+                LOG.warn("Resource " + resourcePath + " not found in classpath");
+                sb.append("You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.");
+            }
+        } catch (IOException e) {
+            LOG.error("Failed to read " + resourcePath + " from classpath", e);
+            sb.append("You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.");
+        }
     }
 
     /**

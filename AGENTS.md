@@ -203,19 +203,45 @@ When fixing a bug, **always fix the root cause, not just the symptom**.
 
 # Unexpected Tool Behaviour
 
-When a tool produces an error, wrong output, missing parameters, or surprising behaviour:
+**File an issue the first time a tool surprises you. Do not silently work around it.**
 
-1. **Stop and file a GitHub issue** — open an issue on `catatafishen/agentbridge` with:
-    - Title: `<tool_name>: <short description of the problem>`
-    - Body: tool name, the call that triggered it, what you expected vs. what happened, any workaround
-    - Label: **`triage: unconfirmed-tool-problem`** (yellow) — this flags it for human review
-2. **Consider whether the MCP tool can be improved** — check the tool's Java source in
-   `psi/tools/` to see if the description, validation, or response can be fixed.
-3. **Do not silently work around the issue** — only apply a workaround *after* filing the issue, so there is a record
-   for future review.
+If a tool — `agentbridge-*` MCP tool, IDE inspection, build command, anything you call —
+produces an error, the wrong output, missing parameters, contradicts its own documentation,
+or simply doesn't work as you expect, **stop and file a GitHub issue before continuing**.
+This is non-negotiable. The plugin only improves when the human is not watching if agents
+report what they see. Workarounds that hide problems make the plugin worse over time.
 
-Issues with `triage: unconfirmed-tool-problem` are periodically reviewed: root cause confirmed → label removed and
-fixed; not a bug → closed with explanation.
+Triggers (file an issue if *any* of these happen):
+
+- A tool returns an error message that doesn't match its declared behaviour.
+- A tool returns empty / null / `<unknown>` where data is clearly expected.
+- A tool's response shape doesn't match its documentation or schema.
+- You have to retry the same call with different arguments to make it work.
+- You have to fall back to a less appropriate tool (e.g. shell command for something an MCP tool should do).
+- A tool's description is ambiguous, misleading, or makes you guess.
+
+Steps:
+
+1. **File an issue on `catatafishen/agentbridge` immediately.**
+   Use the bot identity (`agentbridge-run_command "gh issue create ..."`).
+    - Title: `<tool_name>: <one-line description of the surprise>`
+    - Labels: **`triage: unconfirmed-tool-problem`** (yellow) — flags it for human review.
+    - Body must include:
+        - The exact tool name and the call arguments you used.
+        - What you expected the tool to do (cite the description / schema if relevant).
+        - What actually happened (paste the response, error, or describe the missing data).
+        - The workaround you applied (if any), so future readers see how it was masked.
+        - Reproduction steps if you can isolate them.
+2. **Then look at the tool's source** under `plugin-core/src/main/java/.../psi/tools/` to see
+   if the description, validation, or response shape can be fixed in the same PR.
+3. **Only then apply a workaround and continue the user's task.** The workaround must not
+   replace the issue — both happen.
+
+Issues with `triage: unconfirmed-tool-problem` are periodically reviewed. Confirmed root
+causes get the label removed and a fix; non-bugs get closed with an explanation. Either
+way, the team learns something they would not have learned without the report. **Do not
+skip this step because "the workaround is easy" or "it's probably not a real bug"** —
+that's exactly the call that human triage should make, not you.
 
 # Plugin Development Best Practices for Performance
 

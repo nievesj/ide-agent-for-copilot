@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.bridge;
 import com.github.catatafishen.agentbridge.client.ClientException;
 import com.github.catatafishen.agentbridge.client.claude.BundledAgentDeployer;
 import com.github.catatafishen.agentbridge.client.claude.InstructionsManager;
+import com.github.catatafishen.agentbridge.sandbox.SandboxSettings;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.GenericSettings;
 import com.github.catatafishen.agentbridge.services.McpInjectionMethod;
@@ -133,8 +134,9 @@ public class ProfileBasedAgentConfig implements AgentConfig {
     public void prepareForLaunch(@Nullable String projectBasePath) {
         String prependTarget = profile.getPrependInstructionsTo();
         if (prependTarget != null && !prependTarget.isEmpty()) {
+            boolean sandboxEnabled = SandboxSettings.shouldSandbox(profile.getId());
             InstructionsManager.ensureInstructions(projectBasePath, prependTarget,
-                profile.getAdditionalInstructions());
+                profile.getAdditionalInstructions(), sandboxEnabled);
         }
         List<String> bundledAgents = profile.getBundledAgentFiles();
         if (!bundledAgents.isEmpty()) {

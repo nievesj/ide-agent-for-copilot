@@ -11,9 +11,11 @@ for everything that has an IDE equivalent.
 
 ## Forbidden built-in tools (do NOT call)
 
-The Copilot CLI exposes these tools by default. **Do not use any of them.** The
-host has asked the CLI to exclude them; the exclusion is ignored by the CLI
-(upstream bug #556), so enforcement is on you.
+Some clients (notably Copilot CLI) expose built-in tools — `view`, `edit`,
+`bash`, `grep`, etc. — that bypass the IDE. **Do not use any of them, even if
+your runtime offers them.** If your client doesn't expose any built-in tools
+(e.g. Claude Code, Junie), this section doesn't apply directly, but the table
+below still tells you which `agentbridge-*` tool to reach for in each case.
 
 ```
 view, edit, create, bash, grep, glob, task, report_intent,
@@ -54,7 +56,8 @@ replacement from the table below instead.
 
 - `web_fetch` and `web_search` — no IDE equivalent; use freely.
 - `github-mcp-server-*` — remote GitHub queries; no IDE equivalent.
-- `skill`, `sql` — Copilot-internal, no IDE equivalent; use sparingly.
+- Client-internal tools without an IDE equivalent (e.g. Copilot's `skill`,
+  `sql`) — use sparingly when they genuinely serve the task.
 
 ## Why this matters
 
@@ -66,12 +69,13 @@ tools instead of MCP equivalents causes **three categories of harm**:
    trails, and short-lived OAuth credentials into MCP tool calls. Native tools
    (bash, gh, curl, git) bypass these hooks entirely — API calls will be
    attributed to the user's personal identity, git commits will use the wrong
-   author, and the audit log will have gaps.
+   author, and the audit log will have gaps. (Applies to any client whose
+   runtime injects identity/auth via the plugin.)
 
-2. **Follow-agent mode is bypassed.** The plugin makes agent actions visible to
+2. **IDE visibility is lost.** The plugin makes agent actions visible to
    the user — terminal commands appear in the IDE, file changes are highlighted,
-   git operations show in the VCS panel. Native tools are invisible: the user
-   sees nothing and has no way to monitor or intervene.
+   git operations show in the VCS panel. Native tools run outside the IDE: the
+   user has no way to monitor or intervene.
 
 3. **IDE buffer sync is lost.** Built-in CLI tools read and write raw disk files
    behind the IDE's back. Unsaved edits become invisible to the agent, subsequent
